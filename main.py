@@ -27,7 +27,7 @@ def dechirp(ndata, refchirp, upsamp=None):
     return ans,power
 
 cp.cuda.Device(0)
-parser = argparse.ArgumentParser()
+parser = argparse.ArgumentParser(description="Example")
 parser.add_argument('--sf', type=int, default=12, help='The spreading factor.')
 parser.add_argument('--bw', type=int, default=203125, help='The bandwidth.')
 # parser.add_argument('--bw', type=int, default=125000, help='The bandwidth.')
@@ -37,6 +37,7 @@ parser.add_argument('--code_len', type=int, default=2, help='Preamble Upchirp nu
 parser.add_argument('--fft_upsamp', type=int, default=1024, help='Preamble Upchirp numbers.')
 parser.add_argument('--pkt_len', type=int, default=48, help='Preamble Upchirp numbers.')
 parser.add_argument('--file_path', type=str, default='9.dat', help='Preamble Upchirp numbers.')
+parser.add_argument('--debug',action='store_false', help='Preamble Upchirp numbers.')
 opts = parser.parse_args()
 
 
@@ -64,7 +65,7 @@ pktdata /= np.max(np.abs(pktdata))
 
 symb_cnt = len(pktdata)//opts.nsamp
 ndatas = pktdata[ : symb_cnt * opts.nsamp].reshape(symb_cnt, opts.nsamp)
-print('n', ndatas.shape)
+if opts.debug: print('the shape of reshaped data in file', ndatas.shape)
 
 ans1, power1 = dechirp(ndatas, opts.downchirp, 1)
 ans2, power2 = dechirp(ndatas, opts.upchirp, 1)
@@ -72,33 +73,29 @@ vals = cp.zeros((symb_cnt, ), dtype=np.float64)
 for i in range(symb_cnt - (opts.sfdpos + 2)):
     power = cp.sum(power1[i : i + opts.preamble_len]) + cp.sum(power2[i + opts.sfdpos : i + opts.sfdpos + 2])
     ans = cp.abs(cp.sum(cp.exp(1j * 2 * cp.pi / opts.n_classes * ans1[i : i + opts.preamble_len])))
-    print(ans, ans1[i : i + opts.preamble_len])
     vals[i] = power * ans
 detect = cp.argmax(vals)
 
-tshift = round(ans1[5].item() * (opts.fs / opts.bw))
-print(tshift)
-pktdata = cp.roll(pktdata, tshift)
+ansval = cp.angle(cp.sum(cp.exp(1j * 2 * cp.pi / opts.n_classes * ans1[detect : detect + opts.preamble_len]))) / (2 * cp.pi) * opts.n_classes 
 
-pktdata = cp.roll(pktdata, opts.nsamp*6)
+tshift = round(ansval.item() * (opts.fs / opts.bw))
+print(f'detect packet at {detect}th window, preamble piece {ans1[detect : detect + opts.preamble_len]}, time shift {tshift}')
+pktdata = cp.roll(pktdata, tshift - opts.nsamp * detect)
 
 
-detects = []
-for xxi in range(-opts.nsamp, opts.nsamp, opts.nsamp//16):
-    pktdata2 = cp.roll(pktdata,-xxi)
-    ndatas = pktdata2[ : symb_cnt * opts.nsamp].reshape(symb_cnt, opts.nsamp)
+ndatas = pktdata[ : symb_cnt * opts.nsamp].reshape(symb_cnt, opts.nsamp)
+ans1, power1 = dechirp(ndatas, opts.downchirp, 1)
+ans2, power2 = dechirp(ndatas, opts.upchirp, 1)
+vals = cp.zeros((symb_cnt, ), dtype=np.float64)
+for i in range(symb_cnt - (opts.sfdpos + 2)):
+    power = cp.sum(power1[i : i + opts.preamble_len]) + cp.sum(power2[i + opts.sfdpos : i + opts.sfdpos + 2])
+    ans = cp.abs(cp.sum(cp.exp(1j * 2 * cp.pi / opts.n_classes * ans1[i : i + opts.preamble_len])))
+    vals[i] = power * ans
+detect = cp.argmax(vals)
+ansval = cp.angle(cp.sum(cp.exp(1j * 2 * cp.pi / opts.n_classes * ans1[detect : detect + opts.preamble_len]))) / (2 * cp.pi) * opts.n_classes 
 
-    ans1, power1 = dechirp(ndatas, opts.downchirp, 1)
-    ans2, power2 = dechirp(ndatas, opts.upchirp, 1)
-    vals = cp.zeros((symb_cnt, ), dtype=np.float64)
-    for i in range(symb_cnt - (opts.sfdpos + 2)):
-        power = cp.sum(power1[i : i + opts.preamble_len]) + cp.sum(power2[i + opts.sfdpos : i + opts.sfdpos + 2])
-        ans = cp.abs(cp.sum(cp.exp(1j * 2 * cp.pi / opts.n_classes * ans1[i : i + opts.preamble_len])))
-        vals[i] = power * ans
-    detects.append( cp.argmax(vals).item())
-print(detects)
-sys.exit(1)
-
+tshift = round(ansval.item() * (opts.fs / opts.bw))
+print(f'detect packet at {detect}th window, preamble piece {ans1[detect : detect + opts.preamble_len]}, time shift {tshift}')
 
 
 for symbid in range(opts.preamble_len*2):
