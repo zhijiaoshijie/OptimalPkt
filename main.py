@@ -43,7 +43,7 @@ opts = parser.parse_args()
 
 opts.n_classes = 2 ** opts.sf
 opts.nsamp = round(opts.fs * opts.n_classes / opts.bw)
-opts.sfdpos = opts.preamble_len + opts.code_len + 2
+opts.sfdpos = opts.preamble_len + opts.code_len
 
 t = np.linspace(0, opts.nsamp / opts.fs, opts.nsamp+1)[:-1]
 chirpI1 = chirp(t, f0=-opts.bw / 2, f1=opts.bw / 2, t1=2 ** opts.sf / opts.bw, method='linear', phi=90)
@@ -76,76 +76,24 @@ for i in range(symb_cnt - (opts.sfdpos + 2)):
     vals[i] = power * ans
 detect = cp.argmax(vals)
 
-ansval = cp.angle(cp.sum(cp.exp(1j * 2 * cp.pi / opts.n_classes * ans1[detect : detect + opts.preamble_len]))) / (2 * cp.pi) * opts.n_classes 
-
+ansval = cp.angle(cp.sum(cp.exp(1j * 2 * cp.pi / opts.n_classes * ans1[detect + 1: detect + opts.preamble_len - 1]))) / (2 * cp.pi) * opts.n_classes 
+# left or right may not be full symbol, detection may be off by a symbol
 tshift = round(ansval.item() * (opts.fs / opts.bw))
-print(f'detect packet at {detect}th window, preamble piece {ans1[detect : detect + opts.preamble_len]}, time shift {tshift}')
+print(f'detect packet at {detect}th window, preamble piece {ans1[detect: detect + opts.preamble_len]}, downpiece {power2[detect + opts.sfdpos : detect + opts.sfdpos + 2]}, ansval {ansval}, time shift {tshift}')
 pktdata = cp.roll(pktdata, tshift - opts.nsamp * detect)
 
 
 ndatas = pktdata[ : symb_cnt * opts.nsamp].reshape(symb_cnt, opts.nsamp)
-ans1, power1 = dechirp(ndatas, opts.downchirp, 1)
-ans2, power2 = dechirp(ndatas, opts.upchirp, 1)
-vals = cp.zeros((symb_cnt, ), dtype=np.float64)
-for i in range(symb_cnt - (opts.sfdpos + 2)):
-    power = cp.sum(power1[i : i + opts.preamble_len]) + cp.sum(power2[i + opts.sfdpos : i + opts.sfdpos + 2])
-    ans = cp.abs(cp.sum(cp.exp(1j * 2 * cp.pi / opts.n_classes * ans1[i : i + opts.preamble_len])))
-    vals[i] = power * ans
-detect = cp.argmax(vals)
-ansval = cp.angle(cp.sum(cp.exp(1j * 2 * cp.pi / opts.n_classes * ans1[detect : detect + opts.preamble_len]))) / (2 * cp.pi) * opts.n_classes 
 
-tshift = round(ansval.item() * (opts.fs / opts.bw))
-print(f'detect packet at {detect}th window, preamble piece {ans1[detect : detect + opts.preamble_len]}, time shift {tshift}')
+# fine-grained
+ans1, power1 = dechirp(ndatas, opts.downchirp)
+ans2, power2 = dechirp(ndatas, opts.upchirp)
+print(ans1)
+slope, intercept, r, p, std_err = stats.linregress(list(range(opts.preamble_len)), ans1[:opts.preamble_len])
 
-
-for symbid in range(opts.preamble_len*2):
-    ndata = pktdata[opts.nsamp * symbid: opts.nsamp * (symbid + 1)]
-    ans, power = dechirp(ndata, opts.downchirp, 1)
-    if ans > opts.n_classes/2: ans -= opts.n_classes
-    if power > opts.nsamp/2:
-        est0.append(ans)
-        estp.append(float(power))
-        esti.append(symbid)
-print('z',est0)
-print('p',estp)
-print('i',esti)
-
-
-
-est0 = []
-for symbid in range(opts.preamble_len*2):
-    ndata = pktdata[opts.nsamp * symbid: opts.nsamp * (symbid + 1)]
-    ans, power = dechirp(ndata, opts.downchirp)
-    if ans > opts.n_classes/2: ans -= opts.n_classes
-    if power > opts.nsamp/2: est0.append(ans)
-print('l',est0)
-
-'''
-pktdata = cp.roll(pktdata, - tshift*2)
-est0 = []
-for symbid in range(opts.preamble_len*2):
-    ndata = pktdata[opts.nsamp * symbid: opts.nsamp * (symbid + 1)]
-    ans, power = dechirp(ndata, opts.downchirp, 1)
-    if power > opts.nsamp/2: est0.append(ans)
-print('r',est0)
-
-est0 = []
-for symbid in range(opts.preamble_len):
-    ndata = pktdata[opts.nsamp * symbid : opts.nsamp * (symbid + 1)]
-    est0.append(dechirp(ndata, opts.upchirp))
-print(est0)
-est0 = []
-for symbid in range(opts.preamble_len):
-    ndata = pktdata[opts.nsamp * symbid : opts.nsamp * (symbid + 1)]
-    est0.append(dechirp(ndata, opts.downchirp))
-print(est0)
-
-est0 = [x[0] for x in est0]'''
-est0 = est0[:opts.preamble_len]
-slope, intercept, r, p, std_err = stats.linregress(list(range(len(est0))), est0)
 est_sfo = slope
 sfd_upcode = slope * (opts.preamble_len+opts.code_len) + intercept
-print(slope, intercept, 'sl')
+print('sfo detection: slope {slope} intercept {intercept}')
 if sfd_upcode > opts.n_classes // 2: sfd_upcode -= opts.n_classes
 print(sfd_upcode)
 
