@@ -23,8 +23,8 @@ def dechirp(ndata, refchirp):
 cp.cuda.Device(0).use()
 parser = argparse.ArgumentParser()
 parser.add_argument('--sf', type=int, default=12, help='The spreading factor.')
-# parser.add_argument('--bw', type=int, default=203125, help='The bandwidth.')
-parser.add_argument('--bw', type=int, default=125000, help='The bandwidth.')
+parser.add_argument('--bw', type=int, default=203125, help='The bandwidth.')
+# parser.add_argument('--bw', type=int, default=125000, help='The bandwidth.')
 parser.add_argument('--fs', type=int, default=1000000, help='The sampling rate.')
 parser.add_argument('--preamble_len', type=int, default=8, help='Preamble Upchirp numbers.')
 parser.add_argument('--code_len', type=int, default=0, help='Preamble Upchirp numbers.')
@@ -70,7 +70,6 @@ while True:
     except EOFError:
         break
 pktdata = cp.array(rawdata[::2], dtype=cp.cfloat) + cp.array(rawdata[1::2], dtype=cp.cfloat) * 1j
-
 est0 = []
 symbid = 4
 ndata = pktdata[opts.nsamp * symbid : opts.nsamp * (symbid + 1)]
@@ -108,7 +107,107 @@ print(sfd_upcode, sfd_downcode)
 
 est_cfo = (sfd_upcode + sfd_downcode) / 2
 est_to = -(sfd_upcode - sfd_downcode) / 2
-print('ans',tshift, est_sfo, est_cfo, est_to)
+re_cfo = est_cfo / opts.n_classes * opts.bw
+re_to = est_to / opts.n_classes * (opts.nsamp / opts.fs)
+print('ans',tshift, est_sfo, est_cfo, est_to, 'cfo',re_cfo,'hz,to', re_to*1000,'ms')
+
+
+cfosymb = cp.array(np.exp(2j * np.pi * -re_cfo * t))
+
+# pktdata *= cfosymb
+pktdata = cp.roll(pktdata,-round(est_to * (opts.nsamp // opts.n_classes))) 
+
+
+
+
+
+
+
+
+est0 = []
+for symbid in range(opts.preamble_len):
+    ndata = pktdata[opts.nsamp * symbid + tshift : opts.nsamp * (symbid + 1) + tshift] * cfosymb
+    est0.append(dechirp(ndata, opts.upchirp))
+print(est0)
+est0 = []
+for symbid in range(opts.preamble_len):
+    ndata = pktdata[opts.nsamp * symbid + tshift : opts.nsamp * (symbid + 1) + tshift] * cfosymb
+    est0.append(dechirp(ndata, opts.downchirp))
+print(est0)
+
+est0 = [x[0] for x in est0]
+
+slope, intercept, r, p, std_err = stats.linregress(list(range(opts.preamble_len)), est0)
+est_sfo = slope
+sfd_upcode = slope * (opts.preamble_len+opts.code_len) + intercept
+print(slope, intercept, 'sl')
+if sfd_upcode > opts.n_classes // 2: sfd_upcode -= opts.n_classes
+print(sfd_upcode)
+
+sfd_codes = []    
+for symbid in range(opts.preamble_len+opts.code_len, opts.preamble_len+opts.code_len+2):
+    ndata = pktdata[opts.nsamp * symbid + tshift : opts.nsamp * (symbid + 1) + tshift] * cfosymb
+    sfd_codes.append(dechirp(ndata, opts.upchirp)[0])
+print(sfd_codes)
+sfd_downcode = (sfd_codes[0] + sfd_codes[1] + est_sfo) / 2
+if sfd_downcode > opts.n_classes // 2: sfd_downcode -= opts.n_classes
+
+print(sfd_upcode, sfd_downcode)
+
+est_cfo = (sfd_upcode + sfd_downcode) / 2
+est_to = -(sfd_upcode - sfd_downcode) / 2
+re_cfo = est_cfo / opts.n_classes * opts.bw
+re_to = est_to / opts.n_classes * (opts.nsamp / opts.fs)
+print('ans',tshift, est_sfo, est_cfo, est_to, 'cfo',re_cfo,'hz,to', re_to*1000,'ms')
+
+
+cfosymb2 = cp.array(np.exp(2j * np.pi * -re_cfo * t))
+
+# pktdata *= cfosymb
+pktdata = cp.roll(pktdata,-round(est_to * (opts.nsamp // opts.n_classes))) 
+
+
+
+
+
+
+
+
+est0 = []
+for symbid in range(opts.preamble_len):
+    ndata = pktdata[opts.nsamp * symbid + tshift : opts.nsamp * (symbid + 1) + tshift] * cfosymb * cfosymb2
+    est0.append(dechirp(ndata, opts.upchirp))
+print(est0)
+est0 = []
+for symbid in range(opts.preamble_len):
+    ndata = pktdata[opts.nsamp * symbid + tshift : opts.nsamp * (symbid + 1) + tshift] * cfosymb * cfosymb2
+    est0.append(dechirp(ndata, opts.downchirp))
+print(est0)
+
+est0 = [x[0] for x in est0]
+
+slope, intercept, r, p, std_err = stats.linregress(list(range(opts.preamble_len)), est0)
+est_sfo = slope
+sfd_upcode = slope * (opts.preamble_len+opts.code_len) + intercept
+print(slope, intercept, 'sl')
+if sfd_upcode > opts.n_classes // 2: sfd_upcode -= opts.n_classes
+print(sfd_upcode)
+
+sfd_codes = []    
+for symbid in range(opts.preamble_len+opts.code_len, opts.preamble_len+opts.code_len+2):
+    ndata = pktdata[opts.nsamp * symbid + tshift : opts.nsamp * (symbid + 1) + tshift] * cfosymb * cfosymb2
+    sfd_codes.append(dechirp(ndata, opts.upchirp)[0])
+print(sfd_codes)
+sfd_downcode = (sfd_codes[0] + sfd_codes[1] + est_sfo) / 2
+if sfd_downcode > opts.n_classes // 2: sfd_downcode -= opts.n_classes
+
+print(sfd_upcode, sfd_downcode)
+
+est_cfo = (sfd_upcode + sfd_downcode) / 2
+est_to = -(sfd_upcode - sfd_downcode) / 2
+re_cfo = est_cfo / opts.n_classes * opts.bw
+re_to = est_to / opts.n_classes * (opts.nsamp / opts.fs)
+print('ans',tshift, est_sfo, est_cfo, est_to, 'cfo',re_cfo,'hz,to', re_to*1000,'ms')
 '''
 est0 = []
 for symbid in range(opts.preamble_len+opts.code_len):
