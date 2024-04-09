@@ -11,31 +11,38 @@ import sys
 from array import array
 from scipy import stats
 def dechirp(ndata, refchirp, upsamp=None):
+    if len(ndata.shape)==1: ndata = ndata.reshape(1, -1)
     global opts
     if not upsamp: upsamp = opts.fft_upsamp
-    chirp_data = ndata * refchirp
-    fft_raw = fft(chirp_data, len(chirp_data) * upsamp)
+    chirp_data = ndatas * refchirp
+    upsamp = 1
+    fft_raw = fft(chirp_data, n=opts.nsamp * upsamp, axis = 1)
     target_nfft = opts.n_classes * upsamp
 
-    cut1 = cp.array(fft_raw[:target_nfft])
-    cut2 = cp.array(fft_raw[-target_nfft:])
+    cut1 = cp.array(fft_raw[:, :target_nfft])
+    cut2 = cp.array(fft_raw[:, -target_nfft:])
     dat = abs(cut1)+abs(cut2)
-    return cp.argmax(dat).item() / upsamp,   cp.max(dat)/cp.max(cp.abs(ndata))
-cp.cuda.Device(0).use()
+    ans = cp.argmax(dat, axis=1) / upsamp
+    power = cp.max(dat, axis=1)
+    return ans,power
+
+cp.cuda.Device(0)
 parser = argparse.ArgumentParser()
 parser.add_argument('--sf', type=int, default=12, help='The spreading factor.')
 parser.add_argument('--bw', type=int, default=203125, help='The bandwidth.')
 # parser.add_argument('--bw', type=int, default=125000, help='The bandwidth.')
 parser.add_argument('--fs', type=int, default=1000000, help='The sampling rate.')
-parser.add_argument('--preamble_len', type=int, default=8, help='Preamble Upchirp numbers.')
-parser.add_argument('--code_len', type=int, default=0, help='Preamble Upchirp numbers.')
+parser.add_argument('--preamble_len', type=int, default=6, help='Preamble Upchirp numbers.')
+parser.add_argument('--code_len', type=int, default=2, help='Preamble Upchirp numbers.')
 parser.add_argument('--fft_upsamp', type=int, default=1024, help='Preamble Upchirp numbers.')
 parser.add_argument('--pkt_len', type=int, default=48, help='Preamble Upchirp numbers.')
+parser.add_argument('--file_path', type=str, default='9.dat', help='Preamble Upchirp numbers.')
 opts = parser.parse_args()
 
 
 opts.n_classes = 2 ** opts.sf
-opts.nsamp = int(opts.fs * opts.n_classes / opts.bw)
+opts.nsamp = round(opts.fs * opts.n_classes / opts.bw)
+opts.sfdpos = opts.preamble_len + opts.code_len + 2
 
 t = np.linspace(0, opts.nsamp / opts.fs, opts.nsamp+1)[:-1]
 chirpI1 = chirp(t, f0=-opts.bw / 2, f1=opts.bw / 2, t1=2 ** opts.sf / opts.bw, method='linear', phi=90)
@@ -48,27 +55,65 @@ opts.downchirp = cp.array(chirpI1 + 1j * chirpQ1)
 
 
 # Example usage
-file_path = '9.dat'
-with open(file_path, 'rb') as f:
+with open(opts.file_path, 'rb') as f:
     rawdata = np.fromfile(f, dtype=np.float32)
-print(len(rawdata)/opts.nsamp)
-print(opts.n_classes)
+print(f'reading file: {opts.file_path} len: {len(rawdata)/opts.nsamp:.3f} symbols SF {opts.sf}')
 
 pktdata = cp.array(rawdata[::2], dtype=cp.cfloat) + cp.array(rawdata[1::2], dtype=cp.cfloat) * 1j
-est0 = []
+pktdata /= np.max(np.abs(pktdata))
+
+symb_cnt = len(pktdata)//opts.nsamp
+ndatas = pktdata[ : symb_cnt * opts.nsamp].reshape(symb_cnt, opts.nsamp)
+print('n', ndatas.shape)
+
+ans1, power1 = dechirp(ndatas, opts.downchirp, 1)
+ans2, power2 = dechirp(ndatas, opts.upchirp, 1)
+vals = cp.zeros((symb_cnt, ), dtype=np.float64)
+for i in range(symb_cnt - (opts.sfdpos + 2)):
+    power = cp.sum(power1[i : i + opts.preamble_len]) + cp.sum(power2[i + opts.sfdpos : i + opts.sfdpos + 2])
+    ans = cp.abs(cp.sum(cp.exp(1j * 2 * cp.pi / opts.n_classes * ans1[i : i + opts.preamble_len])))
+    print(ans, ans1[i : i + opts.preamble_len])
+    vals[i] = power * ans
+detect = cp.argmax(vals)
+
+tshift = round(ans1[5].item() * (opts.fs / opts.bw))
+print(tshift)
+pktdata = cp.roll(pktdata, tshift)
+
+pktdata = cp.roll(pktdata, opts.nsamp*6)
+
+
+detects = []
+for xxi in range(-opts.nsamp, opts.nsamp, opts.nsamp//16):
+    pktdata2 = cp.roll(pktdata,-xxi)
+    ndatas = pktdata2[ : symb_cnt * opts.nsamp].reshape(symb_cnt, opts.nsamp)
+
+    ans1, power1 = dechirp(ndatas, opts.downchirp, 1)
+    ans2, power2 = dechirp(ndatas, opts.upchirp, 1)
+    vals = cp.zeros((symb_cnt, ), dtype=np.float64)
+    for i in range(symb_cnt - (opts.sfdpos + 2)):
+        power = cp.sum(power1[i : i + opts.preamble_len]) + cp.sum(power2[i + opts.sfdpos : i + opts.sfdpos + 2])
+        ans = cp.abs(cp.sum(cp.exp(1j * 2 * cp.pi / opts.n_classes * ans1[i : i + opts.preamble_len])))
+        vals[i] = power * ans
+    detects.append( cp.argmax(vals).item())
+print(detects)
+sys.exit(1)
+
+
+
 for symbid in range(opts.preamble_len*2):
     ndata = pktdata[opts.nsamp * symbid: opts.nsamp * (symbid + 1)]
     ans, power = dechirp(ndata, opts.downchirp, 1)
     if ans > opts.n_classes/2: ans -= opts.n_classes
-    if power > opts.nsamp/2: est0.append(ans)
+    if power > opts.nsamp/2:
+        est0.append(ans)
+        estp.append(float(power))
+        esti.append(symbid)
 print('z',est0)
+print('p',estp)
+print('i',esti)
 
-symbid = 5
-ndata = pktdata[opts.nsamp * symbid : opts.nsamp * (symbid + 1)]
-tshift = round(dechirp(ndata, opts.downchirp)[0] * (opts.fs / opts.bw))
-print(dechirp(ndata, opts.downchirp))
-print(tshift)
-pktdata = cp.roll(pktdata, tshift)
+
 
 est0 = []
 for symbid in range(opts.preamble_len*2):
