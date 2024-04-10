@@ -15,14 +15,13 @@ def dechirp(ndata, refchirp, upsamp=None):
     global opts
     if not upsamp: upsamp = opts.fft_upsamp
     chirp_data = ndatas * refchirp
-    upsamp = 1
     fft_raw = fft(chirp_data, n=opts.nsamp * upsamp, axis = 1)
     target_nfft = opts.n_classes * upsamp
 
     cut1 = cp.array(fft_raw[:, :target_nfft])
     cut2 = cp.array(fft_raw[:, -target_nfft:])
     dat = abs(cut1)+abs(cut2)
-    ans = cp.argmax(dat, axis=1) / upsamp
+    ans = cp.argmax(dat, axis=1).astype(np.float64) / upsamp
     power = cp.max(dat, axis=1)
     return ans,power
 
@@ -34,7 +33,7 @@ parser.add_argument('--bw', type=int, default=203125, help='The bandwidth.')
 parser.add_argument('--fs', type=int, default=1000000, help='The sampling rate.')
 parser.add_argument('--preamble_len', type=int, default=6, help='Preamble Upchirp numbers.')
 parser.add_argument('--code_len', type=int, default=2, help='Preamble Upchirp numbers.')
-parser.add_argument('--fft_upsamp', type=int, default=1024, help='Preamble Upchirp numbers.')
+parser.add_argument('--fft_upsamp', type=int, default=8192, help='Preamble Upchirp numbers.')
 parser.add_argument('--pkt_len', type=int, default=48, help='Preamble Upchirp numbers.')
 parser.add_argument('--file_path', type=str, default='9.dat', help='Preamble Upchirp numbers.')
 parser.add_argument('--debug',action='store_false', help='Preamble Upchirp numbers.')
@@ -79,7 +78,7 @@ detect = cp.argmax(vals)
 ansval = cp.angle(cp.sum(cp.exp(1j * 2 * cp.pi / opts.n_classes * ans1[detect + 1: detect + opts.preamble_len - 1]))) / (2 * cp.pi) * opts.n_classes 
 # left or right may not be full symbol, detection may be off by a symbol
 tshift = round(ansval.item() * (opts.fs / opts.bw))
-print(f'detect packet at {detect}th window, preamble piece {ans1[detect: detect + opts.preamble_len]}, downpiece {power2[detect + opts.sfdpos : detect + opts.sfdpos + 2]}, ansval {ansval}, time shift {tshift}')
+if opts.debug: print(f'detect packet at {detect}th window, preamble piece {ans1[detect: detect + opts.preamble_len]} {power1[detect: detect + opts.preamble_len]}, downpiece  {ans2[detect + opts.sfdpos : detect + opts.sfdpos + 2]} {power2[detect + opts.sfdpos : detect + opts.sfdpos + 2]}, ansval {ansval}, time shift {tshift}')
 pktdata = cp.roll(pktdata, tshift - opts.nsamp * detect)
 
 
@@ -88,46 +87,33 @@ ndatas = pktdata[ : symb_cnt * opts.nsamp].reshape(symb_cnt, opts.nsamp)
 # fine-grained
 ans1, power1 = dechirp(ndatas, opts.downchirp)
 ans2, power2 = dechirp(ndatas, opts.upchirp)
-print(ans1)
-slope, intercept, r, p, std_err = stats.linregress(list(range(opts.preamble_len)), ans1[:opts.preamble_len])
+if opts.debug: print(ans1)
+ans1[ans1 > opts.n_classes // 2] -= opts.n_classes
+ans2[ans2 > opts.n_classes // 2] -= opts.n_classes
+slope, intercept, r, p, std_err = stats.linregress(list(range(opts.preamble_len)), ans1[:opts.preamble_len].get())
 
 est_sfo = slope
-sfd_upcode = slope * (opts.preamble_len+opts.code_len) + intercept
-print('sfo detection: slope {slope} intercept {intercept}')
-if sfd_upcode > opts.n_classes // 2: sfd_upcode -= opts.n_classes
-print(sfd_upcode)
+sfd_upcode = slope * opts.sfdpos + intercept
+if opts.debug: print(f'sfo detection: slope {slope} intercept {intercept} sfd_upcode {sfd_upcode}')
 
-sfd_codes = []    
-# for symbid in range(opts.preamble_len+opts.code_len, opts.preamble_len+opts.code_len+2):
-for symbid in range(opts.preamble_len * 2):
-    ndata = pktdata[opts.nsamp * symbid : opts.nsamp * (symbid + 1)]
-    ans, power = dechirp(ndata, opts.upchirp)
-    if power > opts.nsamp/2: sfd_codes.append(ans)
-print('sfd codes', sfd_codes)
-sfd_downcode = (sfd_codes[0] + sfd_codes[1] + est_sfo) / 2
-if sfd_downcode > opts.n_classes // 2: sfd_downcode -= opts.n_classes
-
-print(sfd_upcode, sfd_downcode)
+sfd_downcode = (ans2[opts.sfdpos] + ans2[opts.sfdpos + 1] + est_sfo) / 2
 
 est_cfo = (sfd_upcode + sfd_downcode) / 2
 est_to = -(sfd_upcode - sfd_downcode) / 2
 re_cfo = est_cfo / opts.n_classes * opts.bw
 re_to = est_to / opts.n_classes * (opts.nsamp / opts.fs)
-print('ans',tshift, est_sfo, est_cfo, est_to, 'cfo',re_cfo,'hz,to', re_to*1000,'ms')
+print(f'ans: in samples sfo: {est_sfo} cfo: {est_cfo} to: {est_to} reality: cfo {re_cfo} hz, to {re_to*1000} ms')
 
+cfosymb = cp.exp(- 2j * np.pi * re_cfo * cp.arange(0, len(pktdata) * 1 / opts.fs, 1 / opts.fs))
 
-cfosymb = cp.array(np.exp(2j * np.pi * -re_cfo * t))
+pktdata *= cfosymb
+pktdata = cp.roll(pktdata, - round(est_to.item() * (opts.nsamp / opts.n_classes))) 
 
-# pktdata *= cfosymb
-pktdata = cp.roll(pktdata,-round(est_to * (opts.nsamp // opts.n_classes))) 
-
-est0 = []
-for symbid in range(opts.preamble_len*2):
-    ndata = pktdata[opts.nsamp * symbid: opts.nsamp * (symbid + 1)]
-    ans, power = dechirp(ndata, opts.downchirp)
-    if ans > opts.n_classes/2: ans -= opts.n_classes
-    if power > opts.nsamp/2: est0.append(ans)
-print('l',est0)
+ndatas = pktdata[ : symb_cnt * opts.nsamp].reshape(symb_cnt, opts.nsamp)
+print(ndatas.shape)
+ans1, power1 = dechirp(ndatas, opts.downchirp)
+ans2, power2 = dechirp(ndatas, opts.upchirp)
+print(ans1, power1, ans2, power2)
 
 
 
