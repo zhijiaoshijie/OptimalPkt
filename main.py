@@ -62,11 +62,11 @@ opts.downchirp = cp.array(chirpI1 + 1j * chirpQ1)
 opts.plan = fft.get_fft_plan(cp.zeros(opts.nsamp * opts.fft_upsamp, dtype=cp.complex128))
 # Example usage
 with open(opts.file_path, 'rb') as f:
-    rawdata = np.fromfile(f, dtype=cp.float32)
-print(f'reading file: {opts.file_path} len: {len(rawdata)/opts.nsamp:.3f} symbols SF {opts.sf}')
+    pktdata = cp.fromfile(f, dtype=cp.complex64)
+print(f'reading file: {opts.file_path} len: {len(pktdata)/opts.nsamp:.3f} symbols SF {opts.sf}')
 
-pktdata = cp.array(rawdata[::2], dtype=cp.cfloat) + cp.array(rawdata[1::2], dtype=cp.cfloat) * 1j
-pktdata /= np.max(np.abs(pktdata))
+# pktdata = cp.array(rawdata[::2], dtype=cp.cfloat) + cp.array(rawdata[1::2], dtype=cp.cfloat) * 1j
+pktdata /= cp.max(cp.abs(pktdata))
 
 symb_cnt = len(pktdata)//opts.nsamp
 ndatas = pktdata[ : symb_cnt * opts.nsamp].reshape(symb_cnt, opts.nsamp)
