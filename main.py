@@ -48,8 +48,8 @@ parser.add_argument('--preamble_len', type=int, default=10, help='Preamble Upchi
 parser.add_argument('--code_len', type=int, default=2, help='Preamble Upchirp numbers.')
 parser.add_argument('--fft_upsamp', type=int, default=4096, help='Preamble Upchirp numbers.')
 # parser.add_argument('--pkt_len', type=int, default=48, help='Preamble Upchirp numbers.')
-parser.add_argument('--pkt_len', type=int, default=144, help='Preamble Upchirp numbers.')
-parser.add_argument('--file_path', type=str, default='/data/djl/LoRaDatasetNew/LoRaDataNew/sf11_4.bin', help='Input file path.')
+# parser.add_argument('--pkt_len', type=int, default=144, help='Preamble Upchirp numbers.')
+parser.add_argument('--file_path', type=str, default='/data/djl/LoRaDatasetNew/LoRaDataNew/sf11_10.bin', help='Input file path.')
 parser.add_argument('--debug',action='store_false', help='Preamble Upchirp numbers.')
 opts = parser.parse_args()
 
@@ -95,7 +95,7 @@ def work(pktdata):
         ansval = cp.angle(cp.sum(cp.exp(1j * 2 * cp.pi / opts.n_classes * ans1[detect + 1: detect + opts.preamble_len - 1]))) / (2 * cp.pi) * opts.n_classes 
 # left or right may not be full symbol, detection may be off by a symbol
         tshift = round(ansval.item() * (opts.fs / opts.bw))
-        if False: print(f'detect packet at {detect}th window, preamble piece {ans1[detect: detect + opts.preamble_len]} \
+        print(f'detect packet at {detect}th window, preamble piece {ans1[detect: detect + opts.preamble_len]} \
                              {power1[detect: detect + opts.preamble_len]}, downpiece  {ans2[detect + opts.sfdpos : detect + opts.sfdpos + 2]}\
                              {power2[detect + opts.sfdpos : detect + opts.sfdpos + 2]}, ansval {ansval}, time shift {tshift}')
 
@@ -107,11 +107,10 @@ def work(pktdata):
         re_cfo = (sfd_upcode + sfd_downcode) / 2 / opts.n_classes * opts.bw # estimated CFO, in Hz
         est_to = -(sfd_upcode - sfd_downcode) / 2 * (opts.nsamp / opts.n_classes)  # estimated time offset at the downcode, in samples
         if est_to < 0: est_to += opts.nsamp
-        re_sfo = re_cfo / opts.freq_sig * opts.fs
-        re_sfo_t = (opts.nsamp / (opts.fs - re_sfo)) - (opts.nsamp / opts.fs)
-        est_sfo_t = re_sfo_t / (opts.nsamp / opts.fs) * opts.n_classes
-        if opts.debug: print(f'{sfd_upcode} {sfd_downcode} ans: in samples cfo: {re_cfo} Hz time offset: {est_to} samples',
-                             're_sfo', re_sfo, 'est_sfo_t', est_sfo_t)
+        est_sfo_t = opts.nsamp * (1 - opts.freq_sig / (opts.freq_sig + re_cfo))
+        if opts.debug: print(f'up: {sfd_upcode} down: {sfd_downcode} cfo: {(sfd_upcode + sfd_downcode) / 2} bins {re_cfo} Hz\
+                             to: {-(sfd_upcode - sfd_downcode) / 2} bins {est_to} samples\
+                             sfo: {est_sfo_t} samples')
 
         cfosymb = cp.exp(- 2j * np.pi * re_cfo * cp.linspace(0, (len(pktdata) - 1) / opts.fs, num=len(pktdata)))
 
@@ -139,7 +138,7 @@ def work(pktdata):
     ans1u = np.unwrap(ans1r, period=1)
     slope, intercept, r, p, std_err = stats.linregress(list(range(len(ans1r))), ans1u)
     ans1new = [x - int(x) for x in ans1n] - np.array([slope * i + intercept for i in range(len(ans1r))])
-    print('fit', slope,'corr', r,'re_sfo', re_sfo, 'est_sfo_t', est_sfo_t)
+    print('fit', slope,'corr', r, 'est_sfo_t', est_sfo_t)
     print("-" * shutil.get_terminal_size()[0])
     '''
     sys.exit(1)
