@@ -15,16 +15,20 @@ from scipy import stats
 from tqdm import tqdm
 import shutil
 
+
+
+cp.cuda.Device(1).use()
+
 def dechirp(ndata, refchirp, upsamp=None):
     if len(ndata.shape)==1: ndata = ndata.reshape(1, -1)
     global opts
     if not upsamp: upsamp = opts.fft_upsamp
-    upsamp = opts.fft_upsamp #!!!
+    # upsamp = opts.fft_upsamp #!!!
     chirp_data = ndata * refchirp
     ans = cp.zeros(ndata.shape[0], dtype=cp.float64)
     power = cp.zeros(ndata.shape[0], dtype=cp.float64)
     for idx in range(ndata.shape[0]):
-        fft_raw = fft.fft(chirp_data[idx], n=opts.nsamp * upsamp, plan=opts.plan)
+        fft_raw = fft.fft(chirp_data[idx], n=opts.nsamp * upsamp, plan=opts.plans[upsamp])
         target_nfft = opts.n_classes * upsamp
 
         cut1 = cp.array(fft_raw[:target_nfft])
@@ -35,7 +39,6 @@ def dechirp(ndata, refchirp, upsamp=None):
         # print(cp.argmax(dat), upsamp, ans[idx])
     return ans,power
 
-cp.cuda.Device(1).use()
 parser = argparse.ArgumentParser(description="Example")
 parser.add_argument('--sf', type=int, default=11, help='The spreading factor.')
 # parser.add_argument('--bw', type=int, default=203125, help='The bandwidth.')
@@ -66,7 +69,8 @@ opts.upchirp = cp.array(chirpI1 + 1j * chirpQ1)
 chirpI1 = chirp(t, f0=opts.bw / 2, f1=-opts.bw / 2, t1=2 ** opts.sf / opts.bw, method='linear', phi=90)
 chirpQ1 = chirp(t, f0=opts.bw / 2, f1=-opts.bw / 2, t1=2 ** opts.sf / opts.bw, method='linear', phi=0)
 opts.downchirp = cp.array(chirpI1 + 1j * chirpQ1)
-opts.plan = fft.get_fft_plan(cp.zeros(opts.nsamp * opts.fft_upsamp, dtype=cp.complex128))
+opts.plans = {1: fft.get_fft_plan(cp.zeros(opts.nsamp * 1, dtype=cp.complex128)),
+opts.fft_upsamp: fft.get_fft_plan(cp.zeros(opts.nsamp * opts.fft_upsamp, dtype=cp.complex128))}
 
 
 
@@ -78,13 +82,13 @@ def work(pktdata):
 # pktdata = cp.array(rawdata[::2], dtype=cp.cfloat) + cp.array(rawdata[1::2], dtype=cp.cfloat) * 1j
     pktdata /= cp.max(cp.abs(pktdata))
 
-    symb_cnt = len(pktdata)//opts.nsamp
+    symb_cnt = opts.sfdpos + 5  #len(pktdata)//opts.nsamp
     ndatas = pktdata[ : symb_cnt * opts.nsamp].reshape(symb_cnt, opts.nsamp)
 
-    for detect_loop in range(1):
-        # upsamp = (1, opts.upsamp)[detect_loop]
-        ans1, power1 = dechirp(ndatas, opts.downchirp)
-        ans2, power2 = dechirp(ndatas, opts.upchirp)
+    for detect_loop in range(2):
+        upsamp = (1, opts.fft_upsamp)[detect_loop]
+        ans1, power1 = dechirp(ndatas, opts.downchirp, upsamp)
+        ans2, power2 = dechirp(ndatas, opts.upchirp, upsamp)
         vals = cp.zeros((symb_cnt, ), dtype=cp.float64)
         for i in range(symb_cnt - (opts.sfdpos + 2)):
             power = cp.sum(power1[i : i + opts.preamble_len]) + cp.sum(power2[i + opts.sfdpos : i + opts.sfdpos + 2])
@@ -93,11 +97,14 @@ def work(pktdata):
         detect = cp.argmax(vals)
 
         ansval = cp.angle(cp.sum(cp.exp(1j * 2 * cp.pi / opts.n_classes * ans1[detect + 1: detect + opts.preamble_len - 1]))) / (2 * cp.pi) * opts.n_classes 
-# left or right may not be full symbol, detection may be off by a symbol
+        # left or right may not be full symbol, detection may be off by a symbol
         tshift = round(ansval.item() * (opts.fs / opts.bw))
-        print(f'detect packet at {detect}th window, preamble piece {ans1[detect: detect + opts.preamble_len]} \
-                             {power1[detect: detect + opts.preamble_len]}, downpiece  {ans2[detect + opts.sfdpos : detect + opts.sfdpos + 2]}\
-                             {power2[detect + opts.sfdpos : detect + opts.sfdpos + 2]}, ansval {ansval}, time shift {tshift}')
+        if True: print(f'''detect packet at {detect}th window
+        preamble {ans1[detect: detect + opts.preamble_len]} 
+        power {power1[detect: detect + opts.preamble_len]}
+        SFD {ans2[detect + opts.sfdpos : detect + opts.sfdpos + 2]}
+        bins {power2[detect + opts.sfdpos : detect + opts.sfdpos + 2]}
+        upcode {ansval}, time shift {tshift}''')
 
         sfd_upcode = ansval.get()
         ansval2 = cp.angle(cp.sum(cp.exp(1j * 2 * cp.pi / opts.n_classes * ans2[detect + opts.sfdpos : detect + opts.sfdpos + 2]))) / (2 * cp.pi) * opts.n_classes 
@@ -105,12 +112,17 @@ def work(pktdata):
         sfd_downcode = ansval2.get()
 
         re_cfo = (sfd_upcode + sfd_downcode) / 2 / opts.n_classes * opts.bw # estimated CFO, in Hz
-        est_to = -(sfd_upcode - sfd_downcode) / 2 * (opts.nsamp / opts.n_classes)  # estimated time offset at the downcode, in samples
+        # cfo positive: cause preamble +, sfd +
+        est_to = (sfd_downcode - sfd_upcode) / 2 * (opts.nsamp / opts.n_classes)  # estimated time offset at the downcode, in samples
+        # to positive (signal moved right, 0s at left): cause preamble -, sfd +
+        # cfo - to = upcode
+        # cfo + to = downcode
+        # cfo = (upcode + downcode) / 2, in bins
+        # to = (downcode - upcode) / 2, in bins
         if est_to < 0: est_to += opts.nsamp
-        est_sfo_t = opts.nsamp * (1 - opts.freq_sig / (opts.freq_sig + re_cfo))
-        if opts.debug: print(f'up: {sfd_upcode} down: {sfd_downcode} cfo: {(sfd_upcode + sfd_downcode) / 2} bins {re_cfo} Hz\
-                             to: {-(sfd_upcode - sfd_downcode) / 2} bins {est_to} samples\
-                             sfo: {est_sfo_t} samples')
+        est_sfo_t = - opts.nsamp * (1 - opts.freq_sig / (opts.freq_sig + re_cfo))
+        # len(received) - len(standard), in samples, plus = longer
+        # cfo positive -> sender frequency higher -> signal shorter -> sfo negative
 
         cfosymb = cp.exp(- 2j * np.pi * re_cfo * cp.linspace(0, (len(pktdata) - 1) / opts.fs, num=len(pktdata)))
 
@@ -138,7 +150,11 @@ def work(pktdata):
     ans1u = np.unwrap(ans1r, period=1)
     slope, intercept, r, p, std_err = stats.linregress(list(range(len(ans1r))), ans1u)
     ans1new = [x - int(x) for x in ans1n] - np.array([slope * i + intercept for i in range(len(ans1r))])
-    print('fit', slope,'corr', r, 'est_sfo_t', est_sfo_t)
+    if opts.debug: print(f'''detection: {detect}th cfo: {(sfd_upcode + sfd_downcode) / 2} bins {re_cfo} Hz
+ to: {-(sfd_upcode - sfd_downcode) / 2} bins {est_to} samples
+ sfo: {est_sfo_t} samples fit: {slope} samples''')
+    print(' '.join([':.3f' % x for x in ans1u]))
+    print(' '.join([':.3f' % x for x in ans1new]))
     print("-" * shutil.get_terminal_size()[0])
     '''
     sys.exit(1)
@@ -188,7 +204,7 @@ def work(pktdata):
 
 # read packets from file
 thresh = 0.0005
-first_pkt = True
+pkt_cnt = 0
 pktdata = []
 assert os.path.isfile(opts.file_path), "file_path not found"
 fsize = int(os.stat(opts.file_path).st_size / (opts.nsamp * 4 * 2))
@@ -221,9 +237,9 @@ with open(opts.file_path, "rb") as f:
         nmax = cp.max(cp.abs(rawdata))
 
         if nmax < thresh:
-            if len(pktdata) > 14 and not first_pkt:
+            if len(pktdata) > 14 and pkt_cnt > 20:
                 print(f"start parsing pkt len: {len(pktdata)}")
                 work(cp.concatenate(pktdata))
             pktdata = []
-            first_pkt = False
+            pkt_cnt += 1
         else: pktdata.append(rawdata)
