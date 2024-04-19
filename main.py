@@ -99,17 +99,17 @@ def work(pktdata):
         ansval = cp.angle(cp.sum(cp.exp(1j * 2 * cp.pi / opts.n_classes * ans1[detect + 1: detect + opts.preamble_len - 1]))) / (2 * cp.pi) * opts.n_classes 
         # left or right may not be full symbol, detection may be off by a symbol
         tshift = round(ansval.item() * (opts.fs / opts.bw))
-        if True: print(f'''detect packet at {detect}th window
-        preamble {ans1[detect: detect + opts.preamble_len]} 
-        power {power1[detect: detect + opts.preamble_len]}
-        SFD {ans2[detect + opts.sfdpos : detect + opts.sfdpos + 2]}
-        bins {power2[detect + opts.sfdpos : detect + opts.sfdpos + 2]}
-        upcode {ansval}, time shift {tshift}''')
 
         sfd_upcode = ansval.get()
         ansval2 = cp.angle(cp.sum(cp.exp(1j * 2 * cp.pi / opts.n_classes * ans2[detect + opts.sfdpos : detect + opts.sfdpos + 2]))) / (2 * cp.pi) * opts.n_classes 
 
         sfd_downcode = ansval2.get()
+        if True: print(f'''detect packet at {detect}th window
+        preamble {ans1[detect: detect + opts.preamble_len]} 
+        power {power1[detect: detect + opts.preamble_len]}
+        SFD {ans2[detect + opts.sfdpos : detect + opts.sfdpos + 2]}
+        bins {power2[detect + opts.sfdpos : detect + opts.sfdpos + 2]}
+        upcode {sfd_upcode}, downcode {sfd_downcode} time shift {tshift}''')
 
         re_cfo = (sfd_upcode + sfd_downcode) / 2 / opts.n_classes * opts.bw # estimated CFO, in Hz
         # cfo positive: cause preamble +, sfd +
@@ -137,6 +137,8 @@ def work(pktdata):
 
         ans1, power1 = dechirp(ndatas[detect: detect + opts.sfdpos], opts.downchirp)
         ans2, power2 = dechirp(ndatas[detect + opts.sfdpos : detect + opts.sfdpos + 2], opts.upchirp)
+        if opts.debug: print(f'''===detection: {detect}th cfo: {(sfd_upcode + sfd_downcode) / 2} bins {re_cfo} Hz
+         to: {-(sfd_upcode - sfd_downcode) / 2} bins {est_to} samp sfo: {est_sfo_t} samp\n''')
 
     # packet contents
     pktdata = pktdata[opts.nsamp * (detect + opts.sfdpos + 2) + opts.nsamp // 4 :]
@@ -149,12 +151,15 @@ def work(pktdata):
     ans1r = [x - int(x) for x in ans1n]
     ans1u = np.unwrap(ans1r, period=1)
     slope, intercept, r, p, std_err = stats.linregress(list(range(len(ans1r))), ans1u)
-    ans1new = [x - int(x) for x in ans1n] - np.array([slope * i + intercept for i in range(len(ans1r))])
-    if opts.debug: print(f'''detection: {detect}th cfo: {(sfd_upcode + sfd_downcode) / 2} bins {re_cfo} Hz
- to: {-(sfd_upcode - sfd_downcode) / 2} bins {est_to} samples
- sfo: {est_sfo_t} samples fit: {slope} samples''')
-    print(' '.join([':.3f' % x for x in ans1u]))
-    print(' '.join([':.3f' % x for x in ans1new]))
+    ans1new = [x - int(x) for x in ans1n] - np.array([(slope * i + intercept) - int(slope * i + intercept) for i in range(len(ans1r))])
+    print('fit: {slope} samples')
+    print(' '.join([f'{x:.3f}' % x for x in ans1u]))
+    print("-" * shutil.get_terminal_size()[0])
+    print(' '.join([f'{x:.3f}' % x for x in ans1new]))
+    print("-" * shutil.get_terminal_size()[0])
+    ans1new2 = [x - int(x) for x in ans1n] - np.array([(est_sfo_t * i + intercept) - int(est_sfo_t * i + intercept) for i in range(len(ans1r))])
+    print(' '.join([f'{x:.3f}' % x for x in ans1new2]))
+    print("-" * shutil.get_terminal_size()[0])
     print("-" * shutil.get_terminal_size()[0])
     '''
     sys.exit(1)
