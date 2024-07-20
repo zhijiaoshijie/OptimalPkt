@@ -326,6 +326,7 @@ def decode_payload(detect, est_to_dec, pktdata4, pkt_totcnt):
         logger.debug(f'decode: {pkt_totcnt=} power1 drops: {drop_idx=} {len(ans1n)=} {cp_str(power1)}')
     return ans1n, ndatas
 
+    return 0# freq_sig_est
 
 def test_preamble(est_to_dec, pktdata3):
     ndatas2a = pktdata3[: Config.sfdend * Config.nsamp].reshape(Config.sfdend, Config.nsamp)
