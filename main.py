@@ -1,21 +1,46 @@
-import struct
-import numpy as np
-import matplotlib.pyplot as plt
-import argparse
-import cupyx.scipy.fft as fft
-import cupy
-import cupy as cp
-import itertools
 import os
-import sys
-from array import array
-from scipy import stats
-from tqdm import tqdm
 import shutil
 
-from config import Config
+import matplotlib.pyplot as plt
+from scipy import stats
 
+import numpy as np
+from scipy.signal import chirp
+import cupy as cp
+import cupyx.scipy.fft as fft
+from tqdm import tqdm
+import sys
 cp.cuda.Device(0).use()
+
+
+class Config:
+    sf = 7
+    file_path = f'sf7-470-new-test.bin'
+    bw = 125e3
+    fs = 1e6
+    n_classes = 2 ** sf
+    nsamp = round(n_classes * fs / bw)
+
+    freq_sig = 470e6
+    preamble_len = 8
+    code_len = 2
+    fft_upsamp = 4096
+    sfdpos = preamble_len + code_len
+    debug = False
+
+    t = np.linspace(0, nsamp / fs, nsamp + 1)[:-1]
+    chirpI1 = chirp(t, f0=-bw / 2, f1=bw / 2, t1=2 ** sf / bw, method='linear', phi=90)
+    chirpQ1 = chirp(t, f0=-bw / 2, f1=bw / 2, t1=2 ** sf / bw, method='linear', phi=0)
+    upchirp = cp.array(chirpI1 + 1j * chirpQ1)
+
+    chirpI1 = chirp(t, f0=bw / 2, f1=-bw / 2, t1=2 ** sf / bw, method='linear', phi=90)
+    chirpQ1 = chirp(t, f0=bw / 2, f1=-bw / 2, t1=2 ** sf / bw, method='linear', phi=0)
+    downchirp = cp.array(chirpI1 + 1j * chirpQ1)
+    plans = {1: fft.get_fft_plan(cp.zeros(nsamp * 1, dtype=cp.complex128)),
+             fft_upsamp: fft.get_fft_plan(cp.zeros(nsamp * fft_upsamp, dtype=cp.complex128))}
+
+
+Config = Config()
 
 
 # noinspection SpellCheckingInspection
@@ -46,17 +71,24 @@ def dechirp(ndata, refchirp, upsamp=None):
 def work(pktdata):
     pktdata /= cp.max(cp.abs(pktdata))
 
-    symb_cnt = Config.sfdpos + 5  #len(pktdata)//Config.nsamp
+    symb_cnt = Config.sfdpos + 5  # len(pktdata)//Config.nsamp
     ndatas = pktdata[: symb_cnt * Config.nsamp].reshape(symb_cnt, Config.nsamp)
 
+    ndatatest = Config.downchirp
+    shiftt = 8 * 3
+    ndatatest = np.concatenate((ndatatest[shiftt:], ndatatest[:shiftt]))
+    ans1, power1 = dechirp(ndatatest, Config.upchirp)
+    # print(ans1)
+
     for detect_loop in range(1):
-        #upsamp = (1, Config.fft_upsamp)[detect_loop]
+        # upsamp = (1, Config.fft_upsamp)[detect_loop]
         upsamp = Config.fft_upsamp
         ans1, power1 = dechirp(ndatas, Config.downchirp, upsamp)
         ans2, power2 = dechirp(ndatas, Config.upchirp, upsamp)
         vals = cp.zeros((symb_cnt,), dtype=cp.float64)
         for i in range(symb_cnt - (Config.sfdpos + 2)):
-            power = cp.sum(power1[i: i + Config.preamble_len]) + cp.sum(power2[i + Config.sfdpos: i + Config.sfdpos + 2])
+            power = cp.sum(power1[i: i + Config.preamble_len]) + cp.sum(
+                power2[i + Config.sfdpos: i + Config.sfdpos + 2])
             ans = cp.abs(cp.sum(cp.exp(1j * 2 * cp.pi / Config.n_classes * ans1[i: i + Config.preamble_len])))
             vals[i] = power * ans
         detect = cp.argmax(vals)
@@ -69,18 +101,30 @@ def work(pktdata):
 
         sfd_upcode = ansval.get()
         ansval2 = cp.angle(
-            cp.sum(cp.exp(1j * 2 * cp.pi / Config.n_classes * ans2[detect + Config.sfdpos: detect + Config.sfdpos + 2]))) / (
+            cp.sum(cp.exp(
+                1j * 2 * cp.pi / Config.n_classes * ans2[detect + Config.sfdpos: detect + Config.sfdpos + 2]))) / (
                           2 * cp.pi) * Config.n_classes
 
         sfd_downcode = ansval2.get()
-        if Config.debug: print(f'''detect packet at {detect}th window
-        preamble {ans1[detect: detect + Config.preamble_len]} 
-        power {power1[detect: detect + Config.preamble_len]}
-        SFD {ans2[detect + Config.sfdpos: detect + Config.sfdpos + 2]}
-        bins {power2[detect + Config.sfdpos: detect + Config.sfdpos + 2]}
-        upcode {sfd_upcode}, downcode {sfd_downcode} time shift {tshift}''')
+        if False:
+            print(f'''detect packet at {detect}th window
+            preamble {ans1[detect: detect + Config.preamble_len]} 
+            power {power1[detect: detect + Config.preamble_len]}
+            SFD {ans2[detect + Config.sfdpos: detect + Config.sfdpos + 2]}
+            bins {power2[detect + Config.sfdpos: detect + Config.sfdpos + 2]}
+            upcode {sfd_upcode}, downcode {sfd_downcode} time shift {tshift}''')
+
+            print('preamble', [round(x.get().item()) for x in ans1[detect: detect + Config.preamble_len]],
+            'sfd', [round(x.get().item()) for x in ans2[detect + Config.sfdpos: detect + Config.sfdpos + 2]])
+        print(sfd_upcode, sfd_downcode, ' '.join([str(round(x.get().item())) for x in ans1[detect: detect + Config.preamble_len]]), ' '.join([str(round(x.get().item())) for x in ans2[detect + Config.sfdpos: detect + Config.sfdpos + 2]]))
 
         re_cfo = (sfd_upcode + sfd_downcode) / 2 / Config.n_classes * Config.bw  # estimated CFO, in Hz
+
+        # !!!
+        if abs(re_cfo + 24867) > Config.bw / 8: 
+            re_cfo -= Config.bw / 2
+        if abs(re_cfo) > Config.bw / 4: 
+            print('!' * shutil.get_terminal_size()[0])
         # cfo positive: cause preamble +, sfd +
         est_to = (sfd_downcode - sfd_upcode) / 2 * (
                 Config.nsamp / Config.n_classes)  # estimated time offset at the downcode, in samples
@@ -102,7 +146,7 @@ def work(pktdata):
         pktdata *= cfosymb
         est_to_int = round(est_to)
         est_to_dec = est_to - est_to_int
-        pktdata = pktdata[est_to_int:]
+        pktdata = pktdata[est_to_int:] #!!!
         symb_cnt = len(pktdata) // Config.nsamp
 
         ndatas = pktdata[: symb_cnt * Config.nsamp].reshape(symb_cnt, Config.nsamp)
@@ -126,6 +170,7 @@ def work(pktdata):
     ans1n = ans1.get()
 
     if Config.debug: print('est_to_dec / 8', est_to_dec / (Config.nsamp / Config.n_classes))
+    # print('est_to_dec / 8', est_to_dec / (Config.nsamp / Config.n_classes))
     ans1n += est_to_dec / (Config.nsamp / Config.n_classes)  # ???????????????
 
     ans1r = [x - int(x) for x in ans1n]
@@ -138,8 +183,15 @@ def work(pktdata):
     freq_sig_est = re_cfo / (1 / (1 - slope / Config.n_classes) - 1)
     # print('estimated frequency:', freq_sig_est/1e6, 'mhz')
 
-    if Config.debug: print('pktdata', ' '.join([f'{x:.3f}' % x for x in ans1n]))
-    if Config.debug: print("-" * shutil.get_terminal_size()[0])
+    '''
+    print('pktdata', ' '.join([str(round(x.item())) for x in ans1n]))
+    print(f'{len(ans1n)=}')
+    print("-" * shutil.get_terminal_size()[0])
+    print(freq_sig_est, re_cfo, slope)'''
+
+
+
+    '''
     if Config.debug: print('pktdata power', ' '.join([f'{x:.3f}' % x for x in power1]))
     if Config.debug: print("-" * shutil.get_terminal_size()[0])
     if Config.debug: print('pktdata: unwrapped', ' '.join([f'{x:.3f}' % x for x in ans1u]))
@@ -151,113 +203,33 @@ def work(pktdata):
     if Config.debug: print('unwrapped - est_sfo', ' '.join([f'{x:.3f}' % x for x in ans1new2]))
     if Config.debug: print("-" * shutil.get_terminal_size()[0])
     if Config.debug: print("-" * shutil.get_terminal_size()[0])
-    return freq_sig_est
-
     '''
-    plt.plot(ans1u)
-    plt.plot([- est_sfo_t * i + intercept for i in range(len(ans1r))], label='cfo estimation')
-    plt.plot([slope * i + intercept for i in range(len(ans1r))], label='linear fit')
-    plt.legend()
-    plt.savefig('1.jpg')
 
-
-
-    upsamp = 4096
-    plt.plot(cp.angle(fixeddata[1:] / fixeddata[:-1]).get())
-    plt.savefig('3.jpg')
-    plt.clf()
-    plt.plot(cp.angle(Config.downchirp[1:] / Config.downchirp[:-1]).get())
-    plt.savefig('4.jpg')
-    plt.clf()
-    res = fixeddata * Config.downchirp
-    plt.plot(cp.angle(res[1:] / res[:-1]).get())
-    plt.savefig('5.jpg')
-    plt.clf()
-    
-    fft_raw = fft.fft(res, n=Config.nsamp * upsamp)
-    data = cp.abs(fft_raw).get()
-    data2 = np.concatenate((data[:Config.n_classes // 2 * upsamp], data[-Config.n_classes // 2 * upsamp:]), axis=0)
-    plt.scatter(range(data2.shape[0]), data2, s=0.1)
-    plt.axvline(np.argmax(data2),linestyle='--',color='black')
-    plt.xlim((np.argmax(data2) - 50, np.argmax(data2) + 50))
-    scale = 0.01
-    plt.ylim((max(data2) - scale, max(data2) + scale))
-    plt.savefig('2.jpg')
-
-
-
-
-
-    sys.exit(1)
-
-
-    ans1[ans1 > Config.n_classes // 2] -= Config.n_classes
-    ans2[ans2 > Config.n_classes // 2] -= Config.n_classes
-    slope, intercept, r, p, std_err = stats.linregress(list(range(Config.preamble_len)), ans1[:Config.preamble_len].get())
-
-    est_sfo = slope
-    sfd_upcode = slope * Config.sfdpos + intercept
-    if Config.debug: if Config.debug: print(f'sfo detection: slope {slope} intercept {intercept}')
-
-    re_sfo = re_cfo / Config.freq_sig * Config.fs
-    re_sfo_t = (Config.nsamp / (Config.fs - re_sfo)) - (Config.nsamp / Config.fs)
-    est_sfo_t = re_sfo_t / (Config.nsamp / Config.fs) * Config.n_classes
-    if Config.debug: print('est_sfo_t', est_sfo_t)
-
-
-
-    est0 = []
-    if Config.debug: print((len(pktdata)- tshift)//Config.nsamp)
-
-#for symbid in range((len(pktdata)-tshift)//Config.nsamp-1):
-    for symbid in range(Config.pkt_len):
-        sfdshift = 0.25
-        if symbid < Config.preamble_len+Config.code_len+2: sfdshift = 0
-
-        pkt_tshift = (est_to + est_sfo_t * (symbid + sfdshift - (Config.preamble_len+Config.code_len))) * (Config.fs / Config.bw)
-        pkt_tshift_int = cupy.round_(pkt_tshift)
-        pkt_tshift_dec = pkt_tshift - pkt_tshift_int
-        tstart = Config.nsamp * symbid + int(sfdshift * Config.nsamp) + pkt_tshift_int
-
-        ndata = pktdata[tstart : tstart + Config.nsamp]
-
-        if symbid in range(Config.preamble_len+Config.code_len, Config.preamble_len+Config.code_len + 2):
-            val, power = dechirp(ndata, Config.upchirp)
-            power *= -1
-        else:
-            val, power = dechirp(ndata, Config.downchirp)
-        tmod = pkt_tshift_dec / (Config.fs / Config.bw)
-        if symbid in range(Config.preamble_len+Config.code_len, Config.preamble_len+Config.code_len + 2): tmod *= -1
-        val2 = val - est_cfo + tmod
-        if Config.debug: print("{:3d} \t {:10.5f} \t {:10.5f} \t  {:10.5f} \t {:10.5f}".format(symbid, val, val - est_cfo, val2, power))
-        if Config.debug: print("{:8.5f}".format(tmod))
-        if Config.debug: print("{:8d}".format(pkt_tshift_dec))
-        est0.append(val2)'''
+    return 0# freq_sig_est
 
 
 # read packets from file
 if __name__ == "__main__":
-    thresh = 0.1
+    thresh = 0.002
     pkt_cnt = 0
     pktdata = []
     assert os.path.isfile(Config.file_path), "file_path not found"
     fsize = int(os.stat(Config.file_path).st_size / (Config.nsamp * 4 * 2))
     if Config.debug: print(f'reading file: {Config.file_path} SF: {Config.sf} pkts in file: {fsize}')
     nmaxs = []
-    if False:
-        with open(Config.file_path, "rb") as f:
-            for i in range(5000):  #while True:
-                try:
-                    rawdata = np.fromfile(f, dtype=cp.complex64, count=Config.nsamp)
-                except EOFError:
-                    if Config.debug: print("file complete")
-                    break
-                if len(rawdata) < Config.nsamp:
-                    if Config.debug: print("file complete", len(rawdata))
-                    break
-                nmaxs.append(np.max(np.abs(rawdata)))
-        counts, bins = np.histogram(nmaxs, bins=100)
-        if Config.debug: print(counts, bins)
+    with open(Config.file_path, "rb") as f:
+        for i in tqdm(range(5000)):  # while True:
+            try:
+                rawdata = np.fromfile(f, dtype=cp.complex64, count=Config.nsamp)
+            except EOFError:
+                if Config.debug: print("file complete")
+                break
+            if len(rawdata) < Config.nsamp:
+                if Config.debug: print("file complete", len(rawdata))
+                break
+            nmaxs.append(np.max(np.abs(rawdata)))
+    counts, bins = np.histogram(nmaxs, bins=100)
+    if Config.debug: print(counts, bins)
 
     pkt_totcnt = 0
     estfreqs = []
@@ -283,11 +255,11 @@ if __name__ == "__main__":
                     else:
                         print(
                             f'rejected {pkt_totcnt}th val {res}, dist to {np.mean(estfreqs)} ({abs(res - np.mean(estfreqs))})> {np.std(estfreqs)}')
-                    matplotlib.pyplot.scatter(range(len(estfreqs)), estfreqs)
-                    matplotlib.pyplot.axhline(470e6, linestyle='--', color='black')
-                    matplotlib.pyplot.axhline(433e6, linestyle='--', color='black')
-                    matplotlib.pyplot.savefig('estfreqs.jpg')
-                    matplotlib.pyplot.clf()
+                    plt.scatter(range(len(estfreqs)), estfreqs)
+                    plt.axhline(470e6, linestyle='--', color='black')
+                    plt.axhline(433e6, linestyle='--', color='black')
+                    plt.savefig('estfreqs.jpg')
+                    plt.clf()
                     pkt_totcnt += 1
                 pkt_cnt += 1
                 pktdata = []
