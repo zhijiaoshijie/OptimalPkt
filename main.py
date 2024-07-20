@@ -146,6 +146,13 @@ if use_gpu:
     cp.cuda.Device(0).use()
 opts = Config()
 Config = Config()
+dataE1 = cp.zeros((opts.n_classes, opts.nsamp), dtype=cp.cfloat)
+dataE2 = cp.zeros((opts.n_classes, opts.nsamp), dtype=cp.cfloat)
+for symbol_index in range(opts.n_classes):
+    time_shift = int(symbol_index / opts.n_classes * opts.nsamp)
+    time_split = opts.nsamp - time_shift
+    dataE1[symbol_index][:time_split] = opts.downchirp[time_shift:]
+    if symbol_index != 0: dataE2[symbol_index][time_split:] = opts.downchirp[:time_shift]
 
 
 def myfft(chirp_data, n, plan):
