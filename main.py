@@ -4,6 +4,8 @@ import pickle
 import shutil
 import cmath
 import math
+import sys
+
 import cupy as cp
 import cupyx.scipy.fft as fft
 import matplotlib.pyplot as plt
@@ -30,7 +32,7 @@ class Config:
 
     preamble_len = 8
     code_len = 2
-    fft_upsamp = 4096
+    fft_upsamp = 8
     sfdpos = preamble_len + code_len
     debug = False
 
@@ -82,7 +84,44 @@ def dechirp(ndata, refchirp, upsamp=None):
     return ans, power
 
 
-# noinspection SpellCheckingInspection
+def test0():
+    from tqdm import tqdm
+    for time_shift_samples in tqdm(range(0, opts.nsamp, 31)):
+        for cfo_shift_samples in range(-opts.nsamp, opts.nsamp, 100):
+            pktdata = cp.zeros((Config.nsamp * 5,), dtype=cp.cfloat)
+            pktdata[time_shift_samples: time_shift_samples + Config.nsamp] = Config.upchirp
+            pktdata[time_shift_samples + Config.nsamp: time_shift_samples + Config.nsamp * 2] = Config.upchirp
+            pktdata[time_shift_samples + Config.nsamp * 2: time_shift_samples + Config.nsamp * 3] = Config.downchirp
+            pktdata[time_shift_samples + Config.nsamp * 3: time_shift_samples + Config.nsamp * 4] = Config.downchirp
+            pktdata = pktdata[Config.nsamp: Config.nsamp * 4] # one upchirp, one downchirp
+            cfo_shift_hz = cfo_shift_samples / Config.nsamp * Config.bw
+            cfo_symb = cp.exp(2j * np.pi * cfo_shift_hz * cp.linspace(0, (len(pktdata) - 1) / Config.fs, num=len(pktdata)))
+            pktdata_in = pktdata * cfo_symb
+
+            est_arr_1 = cp.zeros((Config.nsamp, Config.nsamp * Config.fft_upsamp))
+            est_arr_2 = cp.zeros((Config.nsamp, Config.nsamp * Config.fft_upsamp))
+            for est_time_shift_samples in range(Config.nsamp):
+                fft_raw = fft.fft(pktdata_in[est_time_shift_samples: est_time_shift_samples + Config.nsamp] * Config.downchirp, n=Config.nsamp * Config.fft_upsamp, plan=Config.plans[Config.fft_upsamp])
+                est_arr_1[est_time_shift_samples, :] = cp.abs(fft_raw)
+            for est_time_shift_samples in range(Config.nsamp):
+                fft_raw = fft.fft(pktdata_in[est_time_shift_samples + Config.nsamp: est_time_shift_samples + Config.nsamp * 2] * Config.upchirp, n=Config.nsamp * Config.fft_upsamp, plan=Config.plans[Config.fft_upsamp])
+                est_arr_2[est_time_shift_samples, :] = cp.abs(fft_raw)
+
+            est_arrs = est_arr_1 ** 2 + est_arr_2 ** 2
+            ans = cp.unravel_index(cp.argmax(est_arrs), est_arrs.shape)
+            argmax_est_time_shift_samples = ans[0].get()
+            argmax_est_cfo_samples = ans[1].get()
+            if argmax_est_cfo_samples > Config.nsamp * Config.fft_upsamp / 2:
+                argmax_est_cfo_samples -= Config.nsamp * Config.fft_upsamp
+
+            truth_cfo_samples = round(cfo_shift_samples * Config.fft_upsamp * Config.n_classes / Config.nsamp)
+            assert argmax_est_time_shift_samples == time_shift_samples and truth_cfo_samples == argmax_est_cfo_samples, f'{argmax_est_time_shift_samples=}, {time_shift_samples=}, {truth_cfo_samples=}, {argmax_est_cfo_samples=}'
+
+
+
+
+
+        # noinspection SpellCheckingInspection
 def work(pktdata_in):
     print(len(pktdata_in))
     pktdata = pktdata_in / cp.max(cp.abs(pktdata_in))
@@ -177,6 +216,8 @@ def work(pktdata_in):
 
 # read packets from file
 if __name__ == "__main__":
+    test0()
+    sys.exit(0)
     angles = []
     plt.rcParams['font.size'] = 15
     plt.rcParams['lines.markersize'] = 12
