@@ -87,7 +87,7 @@ def dechirp(ndata, refchirp, upsamp=None):
 def test0():
     from tqdm import tqdm
     for time_shift_samples in tqdm(range(0, opts.nsamp, 31)):
-        for cfo_shift_samples in range(-opts.nsamp, opts.nsamp, 100):
+        for cfo_shift_samples in range(-opts.nsamp + 100, opts.nsamp, 100):
             pktdata = cp.zeros((Config.nsamp * 5,), dtype=cp.cfloat)
             pktdata[time_shift_samples: time_shift_samples + Config.nsamp] = Config.upchirp
             pktdata[time_shift_samples + Config.nsamp: time_shift_samples + Config.nsamp * 2] = Config.upchirp
@@ -98,19 +98,20 @@ def test0():
             cfo_symb = cp.exp(2j * np.pi * cfo_shift_hz * cp.linspace(0, (len(pktdata) - 1) / Config.fs, num=len(pktdata)))
             pktdata_in = pktdata * cfo_symb
 
-            est_arr_1 = cp.zeros((Config.nsamp, Config.nsamp * Config.fft_upsamp))
-            est_arr_2 = cp.zeros((Config.nsamp, Config.nsamp * Config.fft_upsamp))
-            for est_time_shift_samples in range(Config.nsamp):
-                fft_raw = fft.fft(pktdata_in[est_time_shift_samples: est_time_shift_samples + Config.nsamp] * Config.downchirp, n=Config.nsamp * Config.fft_upsamp, plan=Config.plans[Config.fft_upsamp])
-                est_arr_1[est_time_shift_samples, :] = cp.abs(fft_raw)
-            for est_time_shift_samples in range(Config.nsamp):
-                fft_raw = fft.fft(pktdata_in[est_time_shift_samples + Config.nsamp: est_time_shift_samples + Config.nsamp * 2] * Config.upchirp, n=Config.nsamp * Config.fft_upsamp, plan=Config.plans[Config.fft_upsamp])
-                est_arr_2[est_time_shift_samples, :] = cp.abs(fft_raw)
 
-            est_arrs = est_arr_1 ** 2 + est_arr_2 ** 2
-            ans = cp.unravel_index(cp.argmax(est_arrs), est_arrs.shape)
-            argmax_est_time_shift_samples = ans[0].get()
-            argmax_est_cfo_samples = ans[1].get()
+            argmax_est_time_shift_samples = 0
+            argmax_est_cfo_samples = 0
+            argmax_val = 0
+
+            for est_time_shift_samples in range(Config.nsamp):
+                fft_raw_1 = fft.fft(pktdata_in[est_time_shift_samples: est_time_shift_samples + Config.nsamp] * Config.downchirp, n=Config.nsamp * Config.fft_upsamp, plan=Config.plans[Config.fft_upsamp])
+                fft_raw_2 = fft.fft(pktdata_in[est_time_shift_samples + Config.nsamp: est_time_shift_samples + Config.nsamp * 2] * Config.upchirp, n=Config.nsamp * Config.fft_upsamp, plan=Config.plans[Config.fft_upsamp])
+                fft_raw = cp.abs(fft_raw_1) ** 2 + cp.abs(fft_raw_2) ** 2
+                max_val = cp.max(fft_raw)
+                if max_val > argmax_val:
+                    argmax_val = max_val
+                    argmax_est_time_shift_samples = est_time_shift_samples
+                    argmax_est_cfo_samples = cp.argmax(fft_raw)
             if argmax_est_cfo_samples > Config.nsamp * Config.fft_upsamp / 2:
                 argmax_est_cfo_samples -= Config.nsamp * Config.fft_upsamp
 
