@@ -11,7 +11,14 @@ import numpy as np
 from scipy.signal import chirp
 from tqdm import tqdm
 
-cp.cuda.Device(0).use()
+
+class ModulusComputation:
+    @staticmethod
+    def average_modulus(lst, n_classes):
+        complex_sum = cp.sum(cp.exp(1j * 2 * cp.pi * cp.array(lst) / n_classes))
+        avg_angle = cp.angle(complex_sum)
+        avg_modulus = (avg_angle / (2 * cp.pi)) * n_classes
+        return avg_modulus
 
 
 class Config:
@@ -21,7 +28,6 @@ class Config:
     n_classes = 2 ** sf
     nsamp = round(n_classes * fs / bw)
 
-    freq_sig = 470e6
     preamble_len = 8
     code_len = 2
     fft_upsamp = 4096
@@ -39,17 +45,18 @@ class Config:
     plans = {1: fft.get_fft_plan(cp.zeros(nsamp * 1, dtype=cp.complex128)),
              fft_upsamp: fft.get_fft_plan(cp.zeros(nsamp * fft_upsamp, dtype=cp.complex128))}
 
+    dataE1 = cp.zeros((n_classes, nsamp), dtype=cp.cfloat)
+    dataE2 = cp.zeros((n_classes, nsamp), dtype=cp.cfloat)
+    for symbol_index in range(n_classes):
+        time_shift = int(symbol_index / n_classes * nsamp)
+        time_split = nsamp - time_shift
+        dataE1[symbol_index][:time_split] = downchirp[time_shift:]
+        if symbol_index != 0: dataE2[symbol_index][time_split:] = downchirp[:time_shift]
 
+
+cp.cuda.Device(0).use()
 opts = Config()
 Config = Config()
-dataE1 = cp.zeros((opts.n_classes, opts.nsamp), dtype=cp.cfloat)
-dataE2 = cp.zeros((opts.n_classes, opts.nsamp), dtype=cp.cfloat)
-for symbol_index in range(opts.n_classes):
-    time_shift = int(symbol_index / opts.n_classes * opts.nsamp)
-    time_split = opts.nsamp - time_shift
-    dataE1[symbol_index][:time_split] = opts.downchirp[time_shift:]
-    if symbol_index != 0: dataE2[symbol_index][time_split:] = opts.downchirp[:time_shift]
-
 
 # noinspection SpellCheckingInspection
 def dechirp(ndata, refchirp, upsamp=None):
@@ -77,6 +84,7 @@ def dechirp(ndata, refchirp, upsamp=None):
 
 # noinspection SpellCheckingInspection
 def work(pktdata_in):
+    print(len(pktdata_in))
     pktdata = pktdata_in / cp.max(cp.abs(pktdata_in))
 
     symb_cnt = Config.sfdpos + 5  # len(pktdata)//Config.nsamp
@@ -93,28 +101,38 @@ def work(pktdata_in):
         vals[i] = power * ans
     detect = cp.argmax(vals)
 
-    ansval = cp.angle( cp.sum(cp.exp(1j * 2 * cp.pi / Config.n_classes * ans1[detect + 1: detect + Config.preamble_len - 1]))) / ( 2 * cp.pi) * Config.n_classes
+    ansval = ModulusComputation.average_modulus(ans1[detect + 1: detect + Config.preamble_len - 1], Config.n_classes)
 
     sfd_upcode = ansval.get()
-    ansval2 = cp.angle(cp.sum( cp.exp(1j * 2 * cp.pi / Config.n_classes * ans2[detect + Config.sfdpos: detect + Config.sfdpos + 2]))) / ( 2 * cp.pi) * Config.n_classes
+    ansval2 = ModulusComputation.average_modulus(ans2[detect + Config.sfdpos: detect + Config.sfdpos + 2], Config.n_classes)
 
     sfd_downcode = ansval2.get()
-    re_cfo_0 = (sfd_upcode + sfd_downcode) / 2
-    re_cfo = re_cfo_0 / Config.n_classes * Config.bw  # estimated CFO, in Hz
+    re_cfo_0 = ModulusComputation.average_modulus((sfd_upcode, sfd_downcode), Config.n_classes)
+    est_to_0 = ModulusComputation.average_modulus((sfd_upcode, - sfd_downcode), Config.n_classes)
 
-    est_to = (sfd_downcode - sfd_upcode) / 2 * (
-                Config.nsamp / Config.n_classes)  # estimated time offset at the downcode, in samples
-    if abs(re_cfo + 24867) > Config.bw / 8:  # !!! TODO test the preamble to see if it is zero
-        re_cfo -= Config.bw / 2
-        est_to -= Config.nsamp / 2
-    if abs(re_cfo) > Config.bw / 4:
-        print('!' * shutil.get_terminal_size()[0])
-    if est_to < 0: est_to += Config.nsamp
+    re_cfo_1 = ModulusComputation.average_modulus((re_cfo_0 + Config.n_classes // 2 ,), Config.n_classes)
+    est_to_1 = ModulusComputation.average_modulus((est_to_0 + Config.n_classes // 2 ,), Config.n_classes)
+
+    for re_cfo_p, est_to_p in ((re_cfo_0, est_to_0), (re_cfo_1, est_to_1), (re_cfo_0, est_to_1), (re_cfo_1, est_to_0)):
+        re_cfo = re_cfo_p / Config.n_classes * Config.bw  # estimated CFO, in Hz
+        est_to = est_to_p * (Config.nsamp / Config.n_classes)
+        cfosymb = cp.exp(- 2j * np.pi * re_cfo * cp.linspace(0, (len(pktdata) - 1) / Config.fs, num=len(pktdata)))
+        pktdata2a = pktdata * cfosymb
+        est_to_int = round(est_to.get().item())
+        est_to_dec = est_to - est_to_int
+        pktdata2a = np.roll(pktdata2a, -est_to_int)  # !!! TODO est_to_dec
+        ndatas2a = pktdata2a[: symb_cnt * Config.nsamp].reshape(symb_cnt, Config.nsamp)
+
+        upsamp = Config.fft_upsamp
+        ans1, power1 = dechirp(ndatas2a[detect : detect + Config.preamble_len], Config.downchirp, upsamp)
+        ans2, power2 = dechirp(ndatas2a[detect + Config.sfdpos : detect + Config.sfdpos + 2], Config.upchirp, upsamp)
+        print(ans1, ans2)
+
 
     cfosymb = cp.exp(- 2j * np.pi * re_cfo * cp.linspace(0, (len(pktdata) - 1) / Config.fs, num=len(pktdata)))
 
     pktdata2a = pktdata * cfosymb
-    est_to_int = round(est_to)
+    est_to_int = round(est_to.get().item())
     est_to_dec = est_to - est_to_int
     pktdata2a = pktdata2a[est_to_int:]  # !!! TODO est_to_dec
 
@@ -139,8 +157,8 @@ def work(pktdata_in):
     for dataY in ndatas[detect + Config.sfdpos + 4:]:
         opts = Config
         dataX = cp.array(dataY)
-        data1 = cp.abs(cp.matmul(dataE1, dataX))
-        data2 = cp.abs(cp.matmul(dataE2, dataX))
+        data1 = cp.abs(cp.matmul(Config.dataE1, dataX))
+        data2 = cp.abs(cp.matmul(Config.dataE2, dataX))
         vals = data1 + data2
         est = cp.argmax(vals)
         if est > 0:
