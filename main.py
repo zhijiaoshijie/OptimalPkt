@@ -28,11 +28,12 @@ class Config:
     bw = 125e3
     fs = 1e6
     n_classes = 2 ** sf
+    symb_cnt = 148
     nsamp = round(n_classes * fs / bw)
 
     preamble_len = 8
     code_len = 2
-    fft_upsamp = 8
+    fft_upsamp = 128
     sfdpos = preamble_len + code_len
     debug = False
 
@@ -60,6 +61,7 @@ cp.cuda.Device(0).use()
 opts = Config()
 Config = Config()
 
+
 # noinspection SpellCheckingInspection
 def dechirp(ndata, refchirp, upsamp=None):
     if len(ndata.shape) == 1:
@@ -84,115 +86,63 @@ def dechirp(ndata, refchirp, upsamp=None):
     return ans, power
 
 
-def test0():
-    from tqdm import tqdm
-    for time_shift_samples in tqdm(range(0, opts.nsamp, 31)):
-        for cfo_shift_samples in range(-opts.nsamp + 100, opts.nsamp, 100):
-            pktdata = cp.zeros((Config.nsamp * 5,), dtype=cp.cfloat)
-            pktdata[time_shift_samples: time_shift_samples + Config.nsamp] = Config.upchirp
-            pktdata[time_shift_samples + Config.nsamp: time_shift_samples + Config.nsamp * 2] = Config.upchirp
-            pktdata[time_shift_samples + Config.nsamp * 2: time_shift_samples + Config.nsamp * 3] = Config.downchirp
-            pktdata[time_shift_samples + Config.nsamp * 3: time_shift_samples + Config.nsamp * 4] = Config.downchirp
-            pktdata = pktdata[Config.nsamp: Config.nsamp * 4] # one upchirp, one downchirp
-            cfo_shift_hz = cfo_shift_samples / Config.nsamp * Config.bw
-            cfo_symb = cp.exp(2j * np.pi * cfo_shift_hz * cp.linspace(0, (len(pktdata) - 1) / Config.fs, num=len(pktdata)))
-            pktdata_in = pktdata * cfo_symb
-
-
-            argmax_est_time_shift_samples = 0
-            argmax_est_cfo_samples = 0
-            argmax_val = 0
-
-            for est_time_shift_samples in range(Config.nsamp):
-                fft_raw_1 = fft.fft(pktdata_in[est_time_shift_samples: est_time_shift_samples + Config.nsamp] * Config.downchirp, n=Config.nsamp * Config.fft_upsamp, plan=Config.plans[Config.fft_upsamp])
-                fft_raw_2 = fft.fft(pktdata_in[est_time_shift_samples + Config.nsamp: est_time_shift_samples + Config.nsamp * 2] * Config.upchirp, n=Config.nsamp * Config.fft_upsamp, plan=Config.plans[Config.fft_upsamp])
-                fft_raw = cp.abs(fft_raw_1) ** 2 + cp.abs(fft_raw_2) ** 2
-                max_val = cp.max(fft_raw)
-                if max_val > argmax_val:
-                    argmax_val = max_val
-                    argmax_est_time_shift_samples = est_time_shift_samples
-                    argmax_est_cfo_samples = cp.argmax(fft_raw)
-            if argmax_est_cfo_samples > Config.nsamp * Config.fft_upsamp / 2:
-                argmax_est_cfo_samples -= Config.nsamp * Config.fft_upsamp
-
-            truth_cfo_samples = round(cfo_shift_samples * Config.fft_upsamp * Config.n_classes / Config.nsamp)
-            assert argmax_est_time_shift_samples == time_shift_samples and truth_cfo_samples == argmax_est_cfo_samples, f'{argmax_est_time_shift_samples=}, {time_shift_samples=}, {truth_cfo_samples=}, {argmax_est_cfo_samples=}'
-
-
-
-
-
-        # noinspection SpellCheckingInspection
 def work(pktdata_in):
-    print(len(pktdata_in))
-    pktdata = pktdata_in / cp.max(cp.abs(pktdata_in))
 
-    symb_cnt = Config.sfdpos + 5  # len(pktdata)//Config.nsamp
-    ndatas = pktdata[: symb_cnt * Config.nsamp].reshape(symb_cnt, Config.nsamp)
+    argmax_est_time_shift_samples = 0
+    argmax_est_cfo_samples = 0
+    argmax_val = 0
+    fft_n = Config.nsamp * Config.fft_upsamp
+
+    for est_time_shift_samples in range(Config.nsamp * 2):
+
+        fft_raw = cp.zeros((fft_n,))
+        for preamble_idx in range(Config.preamble_len):
+            sig1_pos = est_time_shift_samples + Config.nsamp * preamble_idx
+            sig1 = pktdata_in[sig1_pos: sig1_pos + Config.nsamp] * Config.downchirp
+            fft_raw_1 = fft.fft(sig1, n=fft_n, plan=Config.plans[Config.fft_upsamp])
+            fft_raw += cp.abs(fft_raw_1) ** 2
+        for sfd_idx in range(Config.sfdpos, Config.sfdpos + 2):
+            sig2_pos = est_time_shift_samples + Config.nsamp * sfd_idx
+            sig2 = pktdata_in[sig2_pos: sig2_pos + Config.nsamp] * Config.upchirp
+            fft_raw_2 = fft.fft(sig2, n=fft_n, plan=Config.plans[Config.fft_upsamp])
+            fft_raw += cp.abs(fft_raw_2) ** 2
+        max_val = cp.max(fft_raw)
+        if max_val > argmax_val:
+            argmax_val = max_val
+            argmax_est_time_shift_samples = est_time_shift_samples
+            argmax_est_cfo_samples = cp.argmax(fft_raw)
+
+    if argmax_est_cfo_samples > fft_n / 2:
+        argmax_est_cfo_samples -= fft_n
+    est_cfo_freq = argmax_est_cfo_samples.get() * (Config.fs / fft_n)
+    est_to_s = argmax_est_time_shift_samples / Config.fs
+
+    # print(f'{argmax_est_time_shift_samples=}, {argmax_est_cfo_samples=}, {fft_n=}, {est_cfo_freq=} Hz, {est_to_s=} s)')
+    cfosymb = cp.exp(- 2j * np.pi * est_cfo_freq * cp.linspace(0, (len(pktdata_in) - 1) / Config.fs, num=len(pktdata_in)))
+    pktdata2a = pktdata_in * cfosymb
+    est_to_int = round(est_to_s)
+    est_to_dec = est_to_s - est_to_int
+    pktdata2a = np.roll(pktdata2a, -argmax_est_time_shift_samples)  # !!! TODO est_to_dec
+    symb_cnt = 15
+    ndatas2a = pktdata2a[: symb_cnt * Config.nsamp].reshape(symb_cnt, Config.nsamp)
 
     upsamp = Config.fft_upsamp
-    ans1, power1 = dechirp(ndatas, Config.downchirp, upsamp)
-    ans2, power2 = dechirp(ndatas, Config.upchirp, upsamp)
-    vals = cp.zeros((symb_cnt,), dtype=cp.float64)
-    for i in range(symb_cnt - (Config.sfdpos + 2)):
-        power = cp.sum(power1[i: i + Config.preamble_len]) + cp.sum(
-            power2[i + Config.sfdpos: i + Config.sfdpos + 2])
-        ans = cp.abs(cp.sum(cp.exp(1j * 2 * cp.pi / Config.n_classes * ans1[i: i + Config.preamble_len])))
-        vals[i] = power * ans
-    detect = cp.argmax(vals)
-
-    ansval = ModulusComputation.average_modulus(ans1[detect + 1: detect + Config.preamble_len - 1], Config.n_classes)
-
-    sfd_upcode = ansval.get()
-    ansval2 = ModulusComputation.average_modulus(ans2[detect + Config.sfdpos: detect + Config.sfdpos + 2], Config.n_classes)
-
-    sfd_downcode = ansval2.get()
-    re_cfo_0 = ModulusComputation.average_modulus((sfd_upcode, sfd_downcode), Config.n_classes)
-    est_to_0 = ModulusComputation.average_modulus((sfd_upcode, - sfd_downcode), Config.n_classes)
-
-    re_cfo_1 = ModulusComputation.average_modulus((re_cfo_0 + Config.n_classes // 2 ,), Config.n_classes)
-    est_to_1 = ModulusComputation.average_modulus((est_to_0 + Config.n_classes // 2 ,), Config.n_classes)
-
-    for re_cfo_p, est_to_p in ((re_cfo_0, est_to_0), (re_cfo_1, est_to_1), (re_cfo_0, est_to_1), (re_cfo_1, est_to_0)):
-        re_cfo = re_cfo_p / Config.n_classes * Config.bw  # estimated CFO, in Hz
-        est_to = est_to_p * (Config.nsamp / Config.n_classes)
-        cfosymb = cp.exp(- 2j * np.pi * re_cfo * cp.linspace(0, (len(pktdata) - 1) / Config.fs, num=len(pktdata)))
-        pktdata2a = pktdata * cfosymb
-        est_to_int = round(est_to.get().item())
-        est_to_dec = est_to - est_to_int
-        pktdata2a = np.roll(pktdata2a, -est_to_int)  # !!! TODO est_to_dec
-        ndatas2a = pktdata2a[: symb_cnt * Config.nsamp].reshape(symb_cnt, Config.nsamp)
-
-        upsamp = Config.fft_upsamp
-        ans1, power1 = dechirp(ndatas2a[detect : detect + Config.preamble_len], Config.downchirp, upsamp)
-        ans2, power2 = dechirp(ndatas2a[detect + Config.sfdpos : detect + Config.sfdpos + 2], Config.upchirp, upsamp)
-        print(ans1, ans2)
-
-
-    cfosymb = cp.exp(- 2j * np.pi * re_cfo * cp.linspace(0, (len(pktdata) - 1) / Config.fs, num=len(pktdata)))
-
-    pktdata2a = pktdata * cfosymb
-    est_to_int = round(est_to.get().item())
-    est_to_dec = est_to - est_to_int
-    pktdata2a = pktdata2a[est_to_int:]  # !!! TODO est_to_dec
-
-    symb_cnt = len(pktdata2a) // Config.nsamp
-    if symb_cnt < 30: # !!! TODO make it a parameter
-        print('Too short signal')
-        return []
+    detect = 0
+    ans1, power1 = dechirp(ndatas2a[detect: detect + Config.preamble_len], Config.downchirp, upsamp)
+    ans2, power2 = dechirp(ndatas2a[detect + Config.sfdpos: detect + Config.sfdpos + 2], Config.upchirp, upsamp)
+    # print(f'preamble: {" ".join([str(round(x.item())) for x in ans1])}, sfd: {" ".join([str(round(x.item())) for x in ans2])}')
 
     pktdata2 = pktdata2a[Config.nsamp * (detect + Config.sfdpos + 2) + Config.nsamp // 4:]
-    symb_cnt = len(pktdata2) // Config.nsamp # TODO length of symbol is varying
 
-    ndatas = pktdata2[: symb_cnt * Config.nsamp].reshape(symb_cnt, Config.nsamp)
+    ndatas = pktdata2[: Config.symb_cnt * Config.nsamp].reshape(Config.symb_cnt, Config.nsamp)
     ans1, power1 = dechirp(ndatas[detect + Config.sfdpos + 2:], Config.downchirp)
     ans1n = ans1.get()
 
+    '''
     if Config.debug: print('est_to_dec / 8', est_to_dec / (Config.nsamp / Config.n_classes))
-    ans1n += est_to_dec / (Config.nsamp / Config.n_classes)  # ???????????????
-
-    if Config.debug: print('pktdata2', ' '.join([str(round(x.item())) for x in ans1n]))
-
+    ans1n += est_to_dec / (Config.nsamp / Config.n_classes)  # ???????????????''' # TODO !!!
+    assert min(power1) > np.mean(power1) / 2, f'power1 drops: {" ".join([str(round(x.item())) for x in power1])}'
+    print('decoded data', ' '.join([str(round(x.item())) for x in ans1n]))
     angles = []
     for dataY in ndatas[detect + Config.sfdpos + 4:]:
         opts = Config
@@ -217,8 +167,6 @@ def work(pktdata_in):
 
 # read packets from file
 if __name__ == "__main__":
-    test0()
-    sys.exit(0)
     angles = []
     plt.rcParams['font.size'] = 15
     plt.rcParams['lines.markersize'] = 12
