@@ -11,6 +11,7 @@ import cupyx.scipy.fft as fft
 import matplotlib.pyplot as plt
 import numpy as np
 from scipy.signal import chirp
+from scipy import stats
 from tqdm import tqdm
 
 
@@ -206,6 +207,20 @@ def work(pktdata_in):
         for idx in range(len(ans1r)):
             if ans1r[idx] != Config.symb_truth[idx]: print(f'{idx=} {ans1n[idx]=:.3f} {Config.symb_truth[idx]=}', end=' ')
         print()
+
+
+
+    ans1r = [x - int(x) for x in ans1n]
+    ans1u = np.unwrap(ans1r, period=1)
+    slope, intercept, r, p, std_err = stats.linregress(list(range(len(ans1r))), ans1u)
+    ans1new = ans1n - np.array([(slope * i + intercept) - int(slope * i + intercept) for i in range(len(ans1r))])
+    if Config.debug: print(f'fit: {slope} samples')
+
+    #     est_sfo_t = - Config.n_classes * (1 - Config.freq_sig / (Config.freq_sig + re_cfo)) # ???????????????????
+    freq_sig_est = all_cfo_freq / (1 / (1 - slope / Config.n_classes) - 1)
+    print('estimated frequency:', freq_sig_est/1e6, 'mhz')
+
+
 
     '''
     if Config.debug: print('est_to_dec / 8', est_to_dec / (Config.nsamp / Config.n_classes))
