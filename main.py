@@ -5,7 +5,7 @@ import shutil
 import cmath
 import math
 import sys
-
+from sklearn.cluster import KMeans
 import cupy as cp
 import cupyx.scipy.fft as fft
 import matplotlib.pyplot as plt
@@ -29,6 +29,7 @@ class Config:
     fs = 1e6
     n_classes = 2 ** sf
     symb_cnt = 148
+    symb_truth = np.array([110,43,91,78,10,109,39,109,76,103,110,10,90,52,40,80,6,12,118,68,104,79,99,59,120,23,84,64,123,11,108,55,20,48,69,101,25,50,29,40,96,71,115,86,4,7,113,63,125,2,0,51,3,8,16,31,99,57,27,61,104,47,31,31,68,121,108,22,96,62,67,70,113,21,80,89,125,5,116,9,42,92,115,30,55,17,28,24,38,75,84,121,61,123,54,76,110,45,94,127,6,115,25,19,56,127,2,0,6,12,24,48,8,16,58,26,27,55,16,63,92,78,17,88,113,28,120,46,85,90,119,31,59,9,44,120])
     nsamp = round(n_classes * fs / bw)
 
     preamble_len = 8
@@ -134,14 +135,23 @@ def work(pktdata_in):
 
     pktdata2 = pktdata2a[Config.nsamp * (detect + Config.sfdpos + 2) + Config.nsamp // 4:]
 
+    if len(pktdata2) < Config.symb_cnt * Config.nsamp:
+        print(f'short signal: {len(pktdata2)=} {len(pktdata2) / Config.nsamp=} < {Config.nsamp=}')
+        return []
     ndatas = pktdata2[: Config.symb_cnt * Config.nsamp].reshape(Config.symb_cnt, Config.nsamp)
-    ans1, power1 = dechirp(ndatas[detect + Config.sfdpos + 2:], Config.downchirp)
+    ans1, power1 = dechirp(ndatas[detect + Config.sfdpos + 2:], Config.downchirp, 1)
     ans1n = ans1.get()
+    if not min(power1) > np.mean(power1) / 2:
+        print(f'power1 drops: {" ".join([str(round(x.item())) for x in power1])}')
+        return []
+    if ans1n != Config.symb_truth:
+        for idx in range(len(ans1n)):
+            if ans1n[idx] != Config.symb_truth[idx]: print(f'{idx=} {ans1n[idx]=} {Config.symb_truth[idx]=}', end=' ')
+        print()
 
     '''
     if Config.debug: print('est_to_dec / 8', est_to_dec / (Config.nsamp / Config.n_classes))
     ans1n += est_to_dec / (Config.nsamp / Config.n_classes)  # ???????????????''' # TODO !!!
-    assert min(power1) > np.mean(power1) / 2, f'power1 drops: {" ".join([str(round(x.item())) for x in power1])}'
     print('decoded data', ' '.join([str(round(x.item())) for x in ans1n]))
     angles = []
     for dataY in ndatas[detect + Config.sfdpos + 4:]:
@@ -176,14 +186,15 @@ if __name__ == "__main__":
         print(file_path)
         if not file_path.endswith('.bin'): continue
         Config.file_path = file_path
-        thresh = 0.002
         pkt_cnt = 0
         pktdata = []
         fsize = int(os.stat(Config.file_path).st_size / (Config.nsamp * 4 * 2))
         if Config.debug: print(f'reading file: {Config.file_path} SF: {Config.sf} pkts in file: {fsize}')
-        nmaxs = []
+
+        power_eval_len = 5000
+        nmaxs = np.zeros((power_eval_len,))
         with open(Config.file_path, "rb") as f:
-            for i in range(5000):  # while True:
+            for i in range(power_eval_len):  # while True:
                 try:
                     rawdata = np.fromfile(f, dtype=cp.complex64, count=Config.nsamp)
                 except EOFError:
@@ -192,9 +203,12 @@ if __name__ == "__main__":
                 if len(rawdata) < Config.nsamp:
                     if Config.debug: print("file complete", len(rawdata))
                     break
-                nmaxs.append(np.max(np.abs(rawdata)))
-        counts, bins = np.histogram(nmaxs, bins=100)
-        if Config.debug: print(counts, bins)
+                nmaxs[i] = np.max(np.abs(rawdata))
+        kmeans = KMeans(n_clusters=2, random_state=0)
+        kmeans.fit(nmaxs.reshape(-1, 1))
+        thresh = np.mean(kmeans.cluster_centers_)
+        #counts, bins = np.histogram(nmaxs, bins=100)
+        #print(counts, bins, kmeans.cluster_centers_, thresh)
 
         pkt_totcnt = 0
 
