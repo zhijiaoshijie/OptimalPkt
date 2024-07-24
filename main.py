@@ -11,6 +11,8 @@ import numpy as np
 from scipy.signal import chirp
 from sklearn.cluster import KMeans
 
+from tqdm import tqdm
+import sys
 
 class ModulusComputation:
     @staticmethod
@@ -22,25 +24,17 @@ class ModulusComputation:
 
 
 class Config:
-    sf = 7
+    sf = 10
     bw = 125e3
     fs = 1e6
-    sig_freq = 470e6
+    sig_freq = 490e6
     n_classes = 2 ** sf
-    symb_cnt = 148
-    symb_truth = np.array([
-        110, 43, 91, 78, 10, 109, 39, 109, 76, 103, 110, 10, 90, 52, 40, 80, 6, 12, 118, 68, 104, 79, 99, 59, 120, 23,
-        84, 64, 123, 11, 108, 55, 20, 48, 69, 102, 25, 50, 29, 40, 96, 71, 115, 86, 4, 8, 113, 63, 125, 2, 1, 52, 4, 8,
-        16, 32, 100, 58, 28, 62, 105, 48, 32, 32, 69, 122, 109, 23, 97, 63, 68, 71, 114, 22, 81, 90, 126, 6, 117, 10,
-        43, 93, 116, 31, 56, 18, 29, 25, 39, 76, 85, 122, 62, 124, 55, 77, 111, 46, 95, 0, 7, 116, 26, 20, 57, 0, 3, 1,
-        7, 13, 25, 49, 9, 17, 59, 27, 28, 56, 17, 64, 93, 79, 18, 89, 114, 29, 121, 47, 86, 91, 120, 32, 60, 10, 45, 121
-    ])
-
+    base_dir = '/data/djl/data_in_out_July2024/'
     nsamp = round(n_classes * fs / bw)
 
     preamble_len = 8
     code_len = 2
-    fft_upsamp = 128
+    fft_upsamp = 1024
     sfdpos = preamble_len + code_len
     sfdend = sfdpos + 2
     debug = False
@@ -106,7 +100,7 @@ def coarse_work(pktdata_in):
     argmax_val = 0
     fft_n = Config.nsamp * Config.fft_upsamp
     # integer detection
-    for est_time_shift_samples in range(Config.nsamp * 2):
+    for est_time_shift_samples in tqdm(range(Config.nsamp * 2)):
 
         fft_raw = cp.zeros((fft_n,))
         for preamble_idx in range(Config.preamble_len):
@@ -128,7 +122,8 @@ def coarse_work(pktdata_in):
         argmax_est_cfo_samples -= fft_n
     est_cfo_freq = argmax_est_cfo_samples.get() * (Config.fs / fft_n)
     est_to_s = argmax_est_time_shift_samples / Config.fs
-    # print(f'{argmax_est_time_shift_samples=}, {argmax_est_cfo_samples=}, {fft_n=}, {est_cfo_freq=} Hz, {est_to_s=} s)')
+    print(
+        f'coarse work: {argmax_est_time_shift_samples=}, {argmax_est_cfo_samples=}, {fft_n=}, {est_cfo_freq=} Hz, {est_to_s=} s)')
     pktdata2a = add_freq(pktdata_in, - est_cfo_freq)
     pktdata2a = np.roll(pktdata2a, -argmax_est_time_shift_samples)  # !!! TODO est_to_dec
     return est_cfo_freq, pktdata2a
@@ -147,17 +142,15 @@ def work(pkt_totcnt, pktdata_in):
 
     pktdata4 = pktdata3[Config.nsamp * (detect + Config.sfdpos + 2) + Config.nsamp // 4:]
 
-    if len(pktdata4) < Config.symb_cnt * Config.nsamp:
-        print(f'{pkt_totcnt=} short signal: {len(pktdata4)=} {len(pktdata4) / Config.nsamp=} < {Config.symb_cnt=}')
-        return []
-    # ans1n, ndatas = decode_payload(detect, est_to_dec, pktdata4)
+    ans1n, ndatas = decode_payload(detect, est_to_dec, pktdata4, pkt_totcnt)
 
-    # print('decoded data', ' '.join([f'{x:.3f}' for x in ans1n]))
+    print('decoded data', ' '.join([f'{x:.3f}' for x in ans1n]))
+    debug_diff_0 = np.unwrap([x - round(x) for x in ans1n], discont=0.5)
     # sfo correction
     est_cfo_slope = all_cfo_freq / Config.sig_freq * Config.bw * Config.bw / Config.n_classes
 
     sig_time = len(pktdata3) / Config.fs
-    # print(all_cfo_freq, 'Hz', est_cfo_slope, 'Hz/s', sig_time)
+    print(all_cfo_freq, 'Hz', est_cfo_slope, 'Hz/s', sig_time)
     t = np.linspace(0, sig_time, len(pktdata3) + 1)[:-1]
     chirpI1 = chirp(t, f0=0, f1=- est_cfo_slope * sig_time, t1=sig_time, method='linear', phi=90)
     chirpQ1 = chirp(t, f0=0, f1=- est_cfo_slope * sig_time, t1=sig_time, method='linear', phi=0)
@@ -171,14 +164,13 @@ def work(pkt_totcnt, pktdata_in):
     pktdata7 = pktdata6[Config.nsamp * (detect + Config.sfdpos + 2) + Config.nsamp // 4:]
     ans2n, ndatas = decode_payload(detect, est_to_dec, pktdata7, pkt_totcnt)
 
-    # print('decoded data', ' '.join([f'{x:.0f}' for x in ans2n]))
-
-    # ans1new = ans1n - np.array([est_cfo_slope * (i + Config.sfdpos + 2.5) for i in range(len(ans1r))])
-    # print('fixed data  ', " ".join([f'{x:.3f}' for x in ans1new]))
-
-    '''
-    if Config.debug: print('est_to_dec / 8', est_to_dec / (Config.nsamp / Config.n_classes))
-    ans1n += est_to_dec / (Config.nsamp / Config.n_classes)  # ???????????????'''  # TODO !!!
+    print(f'decoded data {len(ans2n)=}', ' '.join([f'{x:.3f}' for x in ans2n]))
+    debug_diff_1 = np.unwrap([x - round(x) for x in ans2n], discont=0.5)
+    plt.scatter(np.arange(len(debug_diff_0)), debug_diff_0, label='0')
+    plt.scatter(np.arange(len(debug_diff_1)), debug_diff_1, label='1')
+    plt.legend()
+    plt.savefig('scatter.jpg')
+    sys.exit(1)
 
     angles = []
     for dataY in ndatas[detect + Config.sfdpos + 4:]:
@@ -203,19 +195,16 @@ def work(pkt_totcnt, pktdata_in):
 
 
 def decode_payload(detect, est_to_dec, pktdata4, pkt_totcnt):
-    ndatas = pktdata4[: Config.symb_cnt * Config.nsamp].reshape(Config.symb_cnt, Config.nsamp)
+    symb_cnt = len(pktdata4) // Config.nsamp
+    ndatas = pktdata4[: symb_cnt * Config.nsamp].reshape(symb_cnt, Config.nsamp)
     ans1, power1 = dechirp(ndatas[detect + Config.sfdpos + 2:], Config.downchirp)
     ans1n = ans1.get()
     ans1n += est_to_dec / 8
     ans1r = [round(x) % Config.n_classes for x in ans1n]
     if not min(power1) > np.mean(power1) / 2:
-        print(f'power1 drops: {" ".join([str(round(x.item())) for x in power1])}')
-    if (ans1r != Config.symb_truth).any():
-        print(f'{pkt_totcnt=}', end=' ')
-        for idx in range(len(ans1r)):
-            if ans1r[idx] != Config.symb_truth[idx]: print(f'{idx=} {ans1n[idx]=:.3f} {Config.symb_truth[idx]=}',
-                                                           end=' ')
-        print()
+        drop_idx = next((idx for idx, num in enumerate(power1) if num < np.mean(power1) / 2), -1)
+        ans1n = ans1n[:drop_idx]
+        print(f'decode: {pkt_totcnt=} power1 drops: {drop_idx=} {len(ans1n)=} {" ".join([str(round(x.item())) for x in power1])}')
     return ans1n, ndatas
 
 
@@ -230,8 +219,9 @@ def test_preamble(est_to_dec, pktdata3):
     ans2, power2 = dechirp(ndatas2a[detect + Config.sfdpos: detect + Config.sfdpos + 2], Config.upchirp, upsamp)
     ans2 = ans2.get()
     ans2 += est_to_dec / 8
-    # print('preamble: ' + " ".join([f'{x:.3f}' for x in ans1]) + 'sfd: ' + " ".join([f'{x:.3f}' for x in ans2]), est_to_dec / 8)
-    # print(power1)
+    print('preamble: ' + " ".join([f'{x:.3f}' for x in ans1]) + 'sfd: ' + " ".join([f'{x:.3f}' for x in ans2]),
+          est_to_dec / 8)
+    print(power1)
     return detect, upsamp
 
 
@@ -256,9 +246,9 @@ def fine_work(pktdata2a):
     sfd_downcode = ansval2.get()
     re_cfo_0 = ModulusComputation.average_modulus((sfd_upcode, sfd_downcode), Config.n_classes)
     est_to_0 = ModulusComputation.average_modulus((sfd_upcode, - sfd_downcode), Config.n_classes)
-    # print(' '.join([f'{x:.3f}' for x in ans1[: Config.preamble_len]]),
-    #      ' '.join([f'{x:.3f}' for x in ans2[Config.sfdpos: Config.sfdpos + 2]]), sfd_upcode, sfd_downcode, re_cfo_0,
-    #      est_to_0, detect)
+    print('fine work', ' '.join([f'{x:.3f}' for x in ans1[: Config.preamble_len]]),'sfd',
+          ' '.join([f'{x:.3f}' for x in ans2[Config.sfdpos: Config.sfdpos + 2]]),
+          f'{sfd_upcode=}, {sfd_downcode=}, {re_cfo_0=}, {est_to_0=}, {detect=}')
     est_to_0 = est_to_0.get().item()
     re_cfo_0 = re_cfo_0.get().item()
     re_cfo_freq = re_cfo_0 * (Config.fs / fft_n)
@@ -276,14 +266,15 @@ if __name__ == "__main__":
     plt.rcParams['lines.markersize'] = 12
     plt.rcParams['font.family'] = 'serif'
     plt.figure(figsize=(8, 6))
-    for file_path in os.listdir('.'):
-        print(file_path)
+
+    for file_path in os.listdir(Config.base_dir):
+
         if not file_path.endswith('.bin'): continue
-        Config.file_path = file_path
+        Config.file_path = os.path.join(Config.base_dir, file_path)
         pkt_cnt = 0
         pktdata = []
         fsize = int(os.stat(Config.file_path).st_size / (Config.nsamp * 4 * 2))
-        if Config.debug: print(f'reading file: {Config.file_path} SF: {Config.sf} pkts in file: {fsize}')
+        print(f'reading file: {Config.file_path} SF: {Config.sf} pkts in file: {fsize}')
 
         power_eval_len = 5000
         nmaxs = np.zeros((power_eval_len,))
@@ -321,11 +312,15 @@ if __name__ == "__main__":
 
                 if nmax < thresh:
                     if len(pktdata) > 14 and pkt_cnt > 20:
+                        if pkt_totcnt < 20:
+                            pktdata = []
+                            pkt_totcnt += 1
+                            continue
                         if Config.debug: print(f"start parsing pkt {pkt_totcnt} len: {len(pktdata)}")
                         angles.extend(work(pkt_totcnt, cp.concatenate(pktdata)))
                         color = [colorsys.hls_to_rgb((hue + 0.5) / 3, 0.4, 1) for hue in [0, 1, 2]]
 
-                        name = 'angles'
+                        name = 'angles_sf10'
                         # Draw Figs
                         data = angles
                         count, bins_count = np.histogram(data, range=(-np.pi, np.pi), bins=100)
