@@ -24,12 +24,19 @@ class ModulusComputation:
 
 
 class Config:
-    sf = 10
+    sf = 7
     bw = 125e3
     fs = 1e6
     sig_freq = 490e6
     n_classes = 2 ** sf
-    base_dir = '/data/djl/data_in_out_July2024/'
+    base_dir = '/data/djl/LoRaDatasetNew/LoRaDataNew/'
+
+    file_paths = []
+    for file_name in os.listdir(base_dir):
+        if file_name.startswith('sf7') and file_name.endswith('.bin'):
+            file_paths.append(os.path.join(base_dir, file_name))
+
+
     nsamp = round(n_classes * fs / bw)
 
     preamble_len = 8
@@ -100,7 +107,7 @@ def coarse_work(pktdata_in):
     argmax_val = 0
     fft_n = Config.nsamp * Config.fft_upsamp
     # integer detection
-    for est_time_shift_samples in tqdm(range(Config.nsamp * 2)):
+    for est_time_shift_samples in tqdm(range(Config.nsamp * 2), disable=not Config.debug):
 
         fft_raw = cp.zeros((fft_n,))
         for preamble_idx in range(Config.preamble_len):
@@ -122,8 +129,7 @@ def coarse_work(pktdata_in):
         argmax_est_cfo_samples -= fft_n
     est_cfo_freq = argmax_est_cfo_samples.get() * (Config.fs / fft_n)
     est_to_s = argmax_est_time_shift_samples / Config.fs
-    print(
-        f'coarse work: {argmax_est_time_shift_samples=}, {argmax_est_cfo_samples=}, {fft_n=}, {est_cfo_freq=} Hz, {est_to_s=} s)')
+    if opts.debug: print(f'coarse work: {argmax_est_time_shift_samples=}, {argmax_est_cfo_samples=}, {fft_n=}, {est_cfo_freq=} Hz, {est_to_s=} s)')
     pktdata2a = add_freq(pktdata_in, - est_cfo_freq)
     pktdata2a = np.roll(pktdata2a, -argmax_est_time_shift_samples)  # !!! TODO est_to_dec
     return est_cfo_freq, pktdata2a
@@ -135,7 +141,7 @@ def work(pkt_totcnt, pktdata_in):
     # second detection
     # ====
     est_to_dec, est_to_int, pktdata3, re_cfo_0, re_cfo_freq = fine_work(pktdata2a)
-    # print(f"{re_cfo_0=}, {est_to_int=}, {est_to_dec=}")
+    if opts.debug: print(f"coarse work {re_cfo_0=}, {est_to_int=}, {est_to_dec=}")
     all_cfo_freq = re_cfo_freq + est_cfo_freq
 
     detect, upsamp = test_preamble(est_to_dec, pktdata3)
@@ -144,13 +150,13 @@ def work(pkt_totcnt, pktdata_in):
 
     ans1n, ndatas = decode_payload(detect, est_to_dec, pktdata4, pkt_totcnt)
 
-    print('decoded data', ' '.join([f'{x:.3f}' for x in ans1n]))
+    if opts.debug: print('decoded data', ' '.join([f'{x:.3f}' for x in ans1n]))
     debug_diff_0 = np.unwrap([x - round(x) for x in ans1n], discont=0.5)
     # sfo correction
     est_cfo_slope = all_cfo_freq / Config.sig_freq * Config.bw * Config.bw / Config.n_classes
 
     sig_time = len(pktdata3) / Config.fs
-    print(all_cfo_freq, 'Hz', est_cfo_slope, 'Hz/s', sig_time)
+    if opts.debug: print(all_cfo_freq, 'Hz', est_cfo_slope, 'Hz/s', sig_time)
     t = np.linspace(0, sig_time, len(pktdata3) + 1)[:-1]
     chirpI1 = chirp(t, f0=0, f1=- est_cfo_slope * sig_time, t1=sig_time, method='linear', phi=90)
     chirpQ1 = chirp(t, f0=0, f1=- est_cfo_slope * sig_time, t1=sig_time, method='linear', phi=0)
@@ -164,33 +170,32 @@ def work(pkt_totcnt, pktdata_in):
     pktdata7 = pktdata6[Config.nsamp * (detect + Config.sfdpos + 2) + Config.nsamp // 4:]
     ans2n, ndatas = decode_payload(detect, est_to_dec, pktdata7, pkt_totcnt)
 
-    print(f'decoded data {len(ans2n)=}', ' '.join([f'{x:.3f}' for x in ans2n]))
-    debug_diff_1 = np.unwrap([x - round(x) for x in ans2n], discont=0.5)
-    plt.scatter(np.arange(len(debug_diff_0)), debug_diff_0, label='0')
-    plt.scatter(np.arange(len(debug_diff_1)), debug_diff_1, label='1')
-    plt.legend()
-    plt.savefig('scatter.jpg')
-    sys.exit(1)
+    if opts.debug: print(f'decoded data {len(ans2n)=}', ' '.join([f'{x:.3f}' for x in ans2n]))
 
+    payload_data = ndatas[detect + Config.sfdpos + 4:]
+    angles = calc_angles(payload_data)
+    if opts.debug:
+        plt.scatter(range(len(angles)), angles, s=0.5)
+        plt.savefig(f'imgs/temp_sf7_{pkt_totcnt}.jpg')
+        plt.clf()
+        for i in range(len(ans2n)):
+            print(f'{ans2n[i]:.3f} {angles[i]:.3f}')
+
+    return angles
+
+
+def calc_angles(payload_data):
     angles = []
-    for dataY in ndatas[detect + Config.sfdpos + 4:]:
+    for dataY in payload_data:
         opts = Config
         dataX = cp.array(dataY)
-        data1 = cp.abs(cp.matmul(Config.dataE1, dataX))
-        data2 = cp.abs(cp.matmul(Config.dataE2, dataX))
-        vals = data1 + data2
+        data1 = cp.matmul(Config.dataE1, dataX)
+        data2 = cp.matmul(Config.dataE2, dataX)
+        vals = cp.abs(data1) ** 2 + cp.abs(data2) ** 2
         est = cp.argmax(vals)
         if est > 0:
-            time_shift = int(est / opts.n_classes * opts.nsamp)
-            time_split = opts.nsamp - time_shift
-            data1 = dataY[:time_split] * opts.downchirp[time_shift:]
-            data2 = dataY[time_split:] * opts.downchirp[:time_shift]
-            avg1 = cmath.phase(np.sum(data1))
-            avg2 = cmath.phase(np.sum(data2))
-            diff_avg = avg2 - avg1
-            if diff_avg < -math.pi:
-                diff_avg += math.pi * 2
-            angles.append(diff_avg)
+            diff_avg0 = cmath.phase(data2[est] / data1[est])
+            angles.append(diff_avg0)
     return angles
 
 
@@ -204,7 +209,7 @@ def decode_payload(detect, est_to_dec, pktdata4, pkt_totcnt):
     if not min(power1) > np.mean(power1) / 2:
         drop_idx = next((idx for idx, num in enumerate(power1) if num < np.mean(power1) / 2), -1)
         ans1n = ans1n[:drop_idx]
-        print(f'decode: {pkt_totcnt=} power1 drops: {drop_idx=} {len(ans1n)=} {" ".join([str(round(x.item())) for x in power1])}')
+        if opts.debug: print(f'decode: {pkt_totcnt=} power1 drops: {drop_idx=} {len(ans1n)=} {" ".join([str(round(x.item())) for x in power1])}')
     return ans1n, ndatas
 
 
@@ -219,9 +224,10 @@ def test_preamble(est_to_dec, pktdata3):
     ans2, power2 = dechirp(ndatas2a[detect + Config.sfdpos: detect + Config.sfdpos + 2], Config.upchirp, upsamp)
     ans2 = ans2.get()
     ans2 += est_to_dec / 8
-    print('preamble: ' + " ".join([f'{x:.3f}' for x in ans1]) + 'sfd: ' + " ".join([f'{x:.3f}' for x in ans2]),
+    if opts.debug:
+        print('preamble: ' + " ".join([f'{x:.3f}' for x in ans1]) + 'sfd: ' + " ".join([f'{x:.3f}' for x in ans2]),
           est_to_dec / 8)
-    print(power1)
+        print('power', power1)
     return detect, upsamp
 
 
@@ -246,7 +252,8 @@ def fine_work(pktdata2a):
     sfd_downcode = ansval2.get()
     re_cfo_0 = ModulusComputation.average_modulus((sfd_upcode, sfd_downcode), Config.n_classes)
     est_to_0 = ModulusComputation.average_modulus((sfd_upcode, - sfd_downcode), Config.n_classes)
-    print('fine work', ' '.join([f'{x:.3f}' for x in ans1[: Config.preamble_len]]),'sfd',
+    if opts.debug:
+        print('fine work', ' '.join([f'{x:.3f}' for x in ans1[: Config.preamble_len]]),'sfd',
           ' '.join([f'{x:.3f}' for x in ans2[Config.sfdpos: Config.sfdpos + 2]]),
           f'{sfd_upcode=}, {sfd_downcode=}, {re_cfo_0=}, {est_to_0=}, {detect=}')
     est_to_0 = est_to_0.get().item()
@@ -267,18 +274,16 @@ if __name__ == "__main__":
     plt.rcParams['font.family'] = 'serif'
     plt.figure(figsize=(8, 6))
 
-    for file_path in os.listdir(Config.base_dir):
+    for file_path in Config.file_paths:
 
-        if not file_path.endswith('.bin'): continue
-        Config.file_path = os.path.join(Config.base_dir, file_path)
         pkt_cnt = 0
         pktdata = []
-        fsize = int(os.stat(Config.file_path).st_size / (Config.nsamp * 4 * 2))
-        print(f'reading file: {Config.file_path} SF: {Config.sf} pkts in file: {fsize}')
+        fsize = int(os.stat(file_path).st_size / (Config.nsamp * 4 * 2))
+        print(f'reading file: {file_path} SF: {Config.sf} pkts in file: {fsize}')
 
         power_eval_len = 5000
         nmaxs = np.zeros((power_eval_len,))
-        with open(Config.file_path, "rb") as f:
+        with open(file_path, "rb") as f:
             for i in range(power_eval_len):  # while True:
                 try:
                     rawdata = np.fromfile(f, dtype=cp.complex64, count=Config.nsamp)
@@ -297,7 +302,7 @@ if __name__ == "__main__":
 
         pkt_totcnt = 0
 
-        with open(Config.file_path, "rb") as f:
+        with open(file_path, "rb") as f:
             while True:
                 try:
                     rawdata = cp.fromfile(f, dtype=cp.complex64, count=Config.nsamp)
@@ -320,7 +325,7 @@ if __name__ == "__main__":
                         angles.extend(work(pkt_totcnt, cp.concatenate(pktdata)))
                         color = [colorsys.hls_to_rgb((hue + 0.5) / 3, 0.4, 1) for hue in [0, 1, 2]]
 
-                        name = 'angles_sf10'
+                        name = 'dn_angles_sf7'
                         # Draw Figs
                         data = angles
                         count, bins_count = np.histogram(data, range=(-np.pi, np.pi), bins=100)
