@@ -11,6 +11,7 @@ import numpy as np
 from scipy.signal import chirp
 from sklearn.cluster import KMeans
 
+import sys
 
 class ModulusComputation:
     @staticmethod
@@ -40,7 +41,7 @@ class Config:
 
     preamble_len = 8
     code_len = 2
-    fft_upsamp = 128
+    fft_upsamp = 4096
     sfdpos = preamble_len + code_len
     sfdend = sfdpos + 2
     debug = False
@@ -150,8 +151,23 @@ def work(pkt_totcnt, pktdata_in):
     if len(pktdata4) < Config.symb_cnt * Config.nsamp:
         print(f'{pkt_totcnt=} short signal: {len(pktdata4)=} {len(pktdata4) / Config.nsamp=} < {Config.symb_cnt=}')
         return []
-    # ans1n, ndatas = decode_payload(detect, est_to_dec, pktdata4)
+    ans1n, ndatas = decode_payload(detect, est_to_dec, pktdata4, pkt_totcnt)
+    angles1= []
 
+    for dataY in ndatas[detect + Config.sfdpos + 4:]:
+        opts = Config
+        dataX = cp.array(dataY)
+        data1 = cp.matmul(Config.dataE1, dataX)
+        data2 = cp.matmul(Config.dataE2, dataX)
+        vals = cp.abs(data1) ** 2 + cp.abs(data2) ** 2
+        est = cp.argmax(vals)
+        if est > 0:
+            diff_avg0 = cmath.phase(data2[est] / data1[est])
+            angles1.append(diff_avg0)
+
+
+    angles0 = []
+    angles = []
     # print('decoded data', ' '.join([f'{x:.3f}' for x in ans1n]))
     # sfo correction
     est_cfo_slope = all_cfo_freq / Config.sig_freq * Config.bw * Config.bw / Config.n_classes
@@ -179,27 +195,47 @@ def work(pkt_totcnt, pktdata_in):
     '''
     if Config.debug: print('est_to_dec / 8', est_to_dec / (Config.nsamp / Config.n_classes))
     ans1n += est_to_dec / (Config.nsamp / Config.n_classes)  # ???????????????'''  # TODO !!!
-
     angles = []
+    avg1s = []
+    avg2s = []
+    ans2d = [x - int(x) for x in ans2n]
+    ans1d = [x - int(x) for x in ans1n]
+
+
+    ans2r = [round(x) % Config.n_classes for x in ans2n]
+    if (ans2r != Config.symb_truth).any():
+        return all_cfo_freq, angles, avg1s, avg2s, []
+
+
+    angles0 = []
     for dataY in ndatas[detect + Config.sfdpos + 4:]:
         opts = Config
         dataX = cp.array(dataY)
-        data1 = cp.abs(cp.matmul(Config.dataE1, dataX))
-        data2 = cp.abs(cp.matmul(Config.dataE2, dataX))
-        vals = data1 + data2
+        data1 = cp.matmul(Config.dataE1, dataX)
+        data2 = cp.matmul(Config.dataE2, dataX)
+        vals = cp.abs(data1) ** 2 + cp.abs(data2) ** 2
         est = cp.argmax(vals)
         if est > 0:
+            diff_avg0 = cmath.phase(data2[est] / data1[est])
+
             time_shift = int(est / opts.n_classes * opts.nsamp)
             time_split = opts.nsamp - time_shift
             data1 = dataY[:time_split] * opts.downchirp[time_shift:]
             data2 = dataY[time_split:] * opts.downchirp[:time_shift]
             avg1 = cmath.phase(np.sum(data1))
             avg2 = cmath.phase(np.sum(data2))
-            diff_avg = avg2 - avg1
-            if diff_avg < -math.pi:
-                diff_avg += math.pi * 2
+            avg1s.append(avg1)
+            avg2s.append(avg2)
+            diff_avg = cmath.phase(np.sum(data2) / np.sum(data1))
+
             angles.append(diff_avg)
-    return angles
+            angles0.append(diff_avg0)
+    #plt.plot(angles1, label='angles_w/_sfo')
+    #plt.plot(angles0, '--', label='angles_w/o_sfo')
+    #plt.legend()
+    #plt.savefig(f'imgs/temp{pkt_totcnt}.jpg')
+    #plt.clf()
+    return all_cfo_freq, angles1, angles0, avg1s, avg2s, ans2d, ans1d
 
 
 def decode_payload(detect, est_to_dec, pktdata4, pkt_totcnt):
@@ -207,15 +243,10 @@ def decode_payload(detect, est_to_dec, pktdata4, pkt_totcnt):
     ans1, power1 = dechirp(ndatas[detect + Config.sfdpos + 2:], Config.downchirp)
     ans1n = ans1.get()
     ans1n += est_to_dec / 8
-    ans1r = [round(x) % Config.n_classes for x in ans1n]
+
     if not min(power1) > np.mean(power1) / 2:
         print(f'power1 drops: {" ".join([str(round(x.item())) for x in power1])}')
-    if (ans1r != Config.symb_truth).any():
-        print(f'{pkt_totcnt=}', end=' ')
-        for idx in range(len(ans1r)):
-            if ans1r[idx] != Config.symb_truth[idx]: print(f'{idx=} {ans1n[idx]=:.3f} {Config.symb_truth[idx]=}',
-                                                           end=' ')
-        print()
+
     return ans1n, ndatas
 
 
@@ -271,7 +302,15 @@ def fine_work(pktdata2a):
 
 # read packets from file
 if __name__ == "__main__":
-    angles = []
+    angless = []
+    angles1s = []
+    angles0s = []
+    cfofreqs = []
+    avg1ss = []
+    avg2ss = []
+    ans2ds = []
+    ans1ds = []
+
     plt.rcParams['font.size'] = 15
     plt.rcParams['lines.markersize'] = 12
     plt.rcParams['font.family'] = 'serif'
@@ -322,17 +361,23 @@ if __name__ == "__main__":
                 if nmax < thresh:
                     if len(pktdata) > 14 and pkt_cnt > 20:
                         if Config.debug: print(f"start parsing pkt {pkt_totcnt} len: {len(pktdata)}")
-                        angles.extend(work(pkt_totcnt, cp.concatenate(pktdata)))
+                        all_cfo_freq, angles1, angles0, avg1s, avg2s, ans2d, ans1d = work(pkt_totcnt, cp.concatenate(pktdata))
+                        angless.extend(angles0)
+                        angles1s.append(angles1[0])
+                        angles0s.append(angles0[0])
+                        cfofreqs.append(all_cfo_freq)
+                        avg1ss.extend(avg1s)
+                        avg2ss.extend(avg2s)
+                        ans2ds.extend(ans2d)
+                        ans1ds.extend(ans1d)
                         color = [colorsys.hls_to_rgb((hue + 0.5) / 3, 0.4, 1) for hue in [0, 1, 2]]
 
                         name = 'angles'
                         # Draw Figs
-                        data = angles
+                        data = angless
                         count, bins_count = np.histogram(data, range=(-np.pi, np.pi), bins=100)
                         pdf = count / sum(count)
-
                         cdf = np.cumsum(pdf)
-
                         plt.plot(bins_count[1:], cdf, label=name)
                         plt.xlim(-np.pi, np.pi)
                         plt.xlabel('Angle (rad)')
@@ -341,8 +386,70 @@ if __name__ == "__main__":
                         plt.savefig(name + '.pdf')
                         plt.savefig(name + '.png')
                         with open(name + '.pkl', 'wb') as g:
-                            pickle.dump(angles, g)
+                            pickle.dump(angless, g)
                         plt.clf()
+
+                        data = angles1s
+                        count, bins_count = np.histogram(data, range=(-np.pi, np.pi), bins=100)
+                        pdf = count / sum(count)
+                        cdf = np.cumsum(pdf)
+                        plt.plot(bins_count[1:], cdf, label=name)
+                        plt.xlim(-np.pi, np.pi)
+                        plt.xlabel('Angle (rad)')
+                        plt.ylabel('Frequency')
+                        plt.legend()
+                        plt.savefig(name + '1s.pdf')
+                        plt.savefig(name + '1s.png')
+                        with open(name + '1s.pkl', 'wb') as g:
+                            pickle.dump(angles1s, g)
+                        plt.clf()
+
+                        data = angles0s
+                        count, bins_count = np.histogram(data, range=(-np.pi, np.pi), bins=100)
+                        pdf = count / sum(count)
+                        cdf = np.cumsum(pdf)
+                        plt.plot(bins_count[1:], cdf, label=name)
+                        plt.xlim(-np.pi, np.pi)
+                        plt.xlabel('Angle (rad)')
+                        plt.ylabel('Frequency')
+                        plt.legend()
+                        plt.savefig(name + '0s.pdf')
+                        plt.savefig(name + '0s.png')
+                        with open(name + '0s.pkl', 'wb') as g:
+                            pickle.dump(angles0s, g)
+                        plt.clf()
+
+                        plt.scatter(range(len(cfofreqs)), cfofreqs, s=0.5)
+                        plt.savefig(name + 'cfofreqs.png')
+                        with open(name + 'cfofreqs.pkl', 'wb') as g:
+                            pickle.dump(cfofreqs, g)
+                        plt.clf()
+
+                        plt.scatter(range(len(avg1ss[-2000:])), avg1ss[-2000:], s=0.1)
+                        plt.savefig(name + 'avg1ss.png')
+                        with open(name + 'avg1ss.pkl', 'wb') as g:
+                            pickle.dump(avg1ss, g)
+                        plt.clf()
+
+
+                        plt.scatter(range(len(avg2ss[-2000:])), avg2ss[-2000:], s=0.1)
+                        plt.savefig(name + 'avg2ss.png')
+                        with open(name + 'avg2ss.pkl', 'wb') as g:
+                            pickle.dump(avg2ss, g)
+                        plt.clf()
+
+                        plt.scatter(range(len(ans2ds)), ans2ds, s=0.1)
+                        plt.savefig(name + 'ans2ds.png')
+                        with open(name + 'ans2ds.pkl', 'wb') as g:
+                            pickle.dump(ans2ds, g)
+                        plt.clf()
+
+                        plt.scatter(range(len(ans1ds)), ans1ds, s=0.1)
+                        plt.savefig(name + 'ans1ds.png')
+                        with open(name + 'ans1ds.pkl', 'wb') as g:
+                            pickle.dump(ans1ds, g)
+                        plt.clf()
+
 
                         pkt_totcnt += 1
                     pkt_cnt += 1
