@@ -16,13 +16,17 @@ import sys
 
 import logging
 
-# Configure the logging system
-logging.basicConfig(
-    level=logging.INFO,  # Set the minimum level of log messages to capture
-    # format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'  # Define the log message format
-    format = '%(levelname)s - %(message)s'  # Define the log message format
-)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('my_logger')
+logger.setLevel(logging.INFO)  # Set the logger level to debug
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)  # Set the console handler level
+file_handler = logging.FileHandler('my_log_file.log')
+file_handler.setLevel(logging.INFO)  # Set the file handler level
+formatter = logging.Formatter('%(message)s')
+console_handler.setFormatter(formatter)
+file_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
+logger.addHandler(file_handler)
 
 
 class ModulusComputation:
@@ -165,15 +169,16 @@ def coarse_work(pktdata_in):
     est_to_s = argmax_est_time_shift_samples / Config.fs
     logger.info(
         f'coarse work: {argmax_est_time_shift_samples=}, {argmax_est_cfo_samples=}, {fft_n=}, {est_cfo_freq=} Hz, {est_to_s=} s)')
-    pktdata2a = add_freq(pktdata_in, - est_cfo_freq)
-    pktdata2a = np.roll(pktdata2a, -argmax_est_time_shift_samples)  # !!! TODO est_to_dec
-    return est_cfo_freq, pktdata2a
+    return est_cfo_freq, argmax_est_time_shift_samples
 
 
 def work(pkt_totcnt, pktdata_in):
     fft_n = Config.nsamp * Config.fft_upsamp
-    if False:
-        est_cfo_freq, pktdata2a = coarse_work(pktdata_in)
+    if True:
+        est_cfo_freq, argmax_est_time_shift_samples = coarse_work(pktdata_in)
+        pktdata2a = add_freq(pktdata_in, - est_cfo_freq)
+        pktdata2a = np.roll(pktdata2a, -argmax_est_time_shift_samples)  # !!! TODO est_to_dec
+
         # second detection
         # ====
         est_to_dec, est_to_int, pktdata3, re_cfo_0, re_cfo_freq, detect = fine_work(pktdata2a)
@@ -189,13 +194,14 @@ def work(pkt_totcnt, pktdata_in):
         # est_to_dec = 0.017822248505544945
         # detect = 0
         with open("temp.pkl", "wb") as f:
-            pickle.dump((est_to_dec, est_to_int, pktdata3, re_cfo_0, re_cfo_freq, detect, pktdata2a), f)
+            pickle.dump((est_to_dec, est_to_int, pktdata3, re_cfo_0, re_cfo_freq, detect, est_cfo_freq, argmax_est_time_shift_samples, pktdata2a), f)
     with open("temp.pkl", "rb") as f:
-        est_to_dec, est_to_int, pktdata3, re_cfo_0, re_cfo_freq, detect, pktdata2a = pickle.load(f)
+        est_to_dec, est_to_int, pktdata3, re_cfo_0, re_cfo_freq, detect, est_cfo_freq, argmax_est_time_shift_samples, pktdata2a = pickle.load(f)
 
-    logger.info(f"fine work old {re_cfo_0=}, {est_to_int=}, {est_to_dec=} {detect=}")
-    pktdata2anew = pktdata2a[detect * Config.nsamp: ]
-    fine_work_new(pktdata2anew)
+    logger.info(f"fine work old {est_cfo_freq=}, {argmax_est_time_shift_samples=}, {re_cfo_0=}, {est_to_int=}, {est_to_dec=} {detect=}")
+    fine_work_new(pktdata_in)
+
+    # if Config.breakflag: sys.exit(0)
     all_cfo_freq = re_cfo_freq + est_cfo_freq
 
     detect, upsamp = test_preamble(est_to_dec, pktdata3)
@@ -314,32 +320,34 @@ def fine_work(pktdata2a):
 
 def fine_work_new(pktdata2a):
     pktdata2a = cp.array(pktdata2a)
-    nfreq = 257
-    cfofreq_range = np.linspace(-Config.bw / 2, Config.bw / 2, nfreq)
+    nfreq = 256 + 1
+    cfofreq_range = np.linspace(-Config.bw / 4, Config.bw / 4, nfreq)
     time_upsamp = 4
     # detect_array_up = cp.zeros((nfreq, Config.nsamp * Config.preamble_len * time_upsamp), dtype=cp.float64)
     # detect_array_down = cp.zeros((nfreq, Config.nsamp * 2 * time_upsamp), dtype=cp.float64)
 
     detect_array_up = [[] for cfofreq in cfofreq_range]
     for freq_idx, cfofreq in enumerate(cfofreq_range):
-        est_cfo_slope = cfofreq / Config.sig_freq * Config.bw * Config.bw / Config.n_classes
+        est_cfo_percentile = cfofreq / Config.sig_freq
         t0 = 0
         for tid in range(Config.preamble_len):
-            tsig = Config.nsamp / Config.fs * (1 + est_cfo_slope)
+            tsig = Config.nsamp / Config.fs * (1 - est_cfo_percentile)
             t = np.linspace(t0, t0 + tsig, Config.nsamp * time_upsamp + 1)[:-1]
             fslope = Config.bw / tsig
             f0 = - t0 * fslope
             chirpI1 = chirp(t, f0=-Config.bw / 2 - f0 + cfofreq, f1=Config.bw / 2 + cfofreq, t1=tsig, method='linear', phi=90)
             chirpQ1 = chirp(t, f0=-Config.bw / 2 - f0 + cfofreq, f1=Config.bw / 2 + cfofreq, t1=tsig, method='linear', phi=0)
-            upchirp = cp.array(chirpI1 + 1j * chirpQ1)
+            upchirp = cp.conj(cp.array(chirpI1 + 1j * chirpQ1))
             detect_array_up[freq_idx].append(upchirp)
             t0 += tsig
-    detect_array_up = [np.concatenate(x, axis=0) for x in detect_array_up]
+    detect_array_up = [cp.concatenate(x, axis=0) for x in detect_array_up]
+    # logger.info(str([len(x) for x in detect_array_up]))
+    # logger.info(f'{cfofreq=} {est_cfo_percentile=}')
     detect_array_up = [[cp.array(x[k::time_upsamp]) for k in range(time_upsamp)] for x in detect_array_up]
 
-    time_error_range = range(-5, 6)
+    time_error_range = range(Config.nsamp)
     evals = cp.zeros((len(time_error_range), time_upsamp, len(cfofreq_range)), dtype=float)
-    logger.info(f'{len(pktdata2a)=}')
+    # logger.info(f'{len(pktdata2a)=}')
     for time_error_idx, time_error in enumerate(time_error_range):
         for small_time_error in range(time_upsamp):
             for freq_idx in range(len(cfofreq_range)):
@@ -354,7 +362,7 @@ def fine_work_new(pktdata2a):
     time_error = time_error_range[max_evals[0]] + max_evals[1] / time_upsamp
     cfo_freq_est = cfofreq_range[max_evals[2]]
 
-    logger.info(f'{max_evals=} {time_error=} samples, {cfo_freq_est=} Hz')
+    logger.info(f'{max_evals=} {time_error=} samples, {cfo_freq_est=} Hz {cp.max(evals)=} \n\n')
 
 # read packets from file
 if __name__ == "__main__":
