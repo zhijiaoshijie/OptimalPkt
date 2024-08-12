@@ -44,6 +44,7 @@ class Config:
     fs = 1e6
     sig_freq = 470e6
     n_classes = 2 ** sf
+    tsig = 2 ** sf / bw * fs # in samples
     base_dir = '/data/djl/NeLoRa/OptimalPkt/'
 
     file_paths = []
@@ -52,9 +53,12 @@ class Config:
             file_paths.append(os.path.join(base_dir, file_name))
 
     nsamp = round(n_classes * fs / bw)
+    nfreq = 256 + 1
+    time_upsamp = 4
 
     preamble_len = 8
     code_len = 2
+    codes = [50, 101]  # TODO set codes
     fft_upsamp = 1024
     sfdpos = preamble_len + code_len
     sfdend = sfdpos + 2
@@ -174,7 +178,7 @@ def coarse_work(pktdata_in):
 
 def work(pkt_totcnt, pktdata_in):
     fft_n = Config.nsamp * Config.fft_upsamp
-    if False:# !!! TODO  False
+    if False:  # !!! TODO  False
         est_cfo_freq, argmax_est_time_shift_samples = coarse_work(pktdata_in)
         pktdata2a = add_freq(pktdata_in, - est_cfo_freq)
         pktdata2a = np.roll(pktdata2a, -argmax_est_time_shift_samples)
@@ -194,11 +198,14 @@ def work(pkt_totcnt, pktdata_in):
         # est_to_dec = 0.017822248505544945
         # detect = 0
         with open("temp.pkl", "wb") as f:
-            pickle.dump((est_to_dec, est_to_int, pktdata3, re_cfo_0, re_cfo_freq, detect, est_cfo_freq, argmax_est_time_shift_samples, pktdata2a), f)
+            pickle.dump((est_to_dec, est_to_int, pktdata3, re_cfo_0, re_cfo_freq, detect, est_cfo_freq,
+                         argmax_est_time_shift_samples, pktdata2a), f)
     with open("temp.pkl", "rb") as f:
-        est_to_dec, est_to_int, pktdata3, re_cfo_0, re_cfo_freq, detect, est_cfo_freq, argmax_est_time_shift_samples, pktdata2a = pickle.load(f)
+        est_to_dec, est_to_int, pktdata3, re_cfo_0, re_cfo_freq, detect, est_cfo_freq, argmax_est_time_shift_samples, pktdata2a = pickle.load(
+            f)
 
-    logger.info(f"fine work old {est_cfo_freq=}, {argmax_est_time_shift_samples=}, {re_cfo_0=}, {est_to_int=}, {est_to_dec=} {detect=}")
+    logger.info(
+        f"fine work old {est_cfo_freq=}, {argmax_est_time_shift_samples=}, {re_cfo_0=}, {est_to_int=}, {est_to_dec=} {detect=}")
     # fine_work_new(pktdata_in)
 
     # if Config.breakflag: sys.exit(0)
@@ -321,73 +328,91 @@ def fine_work(pktdata2a):
     pktdata3 = np.roll(pktdata3, -est_to_int)
     return est_to_dec, est_to_int, pktdata3, re_cfo_0, re_cfo_freq, detect
 
-def fine_work_new(pktdata2a): # TODO working
+
+def gen_upchirp(t0, f0, t1, f1):
+    t = np.arange(np.ceil(t0), np.ceil(t1))
+    fslope = (f1 - f0) / (t1 - t0)
+    chirpI1 = chirp(t, f0=f0 - t0 * fslope, f1=f1, t1=t1, method='linear', phi=90)
+    chirpQ1 = chirp(t, f0=f0 - t0 * fslope, f1=f1, t1=t1, method='linear', phi=0)
+    upchirp = cp.array(chirpI1 + 1j * chirpQ1)
+    return upchirp
+
+
+
+def fine_work_new(pktdata2a):  # TODO working
     est_cfo_freq = -26623.72589111328
     argmax_est_time_shift_samples = 534
 
     pktdata2a = cp.array(pktdata2a)
-    nfreq = 256 + 1
-    cfofreq_range = np.linspace(-Config.bw / 4, Config.bw / 4, nfreq)
-    time_upsamp = 4
-    # detect_array_up = cp.zeros((nfreq, Config.nsamp * Config.preamble_len * time_upsamp), dtype=cp.float64)
-    # detect_array_down = cp.zeros((nfreq, Config.nsamp * 2 * time_upsamp), dtype=cp.float64)
+    cfofreq_range = np.linspace(-Config.bw / 4, Config.bw / 4, Config.nfreq)
+    # detect_array_up = cp.zeros((Config.nfreq, Config.nsamp * Config.preamble_len * Config.time_upsamp), dtype=cp.float64)
+    # detect_array_down = cp.zeros((Config.nfreq, Config.nsamp * 2 * Config.time_upsamp), dtype=cp.float64)
 
     est_cfo_percentile = est_cfo_freq / Config.sig_freq
     tsig = Config.nsamp / Config.fs * (1 - est_cfo_percentile)
-    t0 = 0
+    tstart_sig = 0
     dd = []
-    for tid in range(Config.preamble_len):
-        t = np.linspace(t0, t0 + tsig, Config.nsamp * time_upsamp + 1)[:-1]
-        fslope = Config.bw / tsig
-        f0 = - t0 * fslope
-        chirpI1 = chirp(t, f0=-Config.bw / 2 - f0 + est_cfo_freq, f1=Config.bw / 2 + est_cfo_freq, t1=t0 + tsig, method='linear', phi=90)
-        chirpQ1 = chirp(t, f0=-Config.bw / 2 - f0 + est_cfo_freq, f1=Config.bw / 2 + est_cfo_freq, t1=t0 + tsig, method='linear', phi=0)
-        upchirp = cp.conj(cp.array(chirpI1 + 1j * chirpQ1))
-        dd.append(upchirp)
-        t0 += tsig
+    fslope = Config.bw / tsig
 
-
-
-
-
-    detect_array_up = [[] for cfofreq in cfofreq_range]
+    tstart_range = np.linspace(-1, 0, Config.time_upsamp + 1)[:-1]
+    detect_array_up = [[[] for _ in cfofreq_range] for _ in tstart_range]
     for freq_idx, cfofreq in enumerate(cfofreq_range):
         est_cfo_percentile = cfofreq / Config.sig_freq
-        t0 = 0
-        for tid in range(Config.preamble_len):
-            tsig = Config.nsamp / Config.fs * (1 - est_cfo_percentile)
-            t = np.linspace(t0, t0 + tsig, Config.nsamp * time_upsamp + 1)[:-1]
-            fslope = Config.bw / tsig
-            f0 = - t0 * fslope
-            chirpI1 = chirp(t, f0=-Config.bw / 2 - f0 + cfofreq, f1=Config.bw / 2 + cfofreq, t1=t0 + tsig, method='linear', phi=90)
-            chirpQ1 = chirp(t, f0=-Config.bw / 2 - f0 + cfofreq, f1=Config.bw / 2 + cfofreq, t1=t0 + tsig, method='linear', phi=0)
-            upchirp = cp.conj(cp.array(chirpI1 + 1j * chirpQ1))
-            detect_array_up[freq_idx].append(upchirp)
-            t0 += tsig
-    detect_array_up = [cp.concatenate(x, axis=0) for x in detect_array_up]
+        for tstart_idx, tstart in enumerate(tstart_range):
+            detect_symb = []
+            tstart_sig = tstart
+            for tid in range(Config.preamble_len):
+                tsig = Config.tsig * (1 - est_cfo_percentile)
+                upchirp = gen_upchirp(tstart_sig, -Config.bw / 2 + cfofreq, tstart_sig + tsig, Config.bw / 2 + cfofreq)
+                detect_symb.append(upchirp)
+                tstart_sig += tsig
+
+            for tid in range(Config.code_len):
+                inif = Config.codes[tid] / Config.nsamp * Config.bw
+                tsig = Config.tsig * (1 - est_cfo_percentile) * (1 - Config.codes[tid] / Config.nsamp)
+                upchirp = gen_upchirp(tstart_sig, -Config.bw / 2 + cfofreq + inif, tstart_sig + tsig, Config.bw / 2 + cfofreq)
+                detect_symb.append(upchirp)
+                tstart_sig += tsig
+                tsig = Config.tsig * (1 - est_cfo_percentile) * (Config.codes[tid] / Config.nsamp)
+                upchirp = gen_upchirp(tstart_sig, -Config.bw / 2 + cfofreq, tstart_sig + tsig, -Config.bw / 2 + cfofreq + inif)
+                detect_symb.append(upchirp)
+                tstart_sig += tsig
+
+            for tid in range(2):
+                tsig = Config.tsig * (1 - est_cfo_percentile)
+                upchirp = gen_upchirp(tstart_sig, -Config.bw / 2 - cfofreq, tstart_sig + tsig, Config.bw / 2 - cfofreq)
+                detect_symb.append(cp.conj(upchirp))
+                tstart_sig += tsig
+            tsig = Config.tsig * (1 - est_cfo_percentile) * 0.25
+            upchirp = gen_upchirp(tstart_sig, -Config.bw / 2 - cfofreq, tstart_sig + tsig, -Config.bw / 4 - cfofreq)
+            detect_symb.append(cp.conj(upchirp))
+            tstart_sig += tsig
+
+            detect_array_up[freq_idx][tstart_idx] = cp.conj(cp.concatenate(detect_symb, axis=0))
+
     # logger.info(str([len(x) for x in detect_array_up]))
     # logger.info(f'{cfofreq=} {est_cfo_percentile=}')
-    detect_array_up = [[cp.array(x[k::time_upsamp]) for k in range(time_upsamp)] for x in detect_array_up]
 
     time_error_range = range(Config.nsamp)
-    evals = cp.zeros((len(time_error_range), time_upsamp, len(cfofreq_range)), dtype=float)
+    evals = cp.zeros((len(time_error_range), len(tstart_range), len(cfofreq_range)), dtype=float)
     # logger.info(f'{len(pktdata2a)=}')
     for time_error_idx, time_error in enumerate(time_error_range):
-        for small_time_error in range(time_upsamp):
+        for tstart_idx, tstart in enumerate(tstart_range):
             for freq_idx in range(len(cfofreq_range)):
                 pktdata2a_roll = cp.roll(pktdata2a, - time_error)
-                arr = detect_array_up[freq_idx][small_time_error]
+                arr = detect_array_up[freq_idx][tstart_idx]
                 # logger.info(f'{time_error_idx=} {small_time_error=} {len(arr)=} {arr.shape=}')
                 # logger.info(f'{len(pktdata2a_roll)=} {(pktdata2a_roll[:len(arr)]).shape=}')
-                evals[time_error_idx][small_time_error][freq_idx] = cp.abs(cp.dot(pktdata2a_roll[:len(arr)], arr)) / len(arr)
+                evals[time_error_idx][tstart_idx][freq_idx] = cp.abs(cp.dot(pktdata2a_roll[:len(arr)], arr)) / len(arr)
 
     max_evals = cp.unravel_index(cp.argmax(evals), evals.shape)
     max_evals = [int(x) for x in max_evals]
-    time_error = time_error_range[max_evals[0]] + max_evals[1] / time_upsamp
+    time_error = time_error_range[max_evals[0]] + tstart_range[max_evals[1]]
     cfo_freq_est = cfofreq_range[max_evals[2]]
 
     logger.info(f'{max_evals=} {time_error=} samples, {cfo_freq_est=} Hz {cp.max(evals)=} \n\n')
     return time_error, cfo_freq_est
+
 
 # read packets from file
 if __name__ == "__main__":
