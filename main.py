@@ -172,14 +172,30 @@ def coarse_work(pktdata_in):
 
 def work(pkt_totcnt, pktdata_in):
     fft_n = Config.nsamp * Config.fft_upsamp
-    est_cfo_freq, pktdata2a = coarse_work(pktdata_in)
-    # second detection
-    # ====
-    est_to_dec, est_to_int, pktdata3, re_cfo_0, re_cfo_freq, detect = fine_work(pktdata2a)
+    if False:
+        est_cfo_freq, pktdata2a = coarse_work(pktdata_in)
+        # second detection
+        # ====
+        est_to_dec, est_to_int, pktdata3, re_cfo_0, re_cfo_freq, detect = fine_work(pktdata2a)
+
+        # argmax_est_time_shift_samples = 534
+        # argmax_est_cfo_samples = -27917
+        # fft_n = 1048576
+        # est_cfo_freq = -26623.72589111328
+        #
+        # est_to_s = 0.000534
+        # re_cfo_0 = -0.0021972827444545146
+        # est_to_int = 0
+        # est_to_dec = 0.017822248505544945
+        # detect = 0
+        with open("temp.pkl", "wb") as f:
+            pickle.dump((est_to_dec, est_to_int, pktdata3, re_cfo_0, re_cfo_freq, detect, pktdata2a), f)
+    with open("temp.pkl", "rb") as f:
+        est_to_dec, est_to_int, pktdata3, re_cfo_0, re_cfo_freq, detect, pktdata2a = pickle.load(f)
+
     logger.info(f"fine work old {re_cfo_0=}, {est_to_int=}, {est_to_dec=} {detect=}")
     pktdata2anew = pktdata2a[detect * Config.nsamp: ]
-    est_to_dec, est_to_int, pktdata3, re_cfo_0, re_cfo_freq = fine_work_new(pktdata2anew)
-    logger.info(f"fine work new {re_cfo_0=}, {est_to_int=}, {est_to_dec=}")
+    fine_work_new(pktdata2anew)
     all_cfo_freq = re_cfo_freq + est_cfo_freq
 
     detect, upsamp = test_preamble(est_to_dec, pktdata3)
@@ -297,81 +313,48 @@ def fine_work(pktdata2a):
     return est_to_dec, est_to_int, pktdata3, re_cfo_0, re_cfo_freq, detect
 
 def fine_work_new(pktdata2a):
+    pktdata2a = cp.array(pktdata2a)
     nfreq = 257
     cfofreq_range = np.linspace(-Config.bw / 2, Config.bw / 2, nfreq)
     time_upsamp = 4
     # detect_array_up = cp.zeros((nfreq, Config.nsamp * Config.preamble_len * time_upsamp), dtype=cp.float64)
     # detect_array_down = cp.zeros((nfreq, Config.nsamp * 2 * time_upsamp), dtype=cp.float64)
 
-    detect_array_up = []
-    for cfofreq in cfofreq_range:
+    detect_array_up = [[] for cfofreq in cfofreq_range]
+    for freq_idx, cfofreq in enumerate(cfofreq_range):
+        est_cfo_slope = cfofreq / Config.sig_freq * Config.bw * Config.bw / Config.n_classes
         t0 = 0
         for tid in range(Config.preamble_len):
-            tsig = Config.nsamp / Config.fs
+            tsig = Config.nsamp / Config.fs * (1 + est_cfo_slope)
             t = np.linspace(t0, t0 + tsig, Config.nsamp * time_upsamp + 1)[:-1]
+            fslope = Config.bw / tsig
+            f0 = - t0 * fslope
+            chirpI1 = chirp(t, f0=-Config.bw / 2 - f0 + cfofreq, f1=Config.bw / 2 + cfofreq, t1=tsig, method='linear', phi=90)
+            chirpQ1 = chirp(t, f0=-Config.bw / 2 - f0 + cfofreq, f1=Config.bw / 2 + cfofreq, t1=tsig, method='linear', phi=0)
+            upchirp = cp.array(chirpI1 + 1j * chirpQ1)
+            detect_array_up[freq_idx].append(upchirp)
             t0 += tsig
+    detect_array_up = [np.concatenate(x, axis=0) for x in detect_array_up]
+    detect_array_up = [[cp.array(x[k::time_upsamp]) for k in range(time_upsamp)] for x in detect_array_up]
 
-    est_cfo_slope = all_cfo_freq / Config.sig_freq * Config.bw * Config.bw / Config.n_classes
+    time_error_range = range(-5, 6)
+    evals = cp.zeros((len(time_error_range), time_upsamp, len(cfofreq_range)), dtype=float)
+    logger.info(f'{len(pktdata2a)=}')
+    for time_error_idx, time_error in enumerate(time_error_range):
+        for small_time_error in range(time_upsamp):
+            for freq_idx in range(len(cfofreq_range)):
+                pktdata2a_roll = cp.roll(pktdata2a, time_error)
+                arr = detect_array_up[freq_idx][small_time_error]
+                # logger.info(f'{time_error_idx=} {small_time_error=} {len(arr)=} {arr.shape=}')
+                # logger.info(f'{len(pktdata2a_roll)=} {(pktdata2a_roll[:len(arr)]).shape=}')
+                evals[time_error_idx][small_time_error][freq_idx] = cp.abs(cp.dot(pktdata2a_roll[:len(arr)], arr)) / len(arr)
 
-    sig_time = len(pktdata3) / Config.fs
-    logger.info(f'{all_cfo_freq=}Hz, {est_cfo_slope=}Hz/s, {sig_time=}')
-    t = np.linspace(0, sig_time, len(pktdata3) + 1)[:-1]
-    chirpI1 = chirp(t, f0=0, f1=- est_cfo_slope * sig_time, t1=sig_time, method='linear', phi=90)
-    chirpQ1 = chirp(t, f0=0, f1=- est_cfo_slope * sig_time, t1=sig_time, method='linear', phi=0)
-    est_cfo_symbol = cp.array(chirpI1 + 1j * chirpQ1)
-    pktdata5 = pktdata3 * est_cfo_symbol
+    max_evals = cp.unravel_index(cp.argmax(evals), evals.shape)
+    max_evals = [int(x) for x in max_evals]
+    time_error = time_error_range[max_evals[0]] + max_evals[1] / time_upsamp
+    cfo_freq_est = cfofreq_range[max_evals[2]]
 
-    chirpI1 = chirp(t, f0=-Config.bw / 2, f1=Config.bw / 2, t1=2 ** Config.sf / Config.bw, method='linear', phi=90)
-    chirpQ1 = chirp(t, f0=-Config.bw / 2, f1=Config.bw / 2, t1=2 ** Config.sf / Config.bw, method='linear', phi=0)
-    upchirp = cp.array(chirpI1 + 1j * chirpQ1)
-
-
-    fft_n = Config.nsamp * Config.fft_upsamp
-    symb_cnt = Config.sfdpos + 5  # len(pktdata)//Config.nsamp
-    ndatas = pktdata2a[: symb_cnt * Config.nsamp].reshape(symb_cnt, Config.nsamp)
-    upsamp = Config.fft_upsamp
-    ans1, power1 = dechirp(ndatas, Config.downchirp, upsamp)
-    ans2, power2 = dechirp(ndatas, Config.upchirp, upsamp)
-    vals = cp.zeros((symb_cnt,), dtype=cp.float64)
-    for i in range(symb_cnt - (Config.sfdpos + 2)):
-        power = cp.sum(power1[i: i + Config.preamble_len]) + cp.sum(
-            power2[i + Config.sfdpos: i + Config.sfdpos + 2])
-        ans = cp.abs(cp.sum(cp.exp(1j * 2 * cp.pi / Config.n_classes * ans1[i: i + Config.preamble_len])))
-        vals[i] = power * ans
-    detect = cp.argmax(vals)
-    ansval = ModulusComputation.average_modulus(ans1[detect: detect + Config.preamble_len], Config.n_classes)
-    sfd_upcode = ansval.get()
-    ansval2 = ModulusComputation.average_modulus(ans2[detect + Config.sfdpos: detect + Config.sfdpos + 2],
-                                                 Config.n_classes)
-    sfd_downcode = ansval2.get()
-    re_cfo_0 = ModulusComputation.average_modulus((sfd_upcode, sfd_downcode), Config.n_classes)
-    est_to_0 = ModulusComputation.average_modulus((sfd_upcode, - sfd_downcode), Config.n_classes)
-    if opts.debug:
-        logger.debug('fine work' + ' '.join([f'{x:.3f}' for x in ans1[: Config.preamble_len]]) + 'sfd' +
-                     ' '.join([f'{x:.3f}' for x in ans2[Config.sfdpos: Config.sfdpos + 2]]) +
-                     f'{sfd_upcode=}, {sfd_downcode=}, {re_cfo_0=}, {est_to_0=}, {detect=}')
-    logger.debug('fine work angles: preamble')
-    for sig in ndatas[detect: detect + Config.preamble_len]:
-        chirp_data = sig * Config.downchirp
-        upsamp = Config.fft_upsamp
-        fft_raw = fft.fft(chirp_data, n=Config.nsamp * upsamp, plan=Config.plans[upsamp])
-        target_nfft = Config.n_classes * upsamp
-
-        cut1 = cp.array(fft_raw[:target_nfft])
-        cut2 = cp.array(fft_raw[-target_nfft:])
-        dat = cp.abs(cut1) + cp.abs(cut2)
-        ans = round(cp.argmax(dat).get().item() / upsamp)
-
-        logger.debug(cmath.phase(cut1[ans]), cmath.phase(cut2[ans]))
-
-    est_to_0 = est_to_0.get().item()
-    re_cfo_0 = re_cfo_0.get().item()
-    re_cfo_freq = re_cfo_0 * (Config.fs / fft_n)
-    est_to_int = round(est_to_0)
-    est_to_dec = est_to_0 - est_to_int
-    pktdata3 = add_freq(pktdata2a, - re_cfo_freq)
-    pktdata3 = np.roll(pktdata3, -est_to_int)
-    return est_to_dec, est_to_int, pktdata3, re_cfo_0, re_cfo_freq
+    logger.info(f'{max_evals=} {time_error=} samples, {cfo_freq_est=} Hz')
 
 # read packets from file
 if __name__ == "__main__":
