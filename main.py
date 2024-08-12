@@ -19,9 +19,11 @@ import logging
 # Configure the logging system
 logging.basicConfig(
     level=logging.INFO,  # Set the minimum level of log messages to capture
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'  # Define the log message format
+    # format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'  # Define the log message format
+    format = '%(levelname)s - %(message)s'  # Define the log message format
 )
 logger = logging.getLogger(__name__)
+
 
 class ModulusComputation:
     @staticmethod
@@ -36,7 +38,7 @@ class Config:
     sf = 7
     bw = 125e3
     fs = 1e6
-    sig_freq = 490e6
+    sig_freq = 470e6
     n_classes = 2 ** sf
     base_dir = '/data/djl/NeLoRa/OptimalPkt/'
 
@@ -44,7 +46,6 @@ class Config:
     for file_name in os.listdir(base_dir):
         if file_name.startswith('sf7') and file_name.endswith('.bin'):
             file_paths.append(os.path.join(base_dir, file_name))
-
 
     nsamp = round(n_classes * fs / bw)
 
@@ -54,6 +55,7 @@ class Config:
     sfdpos = preamble_len + code_len
     sfdend = sfdpos + 2
     debug = True
+    breakflag = True
 
     t = np.linspace(0, nsamp / fs, nsamp + 1)[:-1]
     chirpI1 = chirp(t, f0=-bw / 2, f1=bw / 2, t1=2 ** sf / bw, method='linear', phi=90)
@@ -78,6 +80,29 @@ class Config:
 cp.cuda.Device(0).use()
 opts = Config()
 Config = Config()
+
+
+def dechirp_phase(ndata, refchirp, upsamp=None):
+    if len(ndata.shape) == 1:
+        ndata = ndata.reshape(1, -1)
+    global Config
+    if not upsamp:
+        upsamp = Config.fft_upsamp
+    # upsamp = Config.fft_upsamp #!!!
+    chirp_data = ndata * refchirp
+    ans = cp.zeros(ndata.shape[0], dtype=cp.float64)
+    phase = cp.zeros(ndata.shape[0], dtype=cp.float64)
+    for idx in range(ndata.shape[0]):
+        fft_raw = fft.fft(chirp_data[idx], n=Config.nsamp * upsamp, plan=Config.plans[upsamp])
+        target_nfft = Config.n_classes * upsamp
+
+        cut1 = cp.array(fft_raw[:target_nfft])
+        cut2 = cp.array(fft_raw[-target_nfft:])
+        dat = cp.abs(cut1) + cp.abs(cut2)
+        ans[idx] = cp.argmax(dat).astype(cp.float64) / upsamp
+        phase[idx] = cut1[int(cp.argmax(dat))]
+        phase[idx] /= abs(phase[idx])
+    return ans, phase
 
 
 # noinspection SpellCheckingInspection
@@ -138,7 +163,8 @@ def coarse_work(pktdata_in):
         argmax_est_cfo_samples -= fft_n
     est_cfo_freq = argmax_est_cfo_samples.get() * (Config.fs / fft_n)
     est_to_s = argmax_est_time_shift_samples / Config.fs
-    logger.info(f'coarse work: {argmax_est_time_shift_samples=}, {argmax_est_cfo_samples=}, {fft_n=}, {est_cfo_freq=} Hz, {est_to_s=} s)')
+    logger.info(
+        f'coarse work: {argmax_est_time_shift_samples=}, {argmax_est_cfo_samples=}, {fft_n=}, {est_cfo_freq=} Hz, {est_to_s=} s)')
     pktdata2a = add_freq(pktdata_in, - est_cfo_freq)
     pktdata2a = np.roll(pktdata2a, -argmax_est_time_shift_samples)  # !!! TODO est_to_dec
     return est_cfo_freq, pktdata2a
@@ -149,8 +175,11 @@ def work(pkt_totcnt, pktdata_in):
     est_cfo_freq, pktdata2a = coarse_work(pktdata_in)
     # second detection
     # ====
-    est_to_dec, est_to_int, pktdata3, re_cfo_0, re_cfo_freq = fine_work(pktdata2a)
-    logger.info(f"fine work {re_cfo_0=}, {est_to_int=}, {est_to_dec=}")
+    est_to_dec, est_to_int, pktdata3, re_cfo_0, re_cfo_freq, detect = fine_work(pktdata2a)
+    logger.info(f"fine work old {re_cfo_0=}, {est_to_int=}, {est_to_dec=} {detect=}")
+    pktdata2anew = pktdata2a[detect * Config.nsamp: ]
+    est_to_dec, est_to_int, pktdata3, re_cfo_0, re_cfo_freq = fine_work_new(pktdata2anew)
+    logger.info(f"fine work new {re_cfo_0=}, {est_to_int=}, {est_to_dec=}")
     all_cfo_freq = re_cfo_freq + est_cfo_freq
 
     detect, upsamp = test_preamble(est_to_dec, pktdata3)
@@ -159,13 +188,13 @@ def work(pkt_totcnt, pktdata_in):
 
     ans1n, ndatas = decode_payload(detect, est_to_dec, pktdata4, pkt_totcnt)
 
-    logger.debug('decoded data', ' '.join([f'{x:.3f}' for x in ans1n]))
-    debug_diff_0 = np.unwrap([x - round(x) for x in ans1n], discont=0.5)
+    logger.debug('decoded data ' + ' '.join([f'{x:.3f}' for x in ans1n]))
+    # debug_diff_0 = np.unwrap([x - round(x) for x in ans1n], discont=0.5)
     # sfo correction
     est_cfo_slope = all_cfo_freq / Config.sig_freq * Config.bw * Config.bw / Config.n_classes
 
     sig_time = len(pktdata3) / Config.fs
-    logger.info(all_cfo_freq, 'Hz', est_cfo_slope, 'Hz/s', sig_time)
+    logger.info(f'{all_cfo_freq=}Hz, {est_cfo_slope=}Hz/s, {sig_time=}')
     t = np.linspace(0, sig_time, len(pktdata3) + 1)[:-1]
     chirpI1 = chirp(t, f0=0, f1=- est_cfo_slope * sig_time, t1=sig_time, method='linear', phi=90)
     chirpQ1 = chirp(t, f0=0, f1=- est_cfo_slope * sig_time, t1=sig_time, method='linear', phi=0)
@@ -173,42 +202,13 @@ def work(pkt_totcnt, pktdata_in):
     pktdata5 = pktdata3 * est_cfo_symbol
     detect, upsamp = test_preamble(est_to_dec, pktdata5)
 
-    est_to_dec2, est_to_int2, pktdata6, re_cfo_2, re_cfo_freq_2 = fine_work(pktdata5)
+    est_to_dec2, est_to_int2, pktdata6, re_cfo_2, re_cfo_freq_2, detect = fine_work(pktdata5)
     all_cfo_freq = re_cfo_freq + est_cfo_freq + re_cfo_freq_2
     detect, upsamp = test_preamble(est_to_dec2, pktdata6)
     pktdata7 = pktdata6[Config.nsamp * (detect + Config.sfdpos + 2) + Config.nsamp // 4:]
     ans2n, ndatas = decode_payload(detect, est_to_dec, pktdata7, pkt_totcnt)
 
-    logger.info(f'decoded data {len(ans2n)=}', ' '.join([f'{x:.3f}' for x in ans2n]))
-
-    payload_data = ndatas[detect + Config.sfdpos + 4:]
-    angles = calc_angles(payload_data)
-    if opts.debug:
-        plt.scatter(range(len(angles)), angles, s=0.5)
-        plt.savefig(f'imgs/temp_sf7_{pkt_totcnt}.jpg')
-        plt.clf()
-        for i in range(min(len(ans2n),len(angles))):
-            if abs(angles[i]) > 0.5:
-                logger.debug(f'{i=} {ans2n[i]:.3f} {angles[i]:.3f}')
-
-    return angles
-
-
-def calc_angles(payload_data):
-    angles = []
-    for dataY in payload_data:
-        opts = Config
-        dataX = cp.array(dataY)
-        data1 = cp.matmul(Config.dataE1, dataX)
-        data2 = cp.matmul(Config.dataE2, dataX)
-        vals = cp.abs(data1) ** 2 + cp.abs(data2) ** 2
-        est = cp.argmax(vals)
-        if est > 0:
-            diff_avg0 = cmath.phase(data2[est] / data1[est])
-            angles.append(diff_avg0)
-        else:
-            angles.append(0)
-    return angles
+    logger.info(f'decoded data {len(ans2n)=} ' + ' '.join([f'{x:.3f}' for x in ans2n]))
 
 
 def decode_payload(detect, est_to_dec, pktdata4, pkt_totcnt):
@@ -221,7 +221,8 @@ def decode_payload(detect, est_to_dec, pktdata4, pkt_totcnt):
     if not min(power1) > np.mean(power1) / 2:
         drop_idx = next((idx for idx, num in enumerate(power1) if num < np.mean(power1) / 2), -1)
         ans1n = ans1n[:drop_idx]
-        if opts.debug: logger.debug(f'decode: {pkt_totcnt=} power1 drops: {drop_idx=} {len(ans1n)=} {" ".join([str(round(x.item())) for x in power1])}')
+        logger.debug(
+            f'decode: {pkt_totcnt=} power1 drops: {drop_idx=} {len(ans1n)=} {" ".join([str(round(x.item())) for x in power1])}')
     return ans1n, ndatas
 
 
@@ -236,10 +237,14 @@ def test_preamble(est_to_dec, pktdata3):
     ans2, power2 = dechirp(ndatas2a[detect + Config.sfdpos: detect + Config.sfdpos + 2], Config.upchirp, upsamp)
     ans2 = ans2.get()
     ans2 += est_to_dec / 8
-    if opts.debug:
-        logger.debug('preamble: ' + " ".join([f'{x:.3f}' for x in ans1]) + 'sfd: ' + " ".join([f'{x:.3f}' for x in ans2]),
-          est_to_dec / 8)
-        logger.debug('power', power1)
+    logger.info(
+        'preamble: ' + " ".join([f'{x:.3f}' for x in ans1]) + 'sfd: ' + " ".join([f'{x:.3f}' for x in ans2]) + str(
+            est_to_dec / 8))
+    logger.info('power' + np.array2string(power1, precision=2))
+
+    ans3, phase = dechirp_phase(ndatas2a[detect: detect + Config.preamble_len], Config.downchirp, upsamp)
+    logger.info('preamble: ' + " ".join([f'{x:.3f}' for x in ans3]))
+    logger.info('phase: ' + " ".join([f'{cp.angle(x):.3f}' for x in phase]))
     return detect, upsamp
 
 
@@ -265,12 +270,11 @@ def fine_work(pktdata2a):
     re_cfo_0 = ModulusComputation.average_modulus((sfd_upcode, sfd_downcode), Config.n_classes)
     est_to_0 = ModulusComputation.average_modulus((sfd_upcode, - sfd_downcode), Config.n_classes)
     if opts.debug:
-        logger.debug('fine work', ' '.join([f'{x:.3f}' for x in ans1[: Config.preamble_len]]),'sfd',
-          ' '.join([f'{x:.3f}' for x in ans2[Config.sfdpos: Config.sfdpos + 2]]),
-          f'{sfd_upcode=}, {sfd_downcode=}, {re_cfo_0=}, {est_to_0=}, {detect=}')
+        logger.debug('fine work' + ' '.join([f'{x:.3f}' for x in ans1[: Config.preamble_len]]) + 'sfd' +
+                     ' '.join([f'{x:.3f}' for x in ans2[Config.sfdpos: Config.sfdpos + 2]]) +
+                     f'{sfd_upcode=}, {sfd_downcode=}, {re_cfo_0=}, {est_to_0=}, {detect=}')
     logger.debug('fine work angles: preamble')
     for sig in ndatas[detect: detect + Config.preamble_len]:
-
         chirp_data = sig * Config.downchirp
         upsamp = Config.fft_upsamp
         fft_raw = fft.fft(chirp_data, n=Config.nsamp * upsamp, plan=Config.plans[upsamp])
@@ -283,8 +287,82 @@ def fine_work(pktdata2a):
 
         logger.debug(cmath.phase(cut1[ans]), cmath.phase(cut2[ans]))
 
+    est_to_0 = est_to_0.get().item()
+    re_cfo_0 = re_cfo_0.get().item()
+    re_cfo_freq = re_cfo_0 * (Config.fs / fft_n)
+    est_to_int = round(est_to_0)
+    est_to_dec = est_to_0 - est_to_int
+    pktdata3 = add_freq(pktdata2a, - re_cfo_freq)
+    pktdata3 = np.roll(pktdata3, -est_to_int)
+    return est_to_dec, est_to_int, pktdata3, re_cfo_0, re_cfo_freq, detect
+
+def fine_work_new(pktdata2a):
+    nfreq = 257
+    cfofreq_range = np.linspace(-Config.bw / 2, Config.bw / 2, nfreq)
+    time_upsamp = 4
+    # detect_array_up = cp.zeros((nfreq, Config.nsamp * Config.preamble_len * time_upsamp), dtype=cp.float64)
+    # detect_array_down = cp.zeros((nfreq, Config.nsamp * 2 * time_upsamp), dtype=cp.float64)
+
+    detect_array_up = []
+    for cfofreq in cfofreq_range:
+        t0 = 0
+        for tid in range(Config.preamble_len):
+            tsig = Config.nsamp / Config.fs
+            t = np.linspace(t0, t0 + tsig, Config.nsamp * time_upsamp + 1)[:-1]
+            t0 += tsig
+
+    est_cfo_slope = all_cfo_freq / Config.sig_freq * Config.bw * Config.bw / Config.n_classes
+
+    sig_time = len(pktdata3) / Config.fs
+    logger.info(f'{all_cfo_freq=}Hz, {est_cfo_slope=}Hz/s, {sig_time=}')
+    t = np.linspace(0, sig_time, len(pktdata3) + 1)[:-1]
+    chirpI1 = chirp(t, f0=0, f1=- est_cfo_slope * sig_time, t1=sig_time, method='linear', phi=90)
+    chirpQ1 = chirp(t, f0=0, f1=- est_cfo_slope * sig_time, t1=sig_time, method='linear', phi=0)
+    est_cfo_symbol = cp.array(chirpI1 + 1j * chirpQ1)
+    pktdata5 = pktdata3 * est_cfo_symbol
+
+    chirpI1 = chirp(t, f0=-Config.bw / 2, f1=Config.bw / 2, t1=2 ** Config.sf / Config.bw, method='linear', phi=90)
+    chirpQ1 = chirp(t, f0=-Config.bw / 2, f1=Config.bw / 2, t1=2 ** Config.sf / Config.bw, method='linear', phi=0)
+    upchirp = cp.array(chirpI1 + 1j * chirpQ1)
 
 
+    fft_n = Config.nsamp * Config.fft_upsamp
+    symb_cnt = Config.sfdpos + 5  # len(pktdata)//Config.nsamp
+    ndatas = pktdata2a[: symb_cnt * Config.nsamp].reshape(symb_cnt, Config.nsamp)
+    upsamp = Config.fft_upsamp
+    ans1, power1 = dechirp(ndatas, Config.downchirp, upsamp)
+    ans2, power2 = dechirp(ndatas, Config.upchirp, upsamp)
+    vals = cp.zeros((symb_cnt,), dtype=cp.float64)
+    for i in range(symb_cnt - (Config.sfdpos + 2)):
+        power = cp.sum(power1[i: i + Config.preamble_len]) + cp.sum(
+            power2[i + Config.sfdpos: i + Config.sfdpos + 2])
+        ans = cp.abs(cp.sum(cp.exp(1j * 2 * cp.pi / Config.n_classes * ans1[i: i + Config.preamble_len])))
+        vals[i] = power * ans
+    detect = cp.argmax(vals)
+    ansval = ModulusComputation.average_modulus(ans1[detect: detect + Config.preamble_len], Config.n_classes)
+    sfd_upcode = ansval.get()
+    ansval2 = ModulusComputation.average_modulus(ans2[detect + Config.sfdpos: detect + Config.sfdpos + 2],
+                                                 Config.n_classes)
+    sfd_downcode = ansval2.get()
+    re_cfo_0 = ModulusComputation.average_modulus((sfd_upcode, sfd_downcode), Config.n_classes)
+    est_to_0 = ModulusComputation.average_modulus((sfd_upcode, - sfd_downcode), Config.n_classes)
+    if opts.debug:
+        logger.debug('fine work' + ' '.join([f'{x:.3f}' for x in ans1[: Config.preamble_len]]) + 'sfd' +
+                     ' '.join([f'{x:.3f}' for x in ans2[Config.sfdpos: Config.sfdpos + 2]]) +
+                     f'{sfd_upcode=}, {sfd_downcode=}, {re_cfo_0=}, {est_to_0=}, {detect=}')
+    logger.debug('fine work angles: preamble')
+    for sig in ndatas[detect: detect + Config.preamble_len]:
+        chirp_data = sig * Config.downchirp
+        upsamp = Config.fft_upsamp
+        fft_raw = fft.fft(chirp_data, n=Config.nsamp * upsamp, plan=Config.plans[upsamp])
+        target_nfft = Config.n_classes * upsamp
+
+        cut1 = cp.array(fft_raw[:target_nfft])
+        cut2 = cp.array(fft_raw[-target_nfft:])
+        dat = cp.abs(cut1) + cp.abs(cut2)
+        ans = round(cp.argmax(dat).get().item() / upsamp)
+
+        logger.debug(cmath.phase(cut1[ans]), cmath.phase(cut2[ans]))
 
     est_to_0 = est_to_0.get().item()
     re_cfo_0 = re_cfo_0.get().item()
@@ -294,7 +372,6 @@ def fine_work(pktdata2a):
     pktdata3 = add_freq(pktdata2a, - re_cfo_freq)
     pktdata3 = np.roll(pktdata3, -est_to_int)
     return est_to_dec, est_to_int, pktdata3, re_cfo_0, re_cfo_freq
-
 
 # read packets from file
 if __name__ == "__main__":
@@ -329,7 +406,8 @@ if __name__ == "__main__":
         thresh = np.mean(kmeans.cluster_centers_)
         if opts.debug:
             counts, bins = np.histogram(nmaxs, bins=100)
-            logger.debug(f"Init file find cluster: counts={np.array2string(counts, precision=2, suppress_small=True)}, bins={np.array2string(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
+            logger.debug(
+                f"Init file find cluster: counts={np.array2string(counts, precision=2, suppress_small=True)}, bins={np.array2string(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
 
         pkt_totcnt = 0
 
@@ -357,28 +435,10 @@ if __name__ == "__main__":
                         # with open('test.dat', 'wb') as f: idata.tofile(f)
                         # sys.exit(0)
 
-                        angles.extend(work(pkt_totcnt, cp.concatenate(pktdata)))
-                        color = [colorsys.hls_to_rgb((hue + 0.5) / 3, 0.4, 1) for hue in [0, 1, 2]]
-
-                        name = 'dn_angles_sf7'
-                        # Draw Figs
-                        data = angles
-                        count, bins_count = np.histogram(data, range=(-np.pi, np.pi), bins=100)
-                        pdf = count / sum(count)
-
-                        cdf = np.cumsum(pdf)
-
-                        plt.plot(bins_count[1:], cdf, label=name)
-                        plt.xlim(-np.pi, np.pi)
-                        plt.xlabel('Angle (rad)')
-                        plt.ylabel('Frequency')
-                        plt.legend()
-                        plt.savefig(name + '.pdf')
-                        plt.savefig(name + '.png')
-                        with open(name + '.pkl', 'wb') as g:
-                            pickle.dump(angles, g)
-                        plt.clf()
-
+                        work(pkt_totcnt, cp.concatenate(pktdata))
+                        if Config.breakflag:
+                            logger.error("terminate after one packet")
+                            sys.exit(0)
                         pkt_totcnt += 1
                     pkt_cnt += 1
                     pktdata = []
