@@ -14,11 +14,12 @@ import sys
 # Enable fallback mode
 # from cupyx.fallback_mode import numpy as np
 import numpy as np
-# import cupy as np
-
-# Now, use CuPy as usual
-# import cupyx.scipy.fft as fft
-import scipy.fft as fft
+import cupy as cp
+use_gpu = True
+if use_gpu:
+    import cupyx.scipy.fft as fft
+else:
+    import scipy.fft as fft
 
 import logging
 
@@ -45,7 +46,6 @@ class ModulusComputation:
 
 
 class Config:
-    gpu = False
     renew_switch = False
 
     sf = 7
@@ -84,7 +84,7 @@ class Config:
     chirpI1 = chirp(t, f0=bw / 2, f1=-bw / 2, t1=2 ** sf / bw, method='linear', phi=90)
     chirpQ1 = chirp(t, f0=bw / 2, f1=-bw / 2, t1=2 ** sf / bw, method='linear', phi=0)
     downchirp = np.array(chirpI1 + 1j * chirpQ1)
-    if gpu:
+    if use_gpu:
         plans = {1: fft.get_fft_plan(np.zeros(nsamp * 1, dtype=np.complex128)),
              fft_upsamp: fft.get_fft_plan(np.zeros(nsamp * fft_upsamp, dtype=np.complex128))}
     else:
@@ -98,13 +98,22 @@ class Config:
         dataE1[symbol_index][:time_split] = downchirp[time_shift:]
         if symbol_index != 0: dataE2[symbol_index][time_split:] = downchirp[:time_shift]
 
-if Config.gpu:
-    np.cuda.Device(0).use()
+if use_gpu:
+    cp.cuda.Device(0).use()
 opts = Config()
 Config = Config()
 
+def togpu(x):
+    if use_gpu: return cp.array(x)
+    else: return x
+
+def tocpu(x):
+    if use_gpu: return x.get()
+    else: return x
+
+
 def myfft(chirp_data, n, plan):
-    if Config.gpu:
+    if use_gpu:
         return fft.fft(chirp_data, n=n, plan=plan)
     else:
         return fft.fft(chirp_data, n=n)
@@ -350,12 +359,12 @@ def fine_work(pktdata2a):
 
 
 def gen_upchirp(t0, f0, t1, f1):
-    # if not Config.gpu:
+    # if not use_gpu:
     t = np.arange(np.ceil(t0), np.ceil(t1))
     # else:
     #     t = np.arange(np.ceil(t0).get(), np.ceil(t1).get())
 
-    # if Config.gpu: t = t.get()
+    # if use_gpu: t = t.get()
     fslope = (f1 - f0) / (t1 - t0)
     chirpI1 = chirp(t, f0=f0 - t0 * fslope, f1=f1, t1=t1, method='linear', phi=90)
     chirpQ1 = chirp(t, f0=f0 - t0 * fslope, f1=f1, t1=t1, method='linear', phi=0)
@@ -368,7 +377,8 @@ def fine_work_new(pktdata2a):  # TODO working
     est_cfo_freq = -26623.72589111328
     argmax_est_time_shift_samples = 534
 
-    pktdata2a = np.array(pktdata2a)
+    pktdata2a = togpu(pktdata2a)
+
     cfofreq_range = np.linspace(-Config.bw / 4, Config.bw / 4, Config.nfreq)
     # detect_array_up = np.zeros((Config.nfreq, Config.nsamp * Config.preamble_len * Config.time_upsamp), dtype=np.float64)
     # detect_array_down = np.zeros((Config.nfreq, Config.nsamp * 2 * Config.time_upsamp), dtype=np.float64)
@@ -414,7 +424,7 @@ def fine_work_new(pktdata2a):  # TODO working
             detect_symb.append(upchirp)
             tstart_sig += tsig
 
-            detect_array_up[freq_idx][tstart_idx] = np.conj(np.concatenate(detect_symb, axis=0))
+            detect_array_up[freq_idx][tstart_idx] = togpu(np.conj(np.concatenate(detect_symb, axis=0)))
             progress_bar.update(1)
 
     # logger.info(str([len(x) for x in detect_array_up]))
@@ -432,7 +442,7 @@ def fine_work_new(pktdata2a):  # TODO working
                 arr = detect_array_up[freq_idx][tstart_idx]
                 # logger.info(f'{time_error_idx=} {small_time_error=} {len(arr)=} {arr.shape=}')
                 # logger.info(f'{len(pktdata2a_roll)=} {(pktdata2a_roll[:len(arr)]).shape=}')
-                evals[time_error_idx][tstart_idx][freq_idx] = np.abs(np.dot(pktdata2a_roll[:len(arr)], arr)) / len(arr)
+                evals[time_error_idx][tstart_idx][freq_idx] = np.abs(pktdata2a_roll[:len(arr)].dot(arr)) / len(arr)
                 progress_bar.update(1)
 
     max_evals = np.unravel_index(np.argmax(evals), evals.shape)
@@ -473,7 +483,7 @@ if __name__ == "__main__":
                     break
                 nmaxs[i] = np.max(np.abs(rawdata))
         kmeans = KMeans(n_clusters=2, random_state=0)
-        # if Config.gpu:
+        # if use_gpu:
         kmeans.fit(nmaxs.reshape(-1, 1))
         # else:
         #     kmeans.fit(nmaxs.reshape(-1, 1).get())
