@@ -365,14 +365,14 @@ def fine_work(pktdata2a):
 
 def gen_upchirp(t0, f0, t1, f1):
     # if not use_gpu:
-    t = np.arange(np.ceil(t0), np.ceil(t1))
+    t = np.arange(np.ceil(t0), np.ceil(t1)) / Config.fs
     # else:
     #     t = np.arange(np.ceil(t0).get(), np.ceil(t1).get())
 
     # if use_gpu: t = t.get()
-    fslope = (f1 - f0) / (t1 - t0)
-    chirpI1 = chirp(t, f0=f0 - t0 * fslope, f1=f1, t1=t1, method='linear', phi=90)
-    chirpQ1 = chirp(t, f0=f0 - t0 * fslope, f1=f1, t1=t1, method='linear', phi=0)
+    fslope = (f1 - f0) / (t1 - t0) * Config.fs
+    chirpI1 = chirp(t, f0=f0 - t0 / Config.fs * fslope, f1=f1, t1=t1 / Config.fs, method='linear', phi=90)
+    chirpQ1 = chirp(t, f0=f0 - t0 / Config.fs * fslope, f1=f1, t1=t1 / Config.fs, method='linear', phi=0)
     upchirp = np.array(chirpI1 + 1j * chirpQ1)
     return upchirp
 
@@ -395,7 +395,7 @@ def fine_work_new(pktdata2a):  # TODO working
     fslope = Config.bw / tsig
 
 # test
-    cfofreq = -20507.8125
+    cfofreq = -26623
     tstart = 0.21875 - 1
     time_error = 195
     pktdata2a_roll = cp.roll(pktdata2a, - time_error)
@@ -407,8 +407,38 @@ def fine_work_new(pktdata2a):  # TODO working
         didx += len(ssymb)
 
 
+    # Example complex array
 
+    detect_symb = gen_refchirp(cfofreq, tstart)
+    complex_array = np.concatenate(detect_symb)
+    # Extract the phase and unwrap it
+    phase = np.angle(complex_array)
+    unwrapped_phase = np.unwrap(phase)
 
+    # Compute the difference between consecutive unwrapped phase values
+    phase_diff = np.diff(unwrapped_phase)
+
+    # Plotting
+    plt.figure(figsize=(10, 3))
+    plt.plot(unwrapped_phase, linestyle='-', color='b')
+
+    complex_array = cp.roll(pktdata2a, -534)[:len(complex_array)].get()
+    # Extract the phase and unwrap it
+    phase = np.angle(complex_array)
+    unwrapped_phase = np.unwrap(phase)
+
+    # Compute the difference between consecutive unwrapped phase values
+    phase_diff = np.diff(unwrapped_phase)
+
+    # Plotting
+    plt.plot(unwrapped_phase, linestyle='-', color='r')
+
+    plt.title('Difference between Consecutive Unwrapped Phase Values')
+    plt.xlabel('Index')
+    plt.ylabel('Difference in Phase')
+    plt.grid(True)
+    plt.savefig('1.png')
+    plt.show()
 
     tstart_range = np.linspace(-1, 0, Config.time_upsamp + 1)[:-1]
 
@@ -419,7 +449,7 @@ def fine_work_new(pktdata2a):  # TODO working
     for freq_idx, cfofreq in enumerate(cfofreq_range):
         for tstart_idx, tstart in enumerate(tstart_range):
             detect_symb = gen_refchirp(cfofreq, tstart)
-            detect_array_up[freq_idx][tstart_idx] = [togpu(np.conj(x)) for x in detect_symb]
+            detect_array_up[freq_idx][tstart_idx] = togpu(np.conj(np.concatenate(detect_symb)))
             progress_bar.update(1)
 
     # logger.info(str([len(x) for x in detect_array_up]))
@@ -427,26 +457,26 @@ def fine_work_new(pktdata2a):  # TODO working
 
 
     time_error_range = range(Config.nsamp)
-    evals = np.zeros((15, len(time_error_range), len(tstart_range), len(cfofreq_range)), dtype=float)
+    evals = np.zeros((len(time_error_range), len(tstart_range), len(cfofreq_range)), dtype=float)
     progress_bar.close()
-    progress_bar = tqdm(total=len(time_error_range) * len(tstart_range) * len(cfofreq_range) * 15, desc="Computing")
+    progress_bar = tqdm(total=len(time_error_range) * len(tstart_range) * len(cfofreq_range), desc="Computing")
     # logger.info(f'{len(pktdata2a)=}')
     for time_error_idx, time_error in enumerate(time_error_range):
         for tstart_idx, tstart in enumerate(tstart_range):
             for freq_idx in range(len(cfofreq_range)):
                 pktdata2a_roll = np.roll(pktdata2a, - time_error)
-                didx = 0
-                for sidx, ssymb in enumerate(detect_array_up[freq_idx][tstart_idx]):
-                    evals[sidx][time_error_idx][tstart_idx][freq_idx] = np.abs(pktdata2a_roll[didx:didx + len(ssymb)].dot(ssymb)) / len(ssymb)
-                    progress_bar.update(1)
+                ssymb = detect_array_up[freq_idx][tstart_idx]
+                evals[time_error_idx][tstart_idx][freq_idx] = np.abs(pktdata2a_roll[:len(ssymb)].dot(ssymb)) / len(ssymb)
+                progress_bar.update(1)
+    progress_bar.close()
 
-    for sidx in range(15):
-        max_evals = np.unravel_index(np.argmax(evals[sidx]), evals[sidx].shape)
-        max_evals = [int(x) for x in max_evals]
-        time_error = time_error_range[max_evals[0]] + tstart_range[max_evals[1]]
-        cfo_freq_est = cfofreq_range[max_evals[2]]
+    max_evals = np.unravel_index(np.argmax(evals), evals.shape)
+    max_evals = [int(x) for x in max_evals]
+    time_error = time_error_range[max_evals[0]] + tstart_range[max_evals[1]]
+    cfo_freq_est = cfofreq_range[max_evals[2]]
 
-        logger.info(f'{sidx=} {max_evals=} {time_error=} samples, {cfo_freq_est=} Hz {np.max(evals)=} \n\n')
+    logger.info(f'{max_evals=} {time_error=} samples, {cfo_freq_est=} Hz {np.max(evals)=} \n\n')
+    with open('eval.pkl', 'wb') as f: pickle.dump(evals, f)
 
     sys.exit(0)
     return time_error, cfo_freq_est
@@ -474,7 +504,7 @@ def gen_refchirp(cfofreq, tstart):
     for tid in range(2):
         tsig = Config.tsig * (1 - est_cfo_percentile)
         upchirp = gen_upchirp(tstart_sig, Config.bw / 2 + cfofreq, tstart_sig + tsig, -Config.bw / 2 + cfofreq)  # TODO ???
-        detect_symb.append(np.conj(upchirp))
+        detect_symb.append(upchirp)
         tstart_sig += tsig
     tsig = Config.tsig * (1 - est_cfo_percentile) * 0.25
     upchirp = gen_upchirp(tstart_sig, Config.bw / 2 + cfofreq, tstart_sig + tsig, Config.bw / 4 + cfofreq)  # TODO +-
