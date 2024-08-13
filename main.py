@@ -3,6 +3,7 @@ import colorsys
 import math
 import os
 import pickle
+import time
 
 import matplotlib.pyplot as plt
 from scipy.signal import chirp
@@ -35,6 +36,10 @@ file_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 logger.addHandler(file_handler)
 
+script_path = __file__
+mod_time = os.path.getmtime(script_path)
+readable_time = time.ctime(mod_time)
+logger.info(f"Last modified time of the script: {readable_time}")
 
 class ModulusComputation:
     @staticmethod
@@ -62,8 +67,8 @@ class Config:
             file_paths.append(os.path.join(base_dir, file_name))
 
     nsamp = round(n_classes * fs / bw)
-    nfreq = 256 + 1
-    time_upsamp = 32
+    nfreq = 64 + 1
+    time_upsamp = 4
 
     preamble_len = 8
     code_len = 2
@@ -389,69 +394,92 @@ def fine_work_new(pktdata2a):  # TODO working
     dd = []
     fslope = Config.bw / tsig
 
+# test
+    cfofreq = -20507.8125
+    tstart = 0.21875 - 1
+    time_error = 195
+    pktdata2a_roll = cp.roll(pktdata2a, - time_error)
+    detect_symb = gen_refchirp(cfofreq, tstart)
+    didx = 0
+    for sidx, ssymb in enumerate(detect_symb):
+        res = tocpu(cp.conj(togpu(ssymb)).dot(pktdata2a_roll[didx : didx + len(ssymb)]))
+        logger.info(f'{sidx=} {np.abs(res)/len(ssymb)=} {np.angle(res)=} {len(ssymb)=}')
+        didx += len(ssymb)
+
+
+
+
+
     tstart_range = np.linspace(-1, 0, Config.time_upsamp + 1)[:-1]
+
+
+
     detect_array_up = [[[] for _ in tstart_range] for _ in cfofreq_range]
     progress_bar = tqdm(total=len(tstart_range) * len(cfofreq_range), desc="Generating Reference Chirps")
     for freq_idx, cfofreq in enumerate(cfofreq_range):
-        est_cfo_percentile = cfofreq / Config.sig_freq
         for tstart_idx, tstart in enumerate(tstart_range):
-            detect_symb = []
-            tstart_sig = tstart
-            for tid in range(Config.preamble_len):
-                tsig = Config.tsig * (1 - est_cfo_percentile)
-                upchirp = gen_upchirp(tstart_sig, -Config.bw / 2 + cfofreq, tstart_sig + tsig, Config.bw / 2 + cfofreq)
-                detect_symb.append(upchirp)
-                tstart_sig += tsig
-
-            for tid in range(Config.code_len):
-                inif = Config.codes[tid] / Config.nsamp * Config.bw
-                tsig = Config.tsig * (1 - est_cfo_percentile) * (1 - Config.codes[tid] / Config.nsamp)
-                upchirp = gen_upchirp(tstart_sig, -Config.bw / 2 + cfofreq + inif, tstart_sig + tsig, Config.bw / 2 + cfofreq)
-                detect_symb.append(upchirp)
-                tstart_sig += tsig
-                tsig = Config.tsig * (1 - est_cfo_percentile) * (Config.codes[tid] / Config.nsamp)
-                upchirp = gen_upchirp(tstart_sig, -Config.bw / 2 + cfofreq, tstart_sig + tsig, -Config.bw / 2 + cfofreq + inif)
-                detect_symb.append(upchirp)
-                tstart_sig += tsig
-
-            for tid in range(2):
-                tsig = Config.tsig * (1 - est_cfo_percentile)
-                upchirp = gen_upchirp(tstart_sig, Config.bw / 2 + cfofreq, tstart_sig + tsig, -Config.bw / 2 + cfofreq) # TODO ???
-                detect_symb.append(np.conj(upchirp))
-                tstart_sig += tsig
-            tsig = Config.tsig * (1 - est_cfo_percentile) * 0.25
-            upchirp = gen_upchirp(tstart_sig, Config.bw / 2 + cfofreq, tstart_sig + tsig, Config.bw / 4 + cfofreq) # TODO +-
-            detect_symb.append(upchirp)
-            tstart_sig += tsig
-
-            detect_array_up[freq_idx][tstart_idx] = togpu(np.conj(np.concatenate(detect_symb, axis=0)))
+            detect_symb = gen_refchirp(cfofreq, tstart)
+            detect_array_up[freq_idx][tstart_idx] = [togpu(np.conj(x)) for x in detect_symb]
             progress_bar.update(1)
 
     # logger.info(str([len(x) for x in detect_array_up]))
     # logger.info(f'{cfofreq=} {est_cfo_percentile=}')
 
+
     time_error_range = range(Config.nsamp)
-    evals = np.zeros((len(time_error_range), len(tstart_range), len(cfofreq_range)), dtype=float)
+    evals = np.zeros((15, len(time_error_range), len(tstart_range), len(cfofreq_range)), dtype=float)
     progress_bar.close()
-    progress_bar = tqdm(total=len(time_error_range) * len(tstart_range) * len(cfofreq_range), desc="Computing")
+    progress_bar = tqdm(total=len(time_error_range) * len(tstart_range) * len(cfofreq_range) * 15, desc="Computing")
     # logger.info(f'{len(pktdata2a)=}')
     for time_error_idx, time_error in enumerate(time_error_range):
         for tstart_idx, tstart in enumerate(tstart_range):
             for freq_idx in range(len(cfofreq_range)):
                 pktdata2a_roll = np.roll(pktdata2a, - time_error)
-                arr = detect_array_up[freq_idx][tstart_idx]
-                # logger.info(f'{time_error_idx=} {small_time_error=} {len(arr)=} {arr.shape=}')
-                # logger.info(f'{len(pktdata2a_roll)=} {(pktdata2a_roll[:len(arr)]).shape=}')
-                evals[time_error_idx][tstart_idx][freq_idx] = np.abs(pktdata2a_roll[:len(arr)].dot(arr)) / len(arr)
-                progress_bar.update(1)
+                didx = 0
+                for sidx, ssymb in enumerate(detect_array_up[freq_idx][tstart_idx]):
+                    evals[sidx][time_error_idx][tstart_idx][freq_idx] = np.abs(pktdata2a_roll[didx:didx + len(ssymb)].dot(ssymb)) / len(ssymb)
+                    progress_bar.update(1)
 
-    max_evals = np.unravel_index(np.argmax(evals), evals.shape)
-    max_evals = [int(x) for x in max_evals]
-    time_error = time_error_range[max_evals[0]] + tstart_range[max_evals[1]]
-    cfo_freq_est = cfofreq_range[max_evals[2]]
+    for sidx in range(15):
+        max_evals = np.unravel_index(np.argmax(evals[sidx]), evals[sidx].shape)
+        max_evals = [int(x) for x in max_evals]
+        time_error = time_error_range[max_evals[0]] + tstart_range[max_evals[1]]
+        cfo_freq_est = cfofreq_range[max_evals[2]]
 
-    logger.info(f'{max_evals=} {time_error=} samples, {cfo_freq_est=} Hz {np.max(evals)=} \n\n')
+        logger.info(f'{sidx=} {max_evals=} {time_error=} samples, {cfo_freq_est=} Hz {np.max(evals)=} \n\n')
+
+    sys.exit(0)
     return time_error, cfo_freq_est
+
+
+def gen_refchirp(cfofreq, tstart):
+    est_cfo_percentile = cfofreq / Config.sig_freq
+    detect_symb = []
+    tstart_sig = tstart
+    for tid in range(Config.preamble_len):
+        tsig = Config.tsig * (1 - est_cfo_percentile)
+        upchirp = gen_upchirp(tstart_sig, -Config.bw / 2 + cfofreq, tstart_sig + tsig, Config.bw / 2 + cfofreq)
+        detect_symb.append(upchirp)
+        tstart_sig += tsig
+    for tid in range(Config.code_len):
+        inif = Config.codes[tid] / Config.nsamp * Config.bw
+        tsig = Config.tsig * (1 - est_cfo_percentile) * (1 - Config.codes[tid] / Config.nsamp)
+        upchirp = gen_upchirp(tstart_sig, -Config.bw / 2 + cfofreq + inif, tstart_sig + tsig, Config.bw / 2 + cfofreq)
+        detect_symb.append(upchirp)
+        tstart_sig += tsig
+        tsig = Config.tsig * (1 - est_cfo_percentile) * (Config.codes[tid] / Config.nsamp)
+        upchirp = gen_upchirp(tstart_sig, -Config.bw / 2 + cfofreq, tstart_sig + tsig, -Config.bw / 2 + cfofreq + inif)
+        detect_symb.append(upchirp)
+        tstart_sig += tsig
+    for tid in range(2):
+        tsig = Config.tsig * (1 - est_cfo_percentile)
+        upchirp = gen_upchirp(tstart_sig, Config.bw / 2 + cfofreq, tstart_sig + tsig, -Config.bw / 2 + cfofreq)  # TODO ???
+        detect_symb.append(np.conj(upchirp))
+        tstart_sig += tsig
+    tsig = Config.tsig * (1 - est_cfo_percentile) * 0.25
+    upchirp = gen_upchirp(tstart_sig, Config.bw / 2 + cfofreq, tstart_sig + tsig, Config.bw / 4 + cfofreq)  # TODO +-
+    detect_symb.append(upchirp)
+    return detect_symb
 
 
 # read packets from file
