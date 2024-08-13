@@ -14,6 +14,7 @@ import sys
 # Enable fallback mode
 # from cupyx.fallback_mode import numpy as np
 import numpy as np
+# import cupy as np
 
 # Now, use CuPy as usual
 # import cupyx.scipy.fft as fft
@@ -62,7 +63,7 @@ class Config:
 
     nsamp = round(n_classes * fs / bw)
     nfreq = 256 + 1
-    time_upsamp = 4
+    time_upsamp = 32
 
     preamble_len = 8
     code_len = 2
@@ -74,6 +75,8 @@ class Config:
     breakflag = True
 
     t = np.linspace(0, nsamp / fs, nsamp + 1)[:-1]
+    # if not gpu: t = t.get()
+    # print(type(t))
     chirpI1 = chirp(t, f0=-bw / 2, f1=bw / 2, t1=2 ** sf / bw, method='linear', phi=90)
     chirpQ1 = chirp(t, f0=-bw / 2, f1=bw / 2, t1=2 ** sf / bw, method='linear', phi=0)
     upchirp = np.array(chirpI1 + 1j * chirpQ1)
@@ -347,7 +350,12 @@ def fine_work(pktdata2a):
 
 
 def gen_upchirp(t0, f0, t1, f1):
+    # if not Config.gpu:
     t = np.arange(np.ceil(t0), np.ceil(t1))
+    # else:
+    #     t = np.arange(np.ceil(t0).get(), np.ceil(t1).get())
+
+    # if Config.gpu: t = t.get()
     fslope = (f1 - f0) / (t1 - t0)
     chirpI1 = chirp(t, f0=f0 - t0 * fslope, f1=f1, t1=t1, method='linear', phi=90)
     chirpQ1 = chirp(t, f0=f0 - t0 * fslope, f1=f1, t1=t1, method='linear', phi=0)
@@ -414,6 +422,7 @@ def fine_work_new(pktdata2a):  # TODO working
 
     time_error_range = range(Config.nsamp)
     evals = np.zeros((len(time_error_range), len(tstart_range), len(cfofreq_range)), dtype=float)
+    progress_bar.close()
     progress_bar = tqdm(total=len(time_error_range) * len(tstart_range) * len(cfofreq_range), desc="Computing")
     # logger.info(f'{len(pktdata2a)=}')
     for time_error_idx, time_error in enumerate(time_error_range):
@@ -464,7 +473,10 @@ if __name__ == "__main__":
                     break
                 nmaxs[i] = np.max(np.abs(rawdata))
         kmeans = KMeans(n_clusters=2, random_state=0)
+        # if Config.gpu:
         kmeans.fit(nmaxs.reshape(-1, 1))
+        # else:
+        #     kmeans.fit(nmaxs.reshape(-1, 1).get())
         thresh = np.mean(kmeans.cluster_centers_)
         if opts.debug:
             counts, bins = np.histogram(nmaxs, bins=100)
