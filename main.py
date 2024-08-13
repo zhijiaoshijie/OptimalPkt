@@ -61,8 +61,8 @@ class Config:
             file_paths.append(os.path.join(base_dir, file_name))
 
     nsamp = round(n_classes * fs / bw)
-    nfreq = 2048 + 1
-    time_upsamp = 128
+    nfreq = 256 + 1
+    time_upsamp = 4
 
     preamble_len = 8
     code_len = 2
@@ -373,6 +373,7 @@ def fine_work_new(pktdata2a):  # TODO working
 
     tstart_range = np.linspace(-1, 0, Config.time_upsamp + 1)[:-1]
     detect_array_up = [[[] for _ in tstart_range] for _ in cfofreq_range]
+    progress_bar = tqdm(total=len(tstart_range) * len(cfofreq_range), desc="Generating Reference Chirps")
     for freq_idx, cfofreq in enumerate(cfofreq_range):
         est_cfo_percentile = cfofreq / Config.sig_freq
         for tstart_idx, tstart in enumerate(tstart_range):
@@ -406,12 +407,14 @@ def fine_work_new(pktdata2a):  # TODO working
             tstart_sig += tsig
 
             detect_array_up[freq_idx][tstart_idx] = np.conj(np.concatenate(detect_symb, axis=0))
+            progress_bar.update(1)
 
     # logger.info(str([len(x) for x in detect_array_up]))
     # logger.info(f'{cfofreq=} {est_cfo_percentile=}')
 
     time_error_range = range(Config.nsamp)
     evals = np.zeros((len(time_error_range), len(tstart_range), len(cfofreq_range)), dtype=float)
+    progress_bar = tqdm(total=len(time_error_range) * len(tstart_range) * len(cfofreq_range), desc="Computing")
     # logger.info(f'{len(pktdata2a)=}')
     for time_error_idx, time_error in enumerate(time_error_range):
         for tstart_idx, tstart in enumerate(tstart_range):
@@ -421,6 +424,7 @@ def fine_work_new(pktdata2a):  # TODO working
                 # logger.info(f'{time_error_idx=} {small_time_error=} {len(arr)=} {arr.shape=}')
                 # logger.info(f'{len(pktdata2a_roll)=} {(pktdata2a_roll[:len(arr)]).shape=}')
                 evals[time_error_idx][tstart_idx][freq_idx] = np.abs(np.dot(pktdata2a_roll[:len(arr)], arr)) / len(arr)
+                progress_bar.update(1)
 
     max_evals = np.unravel_index(np.argmax(evals), evals.shape)
     max_evals = [int(x) for x in max_evals]
