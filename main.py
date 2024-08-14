@@ -427,29 +427,34 @@ def fine_work_new(pktdata2a):  # TODO working
     initial_freq = -26623.725
 
     # Perform optimization
-    bestx = None
-    bestobj = np.inf
-    for start_t in tqdm(range(Config.nsamp)):
-        result = opt.minimize(
-            objective,
-            [initial_freq, start_t + 0.5],
-            bounds=[(-27000, -26000), (start_t, start_t + 1)],
-            method='L-BFGS-B',  # More precise method for bounded problems
-            options={'gtol': 1e-8, 'disp': False}  # Set tolerance for convergence and display progress
-        )
-        logger.debug(f"Optimized parameters: cfofreq = {result.x[0]}, time_error = {result.x[1]} {result.fun=}")
-        if result.fun < bestobj:
-            bestx = result.x
-            bestobj = result.fun
-    cfo_freq_est, time_error = bestx
-    logger.info(f"Optimized parameters: {cfo_freq_est=} {time_error=}")
-
+    if 0:
+        bestx = None
+        bestobj = np.inf
+        for start_t in tqdm(range(Config.nsamp)):
+            result = opt.minimize(
+                objective,
+                [initial_freq, start_t + 0.5],
+                bounds=[(-27000, -26000), (start_t, start_t + 1)],
+                method='L-BFGS-B',  # More precise method for bounded problems
+                options={'gtol': 1e-8, 'disp': False}  # Set tolerance for convergence and display progress
+            )
+            logger.debug(f"Optimized parameters: cfofreq = {result.x[0]}, time_error = {result.x[1]} {result.fun=}")
+            if result.fun < bestobj:
+                bestx = result.x
+                bestobj = result.fun
+        cfo_freq_est, time_error = bestx
+        logger.info(f"Optimized parameters: {cfo_freq_est=} {time_error=}")
+    else:
+        cfo_freq_est = -26695.219805083307
+        time_error = 157.733830380595
     pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
     detect_symb = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
     didx = 0
     for sidx, ssymb in enumerate(detect_symb):
         ress = tocpu(cp.conj(togpu(ssymb)).dot(pktdata2a_roll[didx: didx + len(ssymb)]))
         logger.info(f'{sidx=} {abs(ress)=} {np.angle(ress)=}')
+        ress = tocpu(cp.conj(togpu(ssymb)).dot(togpu(ssymb)))
+        logger.info(f'self {sidx=} {abs(ress)=} {np.angle(ress)=}')
         didx += len(ssymb)
 
     detect_symb = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
@@ -462,8 +467,8 @@ def fine_work_new(pktdata2a):  # TODO working
     phase_diff = np.diff(unwrapped_phase)
 
     # Plotting
-    plt.figure(figsize=(10, 3))
-    plt.plot(phase_diff, linestyle='-', color='b')
+    plt.figure(figsize=(50, 10))
+    plt.plot(unwrapped_phase[1024-100:1024+100] - unwrapped_phase[21], linestyle='-',  color='b')
 
     complex_array = cp.roll(pktdata2a, - math.ceil(time_error))[:len(complex_array)].get()
     # Extract the phase and unwrap it
@@ -474,7 +479,7 @@ def fine_work_new(pktdata2a):  # TODO working
     phase_diff = np.diff(unwrapped_phase)
 
     # Plotting
-    plt.plot(phase_diff, linestyle='--', color='r')
+    plt.plot(unwrapped_phase[1024-100:1024+100  ] - unwrapped_phase[21], linestyle='--',   color='r')
 
     plt.title('Difference between Consecutive Unwrapped Phase Values')
     plt.xlabel('Index')
@@ -534,6 +539,8 @@ def gen_refchirp(cfofreq, tstart):
     for tid in range(Config.preamble_len):
         upchirp = gen_upchirp(tstart_sig, -Config.bw / 2 + cfofreq, tstart_sig + tsig, Config.bw / 2 + cfofreq)
         assert len(upchirp) == math.ceil(tstart_sig + tsig) - math.ceil(tstart_sig)
+        upchirp[:20] = np.zeros((20,))
+        upchirp[-20:] = np.zeros((20,))
         detect_symb.append(upchirp)
         tstart_sig += tsig
     # for tid in range(Config.code_len):
@@ -550,6 +557,8 @@ def gen_refchirp(cfofreq, tstart):
     tstart_sig += tsig * 2
     for tid in range(2):
         upchirp = gen_upchirp(tstart_sig, Config.bw / 2 + cfofreq, tstart_sig + tsig, -Config.bw / 2 + cfofreq)  # TODO ???
+        upchirp[:20] = np.zeros((20,))
+        upchirp[-20:] = np.zeros((20,))
         detect_symb.append(upchirp)
         # logger.info(f'{len(upchirp) =} {tstart_sig + tsig=} {tstart_sig=}')
         assert len(upchirp) == math.ceil(tstart_sig + tsig) - math.ceil(tstart_sig)
@@ -558,6 +567,8 @@ def gen_refchirp(cfofreq, tstart):
 
     tsig = Config.tsig * (1 - est_cfo_percentile) * 0.25
     upchirp = gen_upchirp(tstart_sig, Config.bw / 2 + cfofreq, tstart_sig + tsig, Config.bw / 4 + cfofreq)  # TODO +-
+    upchirp[:20] = np.zeros((20,))
+    upchirp[-20:] = np.zeros((20,))
     assert len(upchirp) == math.ceil(tstart_sig + tsig) - math.ceil(tstart_sig)
     detect_symb.append(upchirp)
     return detect_symb
@@ -592,7 +603,7 @@ if __name__ == "__main__":
                     logger.debug("file complete", len(rawdata))
                     break
                 nmaxs[i] = np.max(np.abs(rawdata))
-        kmeans = KMeans(n_clusters=2, random_state=0)
+        kmeans = KMeans(n_clusters=2, random_state=0, n_init='auto')
         # if use_gpu:
         kmeans.fit(nmaxs.reshape(-1, 1))
         # else:
