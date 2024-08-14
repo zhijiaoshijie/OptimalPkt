@@ -4,7 +4,7 @@ import math
 import os
 import pickle
 import time
-
+import scipy.optimize as opt
 import matplotlib.pyplot as plt
 from scipy.signal import chirp
 from sklearn.cluster import KMeans
@@ -211,6 +211,7 @@ def coarse_work(pktdata_in):
 
 
 def work(pkt_totcnt, pktdata_in):
+    pktdata_in /= np.mean(np.abs(pktdata_in))
     fft_n = Config.nsamp * Config.fft_upsamp
     if Config.renew_switch:  # !!! TODO  False
         est_cfo_freq, argmax_est_time_shift_samples = coarse_work(pktdata_in)
@@ -267,6 +268,7 @@ def work(pkt_totcnt, pktdata_in):
     est_cfo_symbol = np.array(chirpI1 + 1j * chirpQ1)
     pktdata5 = pktdata3 * est_cfo_symbol
     detect, upsamp = test_preamble(est_to_dec, pktdata5)
+
 
     est_to_dec2, est_to_int2, pktdata6, re_cfo_2, re_cfo_freq_2, detect = fine_work(pktdata5)
     detect, upsamp = test_preamble(est_to_dec2, pktdata6)
@@ -335,8 +337,8 @@ def fine_work(pktdata2a):
     sfd_downcode = ansval2
     re_cfo_0 = ModulusComputation.average_modulus((sfd_upcode, sfd_downcode), Config.n_classes)
     est_to_0 = ModulusComputation.average_modulus((sfd_upcode, - sfd_downcode), Config.n_classes)
-    if opts.debug:
-        logger.debug('fine work' + ' '.join([f'{x:.3f}' for x in ans1[: Config.preamble_len]]) + 'sfd' +
+    # if opts.debug:
+    logger.debug('fine work' + ' '.join([f'{x:.3f}' for x in ans1[: Config.preamble_len]]) + 'sfd' +
                      ' '.join([f'{x:.3f}' for x in ans2[Config.sfdpos: Config.sfdpos + 2]]) +
                      f'{sfd_upcode=}, {sfd_downcode=}, {re_cfo_0=}, {est_to_0=}, {detect=}')
     logger.debug('fine work angles: preamble')
@@ -365,9 +367,10 @@ def fine_work(pktdata2a):
 
 def gen_upchirp(t0, f0, t1, f1):
     # if not use_gpu:
-    t = np.arange(np.ceil(t0), np.ceil(t1)) / Config.fs
+    t = np.arange(math.ceil(t0), math.ceil(t1)) / Config.fs
+    # logger.info(f'{t0=} {t1=} {len(t)=}')
     # else:
-    #     t = np.arange(np.ceil(t0).get(), np.ceil(t1).get())
+    #     t = np.arange(math.ceil(t0).get(), math.ceil(t1).get())
 
     # if use_gpu: t = t.get()
     fslope = (f1 - f0) / (t1 - t0) * Config.fs
@@ -395,23 +398,63 @@ def fine_work_new(pktdata2a):  # TODO working
     fslope = Config.bw / tsig
 
 # test
-    cfofreq = -26623
-    tstart = 0.21875 - 1
-    time_error = 195
+    cfofreq = -26623.725
+    time_error = 534
     pktdata2a_roll = cp.roll(pktdata2a, - time_error)
-    detect_symb = gen_refchirp(cfofreq, tstart)
+    detect_symb = gen_refchirp(cfofreq, 0)
+    didx = 0
+    res = 0
+    for sidx, ssymb in enumerate(detect_symb[:8]):
+        res += tocpu(cp.conj(togpu(ssymb)).dot(pktdata2a_roll[didx : didx + len(ssymb)]))
+        # logger.info(f'{sidx=} {np.abs(res)/len(ssymb)=} {np.angle(res)=} {len(ssymb)=}')
+        didx += len(ssymb)
+    logger.info(f'try value {res=}')
+
+    def objective(params):
+        cfofreq, time_error = params
+        pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
+        detect_symb = gen_refchirp(cfofreq, time_error-math.ceil(time_error))
+        didx = 0
+        res = 0
+        for sidx, ssymb in enumerate(detect_symb):
+            ress = tocpu(cp.conj(togpu(ssymb)).dot(pktdata2a_roll[didx: didx + len(ssymb)]))
+            logger.debug(f'{sidx=} {abs(ress)=} {np.angle(ress)=}')
+            res += ress
+            didx += len(ssymb)
+        return -abs(res)  # Negative because we use a minimizer
+
+    # Initial parameters
+    initial_freq = -26623.725
+
+    # Perform optimization
+    bestx = None
+    bestobj = np.inf
+    for start_t in tqdm(range(Config.nsamp)):
+        result = opt.minimize(
+            objective,
+            [initial_freq, start_t + 0.5],
+            bounds=[(-27000, -26000), (start_t, start_t + 1)],
+            method='L-BFGS-B',  # More precise method for bounded problems
+            options={'gtol': 1e-8, 'disp': False}  # Set tolerance for convergence and display progress
+        )
+        logger.debug(f"Optimized parameters: cfofreq = {result.x[0]}, time_error = {result.x[1]} {result.fun=}")
+        if result.fun < bestobj:
+            bestx = result.x
+            bestobj = result.fun
+    cfo_freq_est, time_error = bestx
+    logger.info(f"Optimized parameters: {cfo_freq_est=} {time_error=}")
+
+    pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
+    detect_symb = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
     didx = 0
     for sidx, ssymb in enumerate(detect_symb):
-        res = tocpu(cp.conj(togpu(ssymb)).dot(pktdata2a_roll[didx : didx + len(ssymb)]))
-        logger.info(f'{sidx=} {np.abs(res)/len(ssymb)=} {np.angle(res)=} {len(ssymb)=}')
+        ress = tocpu(cp.conj(togpu(ssymb)).dot(pktdata2a_roll[didx: didx + len(ssymb)]))
+        logger.info(f'{sidx=} {abs(ress)=} {np.angle(ress)=}')
         didx += len(ssymb)
 
-
-    # Example complex array
-
-    detect_symb = gen_refchirp(cfofreq, tstart)
+    detect_symb = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
     complex_array = np.concatenate(detect_symb)
-    # Extract the phase and unwrap it
+        # Extract the phase and unwrap it
     phase = np.angle(complex_array)
     unwrapped_phase = np.unwrap(phase)
 
@@ -420,9 +463,9 @@ def fine_work_new(pktdata2a):  # TODO working
 
     # Plotting
     plt.figure(figsize=(10, 3))
-    plt.plot(unwrapped_phase, linestyle='-', color='b')
+    plt.plot(phase_diff, linestyle='-', color='b')
 
-    complex_array = cp.roll(pktdata2a, -534)[:len(complex_array)].get()
+    complex_array = cp.roll(pktdata2a, - math.ceil(time_error))[:len(complex_array)].get()
     # Extract the phase and unwrap it
     phase = np.angle(complex_array)
     unwrapped_phase = np.unwrap(phase)
@@ -431,7 +474,7 @@ def fine_work_new(pktdata2a):  # TODO working
     phase_diff = np.diff(unwrapped_phase)
 
     # Plotting
-    plt.plot(unwrapped_phase, linestyle='-', color='r')
+    plt.plot(phase_diff, linestyle='--', color='r')
 
     plt.title('Difference between Consecutive Unwrapped Phase Values')
     plt.xlabel('Index')
@@ -451,24 +494,24 @@ def fine_work_new(pktdata2a):  # TODO working
             detect_symb = gen_refchirp(cfofreq, tstart)
             detect_array_up[freq_idx][tstart_idx] = togpu(np.conj(np.concatenate(detect_symb)))
             progress_bar.update(1)
-
+    progress_bar.close()
     # logger.info(str([len(x) for x in detect_array_up]))
     # logger.info(f'{cfofreq=} {est_cfo_percentile=}')
 
 
     time_error_range = range(Config.nsamp)
     evals = np.zeros((len(time_error_range), len(tstart_range), len(cfofreq_range)), dtype=float)
-    progress_bar.close()
-    progress_bar = tqdm(total=len(time_error_range) * len(tstart_range) * len(cfofreq_range), desc="Computing")
-    # logger.info(f'{len(pktdata2a)=}')
-    for time_error_idx, time_error in enumerate(time_error_range):
-        for tstart_idx, tstart in enumerate(tstart_range):
-            for freq_idx in range(len(cfofreq_range)):
-                pktdata2a_roll = np.roll(pktdata2a, - time_error)
-                ssymb = detect_array_up[freq_idx][tstart_idx]
-                evals[time_error_idx][tstart_idx][freq_idx] = np.abs(pktdata2a_roll[:len(ssymb)].dot(ssymb)) / len(ssymb)
-                progress_bar.update(1)
-    progress_bar.close()
+    if 0:
+        progress_bar = tqdm(total=len(time_error_range) * len(tstart_range) * len(cfofreq_range), desc="Computing")
+        # logger.info(f'{len(pktdata2a)=}')
+        for time_error_idx, time_error in enumerate(time_error_range):
+            for tstart_idx, tstart in enumerate(tstart_range):
+                for freq_idx in range(len(cfofreq_range)):
+                    pktdata2a_roll = np.roll(pktdata2a, - time_error)
+                    ssymb = detect_array_up[freq_idx][tstart_idx]
+                    evals[time_error_idx][tstart_idx][freq_idx] = np.abs(pktdata2a_roll[:len(ssymb)].dot(ssymb)) / len(ssymb)
+                    progress_bar.update(1)
+        progress_bar.close()
 
     max_evals = np.unravel_index(np.argmax(evals), evals.shape)
     max_evals = [int(x) for x in max_evals]
@@ -478,6 +521,7 @@ def fine_work_new(pktdata2a):  # TODO working
     logger.info(f'{max_evals=} {time_error=} samples, {cfo_freq_est=} Hz {np.max(evals)=} \n\n')
     with open('eval.pkl', 'wb') as f: pickle.dump(evals, f)
 
+
     sys.exit(0)
     return time_error, cfo_freq_est
 
@@ -486,28 +530,35 @@ def gen_refchirp(cfofreq, tstart):
     est_cfo_percentile = cfofreq / Config.sig_freq
     detect_symb = []
     tstart_sig = tstart
+    tsig = Config.tsig * (1 - est_cfo_percentile)
     for tid in range(Config.preamble_len):
-        tsig = Config.tsig * (1 - est_cfo_percentile)
         upchirp = gen_upchirp(tstart_sig, -Config.bw / 2 + cfofreq, tstart_sig + tsig, Config.bw / 2 + cfofreq)
+        assert len(upchirp) == math.ceil(tstart_sig + tsig) - math.ceil(tstart_sig)
         detect_symb.append(upchirp)
         tstart_sig += tsig
-    for tid in range(Config.code_len):
-        inif = Config.codes[tid] / Config.nsamp * Config.bw
-        tsig = Config.tsig * (1 - est_cfo_percentile) * (1 - Config.codes[tid] / Config.nsamp)
-        upchirp = gen_upchirp(tstart_sig, -Config.bw / 2 + cfofreq + inif, tstart_sig + tsig, Config.bw / 2 + cfofreq)
-        detect_symb.append(upchirp)
-        tstart_sig += tsig
-        tsig = Config.tsig * (1 - est_cfo_percentile) * (Config.codes[tid] / Config.nsamp)
-        upchirp = gen_upchirp(tstart_sig, -Config.bw / 2 + cfofreq, tstart_sig + tsig, -Config.bw / 2 + cfofreq + inif)
-        detect_symb.append(upchirp)
-        tstart_sig += tsig
+    # for tid in range(Config.code_len):
+    #     inif = Config.codes[tid] / Config.nsamp * Config.bw
+    #     tsig = Config.tsig * (1 - est_cfo_percentile) * (1 - Config.codes[tid] / Config.nsamp)
+    #     upchirp = gen_upchirp(tstart_sig, -Config.bw / 2 + cfofreq + inif, tstart_sig + tsig, Config.bw / 2 + cfofreq)
+    #     detect_symb.append(upchirp)
+    #     tstart_sig += tsig
+    #     tsig = Config.tsig * (1 - est_cfo_percentile) * (Config.codes[tid] / Config.nsamp)
+    #     upchirp = gen_upchirp(tstart_sig, -Config.bw / 2 + cfofreq, tstart_sig + tsig, -Config.bw / 2 + cfofreq + inif)
+    #     detect_symb.append(upchirp)
+    #     tstart_sig += tsig
+    detect_symb.append(np.zeros((math.ceil(tstart_sig + tsig * 2) - math.ceil(tstart_sig),)))
+    tstart_sig += tsig * 2
     for tid in range(2):
-        tsig = Config.tsig * (1 - est_cfo_percentile)
         upchirp = gen_upchirp(tstart_sig, Config.bw / 2 + cfofreq, tstart_sig + tsig, -Config.bw / 2 + cfofreq)  # TODO ???
         detect_symb.append(upchirp)
+        # logger.info(f'{len(upchirp) =} {tstart_sig + tsig=} {tstart_sig=}')
+        assert len(upchirp) == math.ceil(tstart_sig + tsig) - math.ceil(tstart_sig)
+            # logger.warning(f'warn {len(upchirp) =} {tstart_sig + tsig=} {tstart_sig=}')
         tstart_sig += tsig
+
     tsig = Config.tsig * (1 - est_cfo_percentile) * 0.25
     upchirp = gen_upchirp(tstart_sig, Config.bw / 2 + cfofreq, tstart_sig + tsig, Config.bw / 4 + cfofreq)  # TODO +-
+    assert len(upchirp) == math.ceil(tstart_sig + tsig) - math.ceil(tstart_sig)
     detect_symb.append(upchirp)
     return detect_symb
 
@@ -519,6 +570,7 @@ if __name__ == "__main__":
     plt.rcParams['lines.markersize'] = 12
     plt.rcParams['font.family'] = 'serif'
     plt.figure(figsize=(8, 6))
+
 
     for file_path in Config.file_paths:
 
@@ -546,10 +598,9 @@ if __name__ == "__main__":
         # else:
         #     kmeans.fit(nmaxs.reshape(-1, 1).get())
         thresh = np.mean(kmeans.cluster_centers_)
-        if opts.debug:
-            counts, bins = np.histogram(nmaxs, bins=100)
-            logger.debug(
-                f"Init file find cluster: counts={np.array2string(counts, precision=2, suppress_small=True)}, bins={np.array2string(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
+        counts, bins = np.histogram(nmaxs, bins=100)
+        logger.debug(
+            f"Init file find cluster: counts={np.array2string(counts, precision=2, suppress_small=True)}, bins={np.array2string(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
 
         pkt_totcnt = 0
 
@@ -568,7 +619,8 @@ if __name__ == "__main__":
 
                 if nmax < thresh:
                     if len(pktdata) > 14 and pkt_cnt > 20:
-                        if pkt_totcnt < 20 and False:
+                        if pkt_totcnt < 21:
+                            #and False:
                             pktdata = []
                             pkt_totcnt += 1
                             continue
