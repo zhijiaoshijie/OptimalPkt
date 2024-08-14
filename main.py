@@ -11,7 +11,7 @@ from sklearn.cluster import KMeans
 
 from tqdm import tqdm
 import sys
-
+import warnings
 # Enable fallback mode
 # from cupyx.fallback_mode import numpy as np
 import numpy as np
@@ -398,17 +398,18 @@ def fine_work_new(pktdata2a):  # TODO working
     fslope = Config.bw / tsig
 
 # test
-    cfofreq = -26623.725
-    time_error = 534
-    pktdata2a_roll = cp.roll(pktdata2a, - time_error)
-    detect_symb = gen_refchirp(cfofreq, 0)
-    didx = 0
-    res = 0
-    for sidx, ssymb in enumerate(detect_symb[:8]):
-        res += tocpu(cp.conj(togpu(ssymb)).dot(pktdata2a_roll[didx : didx + len(ssymb)]))
-        # logger.info(f'{sidx=} {np.abs(res)/len(ssymb)=} {np.angle(res)=} {len(ssymb)=}')
-        didx += len(ssymb)
-    logger.info(f'try value {res=}')
+    if 0:
+        cfofreq = -26623.725
+        time_error = 534
+        pktdata2a_roll = cp.roll(pktdata2a, - time_error)
+        detect_symb = gen_refchirp(cfofreq, 0)
+        didx = 0
+        res = 0
+        for sidx, ssymb in enumerate(detect_symb[:8]):
+            res += tocpu(cp.conj(togpu(ssymb)).dot(pktdata2a_roll[didx : didx + len(ssymb)]))
+            # logger.info(f'{sidx=} {np.abs(res)/len(ssymb)=} {np.angle(res)=} {len(ssymb)=}')
+            didx += len(ssymb)
+        logger.info(f'try value {res=}')
 
     def objective(params):
         cfofreq, time_error = params
@@ -446,63 +447,150 @@ def fine_work_new(pktdata2a):  # TODO working
         cfo_freq_est, time_error = bestx
         logger.info(f"Optimized parameters: {cfo_freq_est=} {time_error=}")
     else:
-        cfo_freq_est = -26686.3422249148
-        time_error = 157.8629892149687
+        cfo_freq_est = -26695.219805083307
+        time_error = 157.733830380595
     pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
-    detect_symb = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
+    detect_symb, tstart_sig = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
     didx = 0
     for sidx, ssymb in enumerate(detect_symb[:8]):
         ress = tocpu(cp.conj(togpu(ssymb)).dot(pktdata2a_roll[didx: didx + len(ssymb)]))
-        logger.info(f'{np.angle(ress)}')
-        # logger.info(f'{sidx=} {abs(ress)=} {np.angle(ress)=}')
-        # ress = tocpu(cp.conj(togpu(ssymb)).dot(togpu(ssymb)))
-        # logger.info(f'self {sidx=} {abs(ress)=} {np.angle(ress)=}')
+        logger.info(f'{np.angle(ress)=}')
         didx += len(ssymb)
 
-    cfo_freq_est = -26695.219805083307
-    time_error = 157.733830380595
-    pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
-    detect_symb = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
-    didx = 0
-    for sidx, ssymb in enumerate(detect_symb[:8]):
-        ress = tocpu(cp.conj(togpu(ssymb)).dot(pktdata2a_roll[didx: didx + len(ssymb)]))
-        logger.info(f'{np.angle(ress)}')
-        # logger.info(f'{sidx=} {abs(ress)=} {np.angle(ress)=}')
-        # ress = tocpu(cp.conj(togpu(ssymb)).dot(togpu(ssymb)))
-        # logger.info(f'self {sidx=} {abs(ress)=} {np.angle(ress)=}')
-        didx += len(ssymb)
-
-    detect_symb = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
-    complex_array = np.concatenate(detect_symb)
-        # Extract the phase and unwrap it
-    phase = np.angle(complex_array)
+    plt.clf()
+    phase = np.angle(tocpu(pktdata2a_roll[:1024*20]))
     unwrapped_phase = np.unwrap(phase)
-
-    # Compute the difference between consecutive unwrapped phase values
-    phase_diff = np.diff(unwrapped_phase)
-
-    # Plotting
-    plt.figure(figsize=(50, 10))
-    plt.plot(unwrapped_phase[1024-100:1024+100] - unwrapped_phase[21], linestyle='-',  color='b')
-
-    complex_array = cp.roll(pktdata2a, - math.ceil(time_error))[:len(complex_array)].get()
-    # Extract the phase and unwrap it
-    phase = np.angle(complex_array)
-    unwrapped_phase = np.unwrap(phase)
-
-    # Compute the difference between consecutive unwrapped phase values
-    phase_diff = np.diff(unwrapped_phase)
-
-    # Plotting
-    plt.plot(unwrapped_phase[1024-100:1024+100  ] - unwrapped_phase[21], linestyle='--',   color='r')
-
-    plt.title('Difference between Consecutive Unwrapped Phase Values')
-    plt.xlabel('Index')
-    plt.ylabel('Difference in Phase')
-    plt.grid(True)
-    plt.savefig('1.png')
+    plt.plot(unwrapped_phase)
+    plt.axvline(tstart_sig, color="k")
+    plt.title("pkt20")
     plt.show()
+    plt.clf()
 
+    code_cnt = math.floor(len(pktdata2a_roll) / Config.nsamp - Config.sfdend - 0.5)
+    code_ests = np.zeros((code_cnt,), dtype=int)
+    for codeid in range(code_cnt):
+        # tsig = Config.tsig * (1 - est_cfo_percentile)
+        res_array = np.zeros((Config.n_classes,), dtype=np.float)
+        tstart_sig1 = tstart_sig
+        for code in range(Config.n_classes):
+            cfofreq = est_cfo_freq
+            est_cfo_percentile = cfofreq / Config.sig_freq
+            inif = code / Config.n_classes * Config.bw
+            tsig = Config.tsig * (1 - est_cfo_percentile) * (1 - code / Config.n_classes)
+            upchirp1 = gen_upchirp(tstart_sig1, -Config.bw / 2 + cfofreq + inif, tstart_sig1 + tsig, Config.bw / 2 + cfofreq)
+            res1 = tocpu(cp.conj(togpu(upchirp1)).dot(pktdata2a_roll[math.ceil(tstart_sig1): math.ceil(tstart_sig1 + tsig)]))
+
+
+            if code != 0:
+                tstart_sig1 += tsig
+                tsig = Config.tsig * (1 - est_cfo_percentile) * (code / Config.n_classes)
+                upchirp2 = gen_upchirp(tstart_sig1, -Config.bw / 2 + cfofreq, tstart_sig1 + tsig, -Config.bw / 2 + cfofreq + inif)
+                res2 = tocpu(cp.conj(togpu(upchirp2)).dot(pktdata2a_roll[math.ceil(tstart_sig1): math.ceil(tstart_sig1 + tsig)]))
+                tstart_sig1 += tsig
+            else:
+                res2 = 0
+
+            res = abs(res1)**2 + abs(res2)**2
+            logger.info(f"{code=} {abs(res1)=} {np.angle(res1)=} {abs(res2)=} {np.angle(res2)=}")
+            res_array[code] = res
+        est_code = np.argmax(res_array)
+        logger.info(f"{est_code=}")
+        code_ests[codeid] = est_code
+        plt.plot(res_array)
+        plt.title("resarray")
+        plt.axvline(est_code,color="k")
+        plt.show()
+        plt.clf()
+
+        code = est_code
+        tstart_sig1 = tstart_sig
+        est_cfo_percentile = cfofreq / Config.sig_freq
+        inif = code / Config.n_classes * Config.bw
+        tsig = Config.tsig * (1 - est_cfo_percentile) * (1 - code / Config.n_classes)
+        upchirp1 = gen_upchirp(tstart_sig1, -Config.bw / 2 + cfofreq + inif, tstart_sig1 + tsig, Config.bw / 2 + cfofreq)
+        upchirp1 = np.conj(upchirp1)
+        res1 = tocpu(togpu(upchirp1).dot(pktdata2a_roll[math.ceil(tstart_sig1): math.ceil(tstart_sig1 + tsig)]))
+        upchirp1 *= res1 / np.abs(res1)
+
+        if code != 0:
+            tstart_sig1 += tsig
+            tsig = Config.tsig * (1 - est_cfo_percentile) * (code / Config.n_classes)
+            upchirp2 = gen_upchirp(tstart_sig1, -Config.bw / 2 + cfofreq, tstart_sig1 + tsig, -Config.bw / 2 + cfofreq + inif)
+            upchirp2 = np.conj(upchirp2)
+            res2 = tocpu(togpu(upchirp2).dot(pktdata2a_roll[math.ceil(tstart_sig1): math.ceil(tstart_sig1 + tsig)]))
+            upchirp2 *= res2 / np.abs(res2)
+            tstart_sig1 += tsig
+
+        if code != 0:
+            complex_array = np.conj(np.concatenate((upchirp1, upchirp2)))
+        else:
+            complex_array = upchirp1
+            # Extract the phase and unwrap it
+        phase = np.angle(complex_array)
+        unwrapped_phase = np.unwrap(phase)
+
+        # Compute the difference between consecutive unwrapped phase values
+        phase_diff = np.diff(unwrapped_phase)
+
+        # Plotting
+        plt.figure(figsize=(10, 6))
+        plt.plot(unwrapped_phase, linestyle='-',  color='b', label=f"{code=}")
+
+        code = 58
+        tstart_sig1 = tstart_sig
+        est_cfo_percentile = cfofreq / Config.sig_freq
+        inif = code / Config.n_classes * Config.bw
+        tsig = Config.tsig * (1 - est_cfo_percentile) * (1 - code / Config.n_classes)
+        upchirp1 = gen_upchirp(tstart_sig1, -Config.bw / 2 + cfofreq + inif, tstart_sig1 + tsig, Config.bw / 2 + cfofreq)
+        upchirp1 = np.conj(upchirp1)
+        res1 = tocpu(togpu(upchirp1).dot(pktdata2a_roll[math.ceil(tstart_sig1): math.ceil(tstart_sig1 + tsig)]))
+        upchirp1 *= res1 / np.abs(res1)
+
+        if code != 0:
+            tstart_sig1 += tsig
+            tsig = Config.tsig * (1 - est_cfo_percentile) * (code / Config.n_classes)
+            upchirp2 = gen_upchirp(tstart_sig1, -Config.bw / 2 + cfofreq, tstart_sig1 + tsig, -Config.bw / 2 + cfofreq + inif)
+            upchirp2 = np.conj(upchirp2)
+            res2 = tocpu(togpu(upchirp2).dot(pktdata2a_roll[math.ceil(tstart_sig1): math.ceil(tstart_sig1 + tsig)]))
+            upchirp2 *= res2 / np.abs(res2)
+            tstart_sig1 += tsig
+
+        if code != 0:
+            complex_array = np.conj(np.concatenate((upchirp1, upchirp2)))
+        else:
+            complex_array = upchirp1
+            # Extract the phase and unwrap it
+        phase = np.angle(complex_array)
+        unwrapped_phase = np.unwrap(phase)
+
+        # Compute the difference between consecutive unwrapped phase values
+        phase_diff = np.diff(unwrapped_phase)
+
+        # Plotting
+        plt.plot(unwrapped_phase, linestyle='-', color='k', label=f"{code=}")
+        complex_array = tocpu(pktdata2a_roll[math.ceil(tstart_sig): math.ceil(tstart_sig1)])
+        # Extract the phase and unwrap it
+        phase = np.angle(complex_array)
+        unwrapped_phase = np.unwrap(phase)
+
+        # Compute the difference between consecutive unwrapped phase values
+        phase_diff = np.diff(unwrapped_phase)
+
+        # Plotting
+        plt.plot(unwrapped_phase, linestyle='--',   color='r', label="input")
+
+        plt.title('Ref')
+        plt.xlabel('Index')
+        plt.ylabel('Phase')
+        plt.grid(True)
+        plt.axvline(Config.tsig * (1 - est_cfo_percentile) * (1 - code / Config.n_classes), color='k')
+        plt.legend()
+        plt.savefig('2.png')
+        plt.show()
+        plt.clf()
+
+        tstart_sig = tstart_sig1
+        sys.exit(0)
     tstart_range = np.linspace(-1, 0, Config.time_upsamp + 1)[:-1]
 
 
@@ -590,17 +678,6 @@ def gen_refchirp(cfofreq, tstart):
     return detect_symb, tstart_sig
 
 
-def gen_codechirp(code, cfofreq, tstart_sig):
-    est_cfo_percentile = cfofreq / Config.sig_freq
-    inif = code / Config.nsamp * Config.bw
-    tsig = Config.tsig * (1 - est_cfo_percentile) * (1 - code / Config.nsamp)
-    upchirp1 = gen_upchirp(tstart_sig, -Config.bw / 2 + cfofreq + inif, tstart_sig + tsig, Config.bw / 2 + cfofreq)
-    tstart_sig += tsig
-    tsig = Config.tsig * (1 - est_cfo_percentile) * (code / Config.nsamp)
-    upchirp2 = gen_upchirp(tstart_sig, -Config.bw / 2 + cfofreq, tstart_sig + tsig, -Config.bw / 2 + cfofreq + inif)
-    upchirp = np.concatenate((upchirp1, upchirp2), axis=0)
-    tstart_sig += tsig
-    return upchirp, tstart_sig
 
 # read packets from file
 if __name__ == "__main__":
@@ -631,7 +708,7 @@ if __name__ == "__main__":
                     logger.debug("file complete", len(rawdata))
                     break
                 nmaxs[i] = np.max(np.abs(rawdata))
-        kmeans = KMeans(n_clusters=2, random_state=0, n_init='auto')
+        kmeans = KMeans(n_clusters=2, random_state=0, n_init=10)
         # if use_gpu:
         kmeans.fit(nmaxs.reshape(-1, 1))
         # else:
