@@ -1,22 +1,20 @@
-import cmath
-import colorsys
-import math
+import logging
 import os
 import pickle
-import time
-import scipy.optimize as opt
-import matplotlib.pyplot as plt
-from scipy.signal import chirp
-from sklearn.cluster import KMeans
-import logging
-
-from tqdm import tqdm
 import sys
-import warnings
+import time
+
+import cmath
+import cupy as cp
+import math
+import matplotlib.pyplot as plt
 # Enable fallback mode
 # from cupyx.fallback_mode import numpy as np
 import numpy as np
-import cupy as cp
+import scipy.optimize as opt
+from scipy.signal import chirp
+from sklearn.cluster import KMeans
+from tqdm import tqdm
 
 use_gpu = True
 if use_gpu:
@@ -26,14 +24,14 @@ else:
 
 
 def togpu(x):
-    if use_gpu:
+    if use_gpu and not isinstance(x, cp.ndarray):
         return cp.array(x)
     else:
         return x
 
 
 def tocpu(x):
-    if use_gpu:
+    if use_gpu and isinstance(x, cp.ndarray):
         return x.get()
     else:
         return x
@@ -273,7 +271,7 @@ def work(pkt_totcnt, pktdata_in):
     payload_data = ndatas[detect + Config.sfdpos + 4:]
     angles = calc_angles(payload_data)
     if opts.debug:
-        plt.scatter(range(len(angles)), angles, s=0.5)
+        plt.scatter(range(len(angles)), tocpu(angles), s=0.5)
         plt.savefig(os.path.join(Config.figpath, f'temp_sf7_{pkt_totcnt}.jpg'))
         plt.clf()
         for i in range(min(len(ans2n), len(angles))):
@@ -284,9 +282,8 @@ def work(pkt_totcnt, pktdata_in):
 
 
 def calc_angles(payload_data):
-    angles = []
-    for dataY in payload_data:
-        opts = Config
+    angles = cp.zeros((len(payload_data),))
+    for idx, dataY in enumerate(payload_data):
         dataX = cp.array(dataY)
         data1 = cp.matmul(Config.dataE1, dataX)
         data2 = cp.matmul(Config.dataE2, dataX)
@@ -294,9 +291,9 @@ def calc_angles(payload_data):
         est = cp.argmax(vals)
         if est > 0:
             diff_avg0 = cmath.phase(data2[est] / data1[est])
-            angles.append(diff_avg0)
+            angles[idx] = diff_avg0
         else:
-            angles.append(0)
+            angles[idx] = 0
     return angles
 
 
@@ -505,7 +502,7 @@ def fine_work_new(pktdata2a):  # TODO working
         est_code = cp.argmax(res_array)
         logger.info(f"{est_code=}")
         code_ests[codeid] = est_code
-        plt.plot(res_array)
+        plt.plot(tocpu(res_array))
         plt.title("resarray")
         plt.axvline(est_code, color="k")
         plt.savefig(os.path.join(Config.figpath, f"pk{code}.png"))
@@ -560,7 +557,7 @@ def fine_work_new(pktdata2a):  # TODO working
         # Plotting
         plt.figure(figsize=(10, 6))
 
-        plt.plot(unwrapped_phase, linestyle='-', color='b', label=f"{code=}")
+        plt.plot(tocpu(unwrapped_phase), linestyle='-', color='b', label=f"{code=}")
 
         logger.info(f"{tstart_sig=} {tstart_sig1=}")
         complex_array = tocpu(pktdata2a_roll[math.ceil(tstart_sig): math.ceil(tstart_sig1)])
@@ -572,7 +569,7 @@ def fine_work_new(pktdata2a):  # TODO working
         phase_diff = cp.diff(unwrapped_phase)
 
         # Plotting
-        plt.plot(unwrapped_phase, linestyle='--', color='r', label="input")
+        plt.plot(tocpu(unwrapped_phase), linestyle='--', color='r', label="input")
 
         plt.title('Ref')
         plt.xlabel('Index')
@@ -585,21 +582,21 @@ def fine_work_new(pktdata2a):  # TODO working
         plt.clf()
 
         tstart_sig = tstart_sig1
-    plt.plot(angle1, label="angle1")
-    plt.plot(angle2, label="angle2")
+    plt.plot(tocpu(angle1), label="angle1")
+    plt.plot(tocpu(angle2), label="angle2")
     plt.legend()
     plt.title(f"angleA.png")
     plt.savefig(os.path.join(Config.figpath, f"angleA.png"))
     plt.clf()
-    plt.scatter(code_ests, angle1, label="angle1")
-    plt.scatter(code_ests, angle2, label="angle2")
+    plt.scatter(tocpu(code_ests), tocpu(angle1), label="angle1")
+    plt.scatter(tocpu(code_ests), tocpu(angle2), label="angle2")
     plt.legend()
     plt.title(f"angleB.png")
     plt.savefig(os.path.join(Config.figpath, f"angleB.png"))
     plt.clf()
 
-    plt.plot(angle3, label="angle3")
-    plt.plot(angle4, label="angle4")
+    plt.plot(tocpu(angle3), label="angle3")
+    plt.plot(tocpu(angle4), label="angle4")
     plt.legend()
     plt.title(f"angleC.png")
     plt.savefig(os.path.join(Config.figpath, f"angleC.png"))
@@ -749,7 +746,7 @@ if __name__ == "__main__":
                 if nmax < thresh:
                     if len(pktdata) > 14 and pkt_cnt > 20:
                         if pkt_totcnt < 21:
-                            #and False:
+                            # and False:
                             pktdata = []
                             pkt_totcnt += 1
                             continue
