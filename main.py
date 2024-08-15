@@ -5,7 +5,6 @@ import sys
 import time
 
 import cmath
-import cupy as cp
 import math
 import matplotlib.pyplot as plt
 # Enable fallback mode
@@ -16,10 +15,12 @@ from scipy.signal import chirp
 from sklearn.cluster import KMeans
 from tqdm import tqdm
 
-use_gpu = True
+use_gpu = False
 if use_gpu:
+    import cupy as cp
     import cupyx.scipy.fft as fft
 else:
+    import numpy as cp
     import scipy.fft as fft
 
 
@@ -42,7 +43,20 @@ def mychirp(t, f0, f1, t1, method, phi):
 
 
 def cp_str(x, precision=2, suppress_small=False):
-    return np.array2string(tocpu(x), precision=precision, suppress_small=suppress_small)
+    return np.array2string(tocpu(x), precision=precision, formatter={'float_kind': lambda x: f"{x:.2f}"}, floatmode='fixed', suppress_small=suppress_small)
+
+
+def myscatter(x, y, **kwargs):
+    plt.scatter(tocpu(x), tocpu(y), **kwargs)
+
+
+def myplot(*args, **kwargs):
+    if len(args) == 1:
+        plt.plot(tocpu(args[0]), **kwargs)
+    elif len(args) == 2:
+        plt.plot(tocpu(args[0]), tocpu(args[1]), **kwargs)
+    else:
+        raise ValueError("plot function accepts either 1 or 2 positional arguments")
 
 
 logger = logging.getLogger('my_logger')
@@ -150,7 +164,7 @@ def dechirp_phase(ndata, refchirp, upsamp=None):
     # upsamp = Config.fft_upsamp #!!!
     chirp_data = ndata * refchirp
     ans = cp.zeros(ndata.shape[0], dtype=cp.float64)
-    phase = cp.zeros(ndata.shape[0], dtype=cp.float64)
+    phase = cp.zeros(ndata.shape[0], dtype=cp.complex128)
     for idx in range(ndata.shape[0]):
         fft_raw = myfft(chirp_data[idx], n=Config.nsamp * upsamp, plan=Config.plans[upsamp])
         target_nfft = Config.n_classes * upsamp
@@ -159,7 +173,7 @@ def dechirp_phase(ndata, refchirp, upsamp=None):
         cut2 = cp.array(fft_raw[-target_nfft:])
         dat = cp.abs(cut1) + cp.abs(cut2)
         ans[idx] = cp.argmax(dat).astype(cp.float64) / upsamp
-        phase[idx] = cut1[int(cp.argmax(dat))]
+        phase[idx] = cut1[tocpu(cp.argmax(dat))]
         phase[idx] /= abs(phase[idx])
     return ans, phase
 
@@ -271,12 +285,12 @@ def work(pkt_totcnt, pktdata_in):
     payload_data = ndatas[detect + Config.sfdpos + 4:]
     angles = calc_angles(payload_data)
     if opts.debug:
-        plt.scatter(range(len(angles)), tocpu(angles), s=0.5)
+        myscatter(range(len(angles)), angles, s=0.5)
         plt.savefig(os.path.join(Config.figpath, f'temp_sf7_{pkt_totcnt}.jpg'))
         plt.clf()
         for i in range(min(len(ans2n), len(angles))):
             if abs(angles[i]) > 0.5:
-                logger.debug(f'{i=} {cp_str(ans2n[i])} {cp_str(angles[i])}')
+                logger.debug(f'abs(angles[i]) > 0.5: {i=} {cp_str(ans2n[i])} {cp_str(angles[i])}')
 
     return angles
 
@@ -462,7 +476,7 @@ def fine_work_new(pktdata2a):  # TODO working
     plt.clf()
     # phase = cp.angle(tocpu(pktdata2a_roll[:1024*20]))
     # unwrapped_phase = cp.unwrap(phase)
-    # plt.plot(unwrapped_phase)
+    # myplot(unwrapped_phase)
     # plt.axvline(tstart_sig, color="k")
     # plt.title("pkt20")
     # plt.savefig(os.path.join(Config.figpath,f"pk{code}.png"))
@@ -502,7 +516,7 @@ def fine_work_new(pktdata2a):  # TODO working
         est_code = cp.argmax(res_array)
         logger.info(f"{est_code=}")
         code_ests[codeid] = est_code
-        plt.plot(tocpu(res_array))
+        myplot(res_array)
         plt.title("resarray")
         plt.axvline(est_code, color="k")
         plt.savefig(os.path.join(Config.figpath, f"pk{code}.png"))
@@ -557,7 +571,7 @@ def fine_work_new(pktdata2a):  # TODO working
         # Plotting
         plt.figure(figsize=(10, 6))
 
-        plt.plot(tocpu(unwrapped_phase), linestyle='-', color='b', label=f"{code=}")
+        myplot(unwrapped_phase, linestyle='-', color='b', label=f"{code=}")
 
         logger.info(f"{tstart_sig=} {tstart_sig1=}")
         complex_array = tocpu(pktdata2a_roll[math.ceil(tstart_sig): math.ceil(tstart_sig1)])
@@ -569,7 +583,7 @@ def fine_work_new(pktdata2a):  # TODO working
         phase_diff = cp.diff(unwrapped_phase)
 
         # Plotting
-        plt.plot(tocpu(unwrapped_phase), linestyle='--', color='r', label="input")
+        myplot(unwrapped_phase, linestyle='--', color='r', label="input")
 
         plt.title('Ref')
         plt.xlabel('Index')
@@ -582,27 +596,27 @@ def fine_work_new(pktdata2a):  # TODO working
         plt.clf()
 
         tstart_sig = tstart_sig1
-    plt.plot(tocpu(angle1), label="angle1")
-    plt.plot(tocpu(angle2), label="angle2")
+    myplot(angle1, label="angle1")
+    myplot(angle2, label="angle2")
     plt.legend()
     plt.title(f"angleA.png")
     plt.savefig(os.path.join(Config.figpath, f"angleA.png"))
     plt.clf()
-    plt.scatter(tocpu(code_ests), tocpu(angle1), label="angle1")
-    plt.scatter(tocpu(code_ests), tocpu(angle2), label="angle2")
+    myscatter(code_ests, angle1, label="angle1")
+    myscatter(code_ests, angle2, label="angle2")
     plt.legend()
     plt.title(f"angleB.png")
     plt.savefig(os.path.join(Config.figpath, f"angleB.png"))
     plt.clf()
 
-    plt.plot(tocpu(angle3), label="angle3")
-    plt.plot(tocpu(angle4), label="angle4")
+    myplot(angle3, label="angle3")
+    myplot(angle4, label="angle4")
     plt.legend()
     plt.title(f"angleC.png")
     plt.savefig(os.path.join(Config.figpath, f"angleC.png"))
     plt.clf()
-    plt.scatter(code_ests, angle3, label="angle3")
-    plt.scatter(code_ests, angle4, label="angle4")
+    myscatter(code_ests, angle3, label="angle3")
+    myscatter(code_ests, angle4, label="angle4")
     plt.legend()
     plt.title(f"angleD.png")
     plt.savefig(os.path.join(Config.figpath, f"angleD.png"))
