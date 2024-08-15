@@ -366,8 +366,8 @@ def fine_work(pktdata2a):
     re_cfo_0 = average_modulus((sfd_upcode, sfd_downcode), Config.n_classes)
     est_to_0 = average_modulus((sfd_upcode, - sfd_downcode), Config.n_classes)
     # if opts.debug:
-    logger.debug(
-        f'fine work {cp_str(ans1[: Config.preamble_len])} sfd {cp_str(ans2[Config.sfdpos: Config.sfdpos + 2])} {sfd_upcode=}, {sfd_downcode=}, {re_cfo_0=}, {est_to_0=}, {detect=}')
+    logger.debug(f'fine work {cp_str(ans1[: Config.preamble_len])} sfd {cp_str(ans2[Config.sfdpos: Config.sfdpos + 2])}'
+                 f' {sfd_upcode=}, {sfd_downcode=}, {re_cfo_0=}, {est_to_0=}, {detect=}')
     logger.debug('fine work angles: preamble')
     for sig in ndatas[detect: detect + Config.preamble_len]:
         chirp_data = sig * Config.downchirp
