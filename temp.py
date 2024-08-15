@@ -1,21 +1,18 @@
-import time
-import sys
+import matplotlib.pyplot as plt
+x = [1, 2, 3]
+y1 = [1, 2, 3]
+y2 = [1, 2, 3]
 
-def print_progress_bar(iteration, total, prefix='', suffix='', length=50, fill='█'):
-    percent = ("{0:.1f}").format(100 * (iteration / float(total)))
-    filled_length = int(length * iteration // total)
-    bar = fill * filled_length + '-' * (length - filled_length)
-    sys.stdout.write(f'\r{prefix} |{bar}| {percent}% {suffix}')
-    sys.stdout.flush()
+fig1, ax1 = plt.subplots()
+ax1.plot(x, y1)
+ax1.set_title('Sine Wave')
+ax1.set_xlabel('x')
+ax1.set_ylabel('sin(x)')
 
-total_items = 10
+fig2, ax2 = plt.subplots()
+ax2.plot(x, y2)
+ax2.set_title('Cosine Wave')
+ax2.set_xlabel('x')
+ax2.set_ylabel('cos(x)')
 
-for i in range(total_items):
-    print_progress_bar(i, total_items, prefix='Progress:', suffix='Complete', length=50)
-    print(f'\nProcessing item {i+1}/{total_items}')
-    time.sleep(0.5)  # Simulate some processing time
-
-# When everything's done
-print_progress_bar(total_items, total_items, prefix='Progress:', suffix='Complete', length=50)
-print("\nDone!")
-
+plt.show()

@@ -15,7 +15,7 @@ from scipy.signal import chirp
 from sklearn.cluster import KMeans
 from tqdm import tqdm
 
-use_gpu = False
+use_gpu = True
 if use_gpu:
     import cupy as cp
     import cupyx.scipy.fft as fft
@@ -94,7 +94,7 @@ class Config:
     sig_freq = 470e6
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples
-    base_dir = '/data/djl/NeLoRa/OptimalPkt/'
+    base_dir = '/data/djl/datasets/Dataset_50Nodes'
     figpath = "fig"
     if not os.path.exists(figpath): os.mkdir(figpath)
     file_paths = []
@@ -398,53 +398,24 @@ def gen_upchirp(t0, f0, t1, f1):
 
 
 def fine_work_new(pktdata2a):  # TODO working
-    est_cfo_freq = -26623.72589111328
-    argmax_est_time_shift_samples = 534
-
     pktdata2a = togpu(pktdata2a)
 
-    cfofreq_range = cp.linspace(-Config.bw / 4, Config.bw / 4, Config.nfreq)
-    # detect_array_up = cp.zeros((Config.nfreq, Config.nsamp * Config.preamble_len * Config.time_upsamp), dtype=cp.float64)
-    # detect_array_down = cp.zeros((Config.nfreq, Config.nsamp * 2 * Config.time_upsamp), dtype=cp.float64)
-
-    est_cfo_percentile = est_cfo_freq / Config.sig_freq
-    tsig = Config.nsamp / Config.fs * (1 - est_cfo_percentile)
-    tstart_sig = 0
-    dd = []
-    fslope = Config.bw / tsig
-
-    # test
-    if 0:
-        cfofreq = -26623.725
-        time_error = 534
-        pktdata2a_roll = cp.roll(pktdata2a, - time_error)
-        detect_symb = gen_refchirp(cfofreq, 0)
-        didx = 0
-        res = 0
-        for sidx, ssymb in enumerate(detect_symb[:8]):
-            res += tocpu(cp.conj(togpu(ssymb)).dot(pktdata2a_roll[didx: didx + len(ssymb)]))
-            # logger.info(f'{sidx=} {cp.abs(res)/len(ssymb)=} {cp.angle(res)=} {len(ssymb)=}')
-            didx += len(ssymb)
-        logger.info(f'try value {res=}')
-
-    def objective(params):
-        cfofreq, time_error = params
-        pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
-        detect_symb = gen_refchirp(cfofreq, time_error - math.ceil(time_error))
-        didx = 0
-        res = 0
-        for sidx, ssymb in enumerate(detect_symb):
-            ress = tocpu(cp.conj(togpu(ssymb)).dot(pktdata2a_roll[didx: didx + len(ssymb)]))
-            # logger.debug(f'{sidx=} {abs(ress)=} {cp.angle(ress)=}')
-            res += abs(ress) ** 2
-            didx += len(ssymb)
-        return -res  # Negative because we use a minimizer
-
-    # Initial parameters
-    initial_freq = -26623.725
 
     # Perform optimization
     if 0:
+        def objective(params):
+            cfofreq, time_error = params
+            pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
+            detect_symb = gen_refchirp(cfofreq, time_error - math.ceil(time_error))
+            didx = 0
+            res = 0
+            for sidx, ssymb in enumerate(detect_symb):
+                ress = tocpu(cp.conj(togpu(ssymb)).dot(pktdata2a_roll[didx: didx + len(ssymb)]))
+                # logger.debug(f'{sidx=} {abs(ress)=} {cp.angle(ress)=}')
+                res += abs(ress) ** 2
+                didx += len(ssymb)
+            return -res  # Negative because we use a minimizer
+
         bestx = None
         bestobj = cp.inf
         for start_t in tqdm(range(Config.nsamp)):
@@ -474,13 +445,6 @@ def fine_work_new(pktdata2a):  # TODO working
         didx += len(ssymb)
 
     plt.clf()
-    # phase = cp.angle(tocpu(pktdata2a_roll[:1024*20]))
-    # unwrapped_phase = cp.unwrap(phase)
-    # myplot(unwrapped_phase)
-    # plt.axvline(tstart_sig, color="k")
-    # plt.title("pkt20")
-    # plt.savefig(os.path.join(Config.figpath,f"pk{code}.png"))
-    # plt.clf()
 
     code_cnt = 101  # math.floor(len(pktdata2a_roll) / Config.nsamp - Config.sfdend - 0.5)
     code_ests = cp.zeros((code_cnt,), dtype=int)
@@ -739,8 +703,7 @@ if __name__ == "__main__":
         kmeans.fit(tocpu(nmaxs.reshape(-1, 1)))
         thresh = cp.mean(kmeans.cluster_centers_)
         counts, bins = cp.histogram(nmaxs, bins=100)
-        logger.debug(
-            f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
+        logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
 
         pkt_totcnt = 0
 
