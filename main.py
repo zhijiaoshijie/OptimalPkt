@@ -44,7 +44,7 @@ class Config:
     fft_upsamp = 1024
     sfdpos = preamble_len + code_len
     sfdend = sfdpos + 2
-    debug = False
+    debug = True
 
     t = np.linspace(0, nsamp / fs, nsamp + 1)[:-1]
     chirpI1 = chirp(t, f0=-bw / 2, f1=bw / 2, t1=2 ** sf / bw, method='linear', phi=90)
@@ -178,8 +178,9 @@ def work(pkt_totcnt, pktdata_in):
         plt.scatter(range(len(angles)), angles, s=0.5)
         plt.savefig(f'imgs/temp_sf7_{pkt_totcnt}.jpg')
         plt.clf()
-        for i in range(len(ans2n)):
-            print(f'{ans2n[i]:.3f} {angles[i]:.3f}')
+        for i in range(min(len(ans2n),len(angles))):
+            if abs(angles[i]) > 0.5:
+                print(f'{i=} {ans2n[i]:.3f} {angles[i]:.3f}')
 
     return angles
 
@@ -196,6 +197,8 @@ def calc_angles(payload_data):
         if est > 0:
             diff_avg0 = cmath.phase(data2[est] / data1[est])
             angles.append(diff_avg0)
+        else:
+            angles.append(0)
     return angles
 
 
@@ -256,6 +259,24 @@ def fine_work(pktdata2a):
         print('fine work', ' '.join([f'{x:.3f}' for x in ans1[: Config.preamble_len]]),'sfd',
           ' '.join([f'{x:.3f}' for x in ans2[Config.sfdpos: Config.sfdpos + 2]]),
           f'{sfd_upcode=}, {sfd_downcode=}, {re_cfo_0=}, {est_to_0=}, {detect=}')
+    print('fine work angles: preamble')
+    for sig in ndatas[detect: detect + Config.preamble_len]:
+
+        chirp_data = sig * Config.downchirp
+        upsamp = Config.fft_upsamp
+        fft_raw = fft.fft(chirp_data, n=Config.nsamp * upsamp, plan=Config.plans[upsamp])
+        target_nfft = Config.n_classes * upsamp
+
+        cut1 = cp.array(fft_raw[:target_nfft])
+        cut2 = cp.array(fft_raw[-target_nfft:])
+        dat = cp.abs(cut1) + cp.abs(cut2)
+        ans = round(cp.argmax(dat).get().item() / upsamp)
+
+        print(cmath.phase(cut1[ans]), cmath.phase(cut2[ans]))
+
+
+
+
     est_to_0 = est_to_0.get().item()
     re_cfo_0 = re_cfo_0.get().item()
     re_cfo_freq = re_cfo_0 * (Config.fs / fft_n)
@@ -284,7 +305,7 @@ if __name__ == "__main__":
         power_eval_len = 5000
         nmaxs = np.zeros((power_eval_len,))
         with open(file_path, "rb") as f:
-            for i in range(power_eval_len):  # while True:
+            for i in tqdm(range(power_eval_len)):  # while True:
                 try:
                     rawdata = np.fromfile(f, dtype=cp.complex64, count=Config.nsamp)
                 except EOFError:
@@ -297,8 +318,9 @@ if __name__ == "__main__":
         kmeans = KMeans(n_clusters=2, random_state=0)
         kmeans.fit(nmaxs.reshape(-1, 1))
         thresh = np.mean(kmeans.cluster_centers_)
-        # counts, bins = np.histogram(nmaxs, bins=100)
-        # print(counts, bins, kmeans.cluster_centers_, thresh)
+        if opts.debug:
+            counts, bins = np.histogram(nmaxs, bins=100)
+            print('Init file find cluster:', counts, bins, kmeans.cluster_centers_, thresh)
 
         pkt_totcnt = 0
 
