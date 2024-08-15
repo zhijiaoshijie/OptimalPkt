@@ -60,7 +60,8 @@ class Config:
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs # in samples
     base_dir = '/data/djl/NeLoRa/OptimalPkt/'
-
+    figpath = "fig"
+    if not os.path.exists(figpath): os.mkdir(figpath)
     file_paths = []
     for file_name in os.listdir(base_dir):
         if file_name.startswith('sf7') and file_name.endswith('.bin'):
@@ -102,6 +103,8 @@ class Config:
         time_split = nsamp - time_shift
         dataE1[symbol_index][:time_split] = downchirp[time_shift:]
         if symbol_index != 0: dataE2[symbol_index][time_split:] = downchirp[:time_shift]
+    dataE1 = cp.array(dataE1)
+    dataE2 = cp.array(dataE2)
 
 if use_gpu:
     cp.cuda.Device(0).use()
@@ -458,21 +461,26 @@ def fine_work_new(pktdata2a):  # TODO working
         didx += len(ssymb)
 
     plt.clf()
-    phase = np.angle(tocpu(pktdata2a_roll[:1024*20]))
-    unwrapped_phase = np.unwrap(phase)
-    plt.plot(unwrapped_phase)
-    plt.axvline(tstart_sig, color="k")
-    plt.title("pkt20")
-    plt.show()
-    plt.clf()
+    # phase = np.angle(tocpu(pktdata2a_roll[:1024*20]))
+    # unwrapped_phase = np.unwrap(phase)
+    # plt.plot(unwrapped_phase)
+    # plt.axvline(tstart_sig, color="k")
+    # plt.title("pkt20")
+    # plt.savefig(os.path.join(Config.figpath,f"pk{code}.png"))
+    # plt.clf()
 
-    code_cnt = math.floor(len(pktdata2a_roll) / Config.nsamp - Config.sfdend - 0.5)
+    code_cnt = 101 # math.floor(len(pktdata2a_roll) / Config.nsamp - Config.sfdend - 0.5)
     code_ests = np.zeros((code_cnt,), dtype=int)
+    angle1 = np.zeros((code_cnt,), dtype=float)
+    angle2 = np.zeros((code_cnt,), dtype=float)
+    angle3 = np.zeros((code_cnt,), dtype=float)
+    angle4 = np.zeros((code_cnt,), dtype=float)
     for codeid in range(code_cnt):
+        logger.info(f"{tstart_sig=}")
         # tsig = Config.tsig * (1 - est_cfo_percentile)
-        res_array = np.zeros((Config.n_classes,), dtype=np.float)
-        tstart_sig1 = tstart_sig
+        res_array = np.zeros((Config.n_classes,), dtype=float)
         for code in range(Config.n_classes):
+            tstart_sig1 = tstart_sig
             cfofreq = est_cfo_freq
             est_cfo_percentile = cfofreq / Config.sig_freq
             inif = code / Config.n_classes * Config.bw
@@ -491,7 +499,7 @@ def fine_work_new(pktdata2a):  # TODO working
                 res2 = 0
 
             res = abs(res1)**2 + abs(res2)**2
-            logger.info(f"{code=} {abs(res1)=} {np.angle(res1)=} {abs(res2)=} {np.angle(res2)=}")
+            # logger.info(f"{code=} {abs(res1)=} {np.angle(res1)=} {abs(res2)=} {np.angle(res2)=}")
             res_array[code] = res
         est_code = np.argmax(res_array)
         logger.info(f"{est_code=}")
@@ -499,7 +507,7 @@ def fine_work_new(pktdata2a):  # TODO working
         plt.plot(res_array)
         plt.title("resarray")
         plt.axvline(est_code,color="k")
-        plt.show()
+        plt.savefig(os.path.join(Config.figpath,f"pk{code}.png"))
         plt.clf()
 
         code = est_code
@@ -510,7 +518,9 @@ def fine_work_new(pktdata2a):  # TODO working
         upchirp1 = gen_upchirp(tstart_sig1, -Config.bw / 2 + cfofreq + inif, tstart_sig1 + tsig, Config.bw / 2 + cfofreq)
         upchirp1 = np.conj(upchirp1)
         res1 = tocpu(togpu(upchirp1).dot(pktdata2a_roll[math.ceil(tstart_sig1): math.ceil(tstart_sig1 + tsig)]))
-        upchirp1 *= res1 / np.abs(res1)
+        upchirp1 /= res1 / np.abs(res1)
+        angle1[codeid] = np.angle(res1)
+        logger.info(f"{abs(res1)=} {np.angle(res1)=} {code=}")
 
         if code != 0:
             tstart_sig1 += tsig
@@ -518,11 +528,26 @@ def fine_work_new(pktdata2a):  # TODO working
             upchirp2 = gen_upchirp(tstart_sig1, -Config.bw / 2 + cfofreq, tstart_sig1 + tsig, -Config.bw / 2 + cfofreq + inif)
             upchirp2 = np.conj(upchirp2)
             res2 = tocpu(togpu(upchirp2).dot(pktdata2a_roll[math.ceil(tstart_sig1): math.ceil(tstart_sig1 + tsig)]))
-            upchirp2 *= res2 / np.abs(res2)
+            upchirp2 /= res2 / np.abs(res2)
+            angle2[codeid] = np.angle(res2)
             tstart_sig1 += tsig
+            logger.info(f"{abs(res2)=} {np.angle(res2)=} {code=}")
+        else:
+            angle2[codeid] = 0
+
+        dataX = pktdata2a_roll[math.ceil(tstart_sig): math.ceil(tstart_sig + Config.tsig * (1 - est_cfo_percentile))][:Config.nsamp]
+        dataX = dataX.T
+        data1 = cp.matmul(Config.dataE1, dataX)
+        data2 = cp.matmul(Config.dataE2, dataX)
+        vals = cp.abs(data1) ** 2 + cp.abs(data2) ** 2
+        est = tocpu(cp.argmax(vals))
+        angle3[codeid] = tocpu(cp.angle(data1[est]))
+        angle4[codeid] = tocpu(cp.angle(data2[est]))
+        logger.info(f"{codeid=} {abs(tocpu(data1[est]))=} {abs(tocpu(data2[est]))=} {angle3[codeid]=} {angle4[codeid]=}")
+
 
         if code != 0:
-            complex_array = np.conj(np.concatenate((upchirp1, upchirp2)))
+            complex_array = np.conj(np.concatenate((upchirp1, upchirp2), axis=0))
         else:
             complex_array = upchirp1
             # Extract the phase and unwrap it
@@ -534,40 +559,11 @@ def fine_work_new(pktdata2a):  # TODO working
 
         # Plotting
         plt.figure(figsize=(10, 6))
+
         plt.plot(unwrapped_phase, linestyle='-',  color='b', label=f"{code=}")
 
-        code = 58
-        tstart_sig1 = tstart_sig
-        est_cfo_percentile = cfofreq / Config.sig_freq
-        inif = code / Config.n_classes * Config.bw
-        tsig = Config.tsig * (1 - est_cfo_percentile) * (1 - code / Config.n_classes)
-        upchirp1 = gen_upchirp(tstart_sig1, -Config.bw / 2 + cfofreq + inif, tstart_sig1 + tsig, Config.bw / 2 + cfofreq)
-        upchirp1 = np.conj(upchirp1)
-        res1 = tocpu(togpu(upchirp1).dot(pktdata2a_roll[math.ceil(tstart_sig1): math.ceil(tstart_sig1 + tsig)]))
-        upchirp1 *= res1 / np.abs(res1)
 
-        if code != 0:
-            tstart_sig1 += tsig
-            tsig = Config.tsig * (1 - est_cfo_percentile) * (code / Config.n_classes)
-            upchirp2 = gen_upchirp(tstart_sig1, -Config.bw / 2 + cfofreq, tstart_sig1 + tsig, -Config.bw / 2 + cfofreq + inif)
-            upchirp2 = np.conj(upchirp2)
-            res2 = tocpu(togpu(upchirp2).dot(pktdata2a_roll[math.ceil(tstart_sig1): math.ceil(tstart_sig1 + tsig)]))
-            upchirp2 *= res2 / np.abs(res2)
-            tstart_sig1 += tsig
-
-        if code != 0:
-            complex_array = np.conj(np.concatenate((upchirp1, upchirp2)))
-        else:
-            complex_array = upchirp1
-            # Extract the phase and unwrap it
-        phase = np.angle(complex_array)
-        unwrapped_phase = np.unwrap(phase)
-
-        # Compute the difference between consecutive unwrapped phase values
-        phase_diff = np.diff(unwrapped_phase)
-
-        # Plotting
-        plt.plot(unwrapped_phase, linestyle='-', color='k', label=f"{code=}")
+        logger.info(f"{tstart_sig=} {tstart_sig1=}")
         complex_array = tocpu(pktdata2a_roll[math.ceil(tstart_sig): math.ceil(tstart_sig1)])
         # Extract the phase and unwrap it
         phase = np.angle(complex_array)
@@ -585,12 +581,39 @@ def fine_work_new(pktdata2a):  # TODO working
         plt.grid(True)
         plt.axvline(Config.tsig * (1 - est_cfo_percentile) * (1 - code / Config.n_classes), color='k')
         plt.legend()
-        plt.savefig('2.png')
-        plt.show()
+        plt.title(f'{codeid=}')
+        plt.savefig(os.path.join(Config.figpath,f'code{codeid}.png'))
         plt.clf()
 
         tstart_sig = tstart_sig1
-        sys.exit(0)
+    plt.plot(angle1, label="angle1")
+    plt.plot(angle2, label="angle2")
+    plt.legend()
+    plt.title(f"angleA.png")
+    plt.savefig(os.path.join(Config.figpath, f"angleA.png"))
+    plt.clf()
+    plt.scatter(code_ests, angle1, label="angle1")
+    plt.scatter(code_ests, angle2, label="angle2")
+    plt.legend()
+    plt.title(f"angleB.png")
+    plt.savefig(os.path.join(Config.figpath, f"angleB.png"))
+    plt.clf()
+
+    plt.plot(angle3, label="angle3")
+    plt.plot(angle4, label="angle4")
+    plt.legend()
+    plt.title(f"angleC.png")
+    plt.savefig(os.path.join(Config.figpath, f"angleC.png"))
+    plt.clf()
+    plt.scatter(code_ests, angle3, label="angle3")
+    plt.scatter(code_ests, angle4, label="angle4")
+    plt.legend()
+    plt.title(f"angleD.png")
+    plt.savefig(os.path.join(Config.figpath, f"angleD.png"))
+    plt.clf()
+
+
+    sys.exit(0)
     tstart_range = np.linspace(-1, 0, Config.time_upsamp + 1)[:-1]
 
 
