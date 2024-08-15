@@ -43,7 +43,8 @@ def mychirp(t, f0, f1, t1, method, phi):
 
 
 def cp_str(x, precision=2, suppress_small=False):
-    return np.array2string(tocpu(x), precision=precision, formatter={'float_kind': lambda x: f"{x:.2f}"}, floatmode='fixed', suppress_small=suppress_small)
+    return np.array2string(tocpu(x), precision=precision, formatter={'float_kind': lambda x: f"{x:.2f}"},
+                           floatmode='fixed', suppress_small=suppress_small)
 
 
 def myscatter(x, y, **kwargs):
@@ -103,8 +104,8 @@ class Config:
             file_paths.append(os.path.join(base_dir, file_name))
 
     nsamp = round(n_classes * fs / bw)
-    nfreq = 64 + 1
-    time_upsamp = 4
+    nfreq = 1024 + 1
+    time_upsamp = 32
 
     preamble_len = 8
     code_len = 2
@@ -261,7 +262,6 @@ def work(pkt_totcnt, pktdata_in):
     ans1n, ndatas = decode_payload(detect, est_to_dec, pktdata4, pkt_totcnt)
 
     logger.debug(f'decoded data {cp_str(ans1n)}')
-    debug_diff_0 = cp.unwrap(cp.array([x - cp.around(x) for x in ans1n]), discont=0.5)
     # sfo correction
     est_cfo_slope = all_cfo_freq / Config.sig_freq * Config.bw * Config.bw / Config.n_classes
 
@@ -286,7 +286,7 @@ def work(pkt_totcnt, pktdata_in):
     angles = calc_angles(payload_data)
     if opts.debug:
         myscatter(range(len(angles)), angles, s=0.5)
-        plt.savefig(os.path.join(Config.figpath, f'temp_sf7_{pkt_totcnt}.jpg'))
+        plt.savefig(os.path.join(Config.figpath, f'temp_sf7_{pkt_totcnt}.png'))
         plt.clf()
         for i in range(min(len(ans2n), len(angles))):
             if abs(angles[i]) > 0.5:
@@ -323,7 +323,8 @@ def decode_payload(detect, est_to_dec, pktdata4, pkt_totcnt):
     if not min(power1) > cp.mean(power1) / 2:
         drop_idx = next((idx for idx, num in enumerate(power1) if num < cp.mean(power1) / 2), -1)
         ans1n = ans1n[:drop_idx]
-        logger.debug(f'decode: {pkt_totcnt=} power1 drops: {drop_idx=} {len(ans1n)=} {cp_str(power1)}')
+        logger.info(f'decode: {pkt_totcnt=} power1 drops: {drop_idx=} {len(ans1n)=} {cp_str(power1)}')
+    logger.info(f'decode: {len(ans1n)=} {cp_str(ans1n)=} {cp_str(power1)=}')
     return ans1n, ndatas
 
 
@@ -365,7 +366,8 @@ def fine_work(pktdata2a):
     re_cfo_0 = average_modulus((sfd_upcode, sfd_downcode), Config.n_classes)
     est_to_0 = average_modulus((sfd_upcode, - sfd_downcode), Config.n_classes)
     # if opts.debug:
-    logger.debug(f'fine work {cp_str(ans1[: Config.preamble_len])} sfd {cp_str(ans2[Config.sfdpos: Config.sfdpos + 2])} {sfd_upcode=}, {sfd_downcode=}, {re_cfo_0=}, {est_to_0=}, {detect=}')
+    logger.debug(
+        f'fine work {cp_str(ans1[: Config.preamble_len])} sfd {cp_str(ans2[Config.sfdpos: Config.sfdpos + 2])} {sfd_upcode=}, {sfd_downcode=}, {re_cfo_0=}, {est_to_0=}, {detect=}')
     logger.debug('fine work angles: preamble')
     for sig in ndatas[detect: detect + Config.preamble_len]:
         chirp_data = sig * Config.downchirp
@@ -399,7 +401,6 @@ def gen_upchirp(t0, f0, t1, f1):
 
 def fine_work_new(pktdata2a):  # TODO working
     pktdata2a = togpu(pktdata2a)
-
 
     # Perform optimization
     if 0:
@@ -439,14 +440,18 @@ def fine_work_new(pktdata2a):  # TODO working
     pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
     detect_symb, tstart_sig = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
     didx = 0
-    for sidx, ssymb in enumerate(detect_symb[:8]):
+    res_angle = cp.zeros((Config.preamble_len,), dtype=cp.float64)
+    for sidx, ssymb in enumerate(detect_symb[:Config.preamble_len]):
         ress = tocpu(cp.conj(togpu(ssymb)).dot(pktdata2a_roll[didx: didx + len(ssymb)]))
-        logger.info(f'{cp.angle(ress)=}')
+        rangle = cp.angle(ress)
+        res_angle[sidx] = rangle
+        logger.info(f'{rangle=}')
         didx += len(ssymb)
-
+    myplot(res_angle)
+    plt.savefig(f"res_angle_{code}.png")
     plt.clf()
 
-    code_cnt = 101  # math.floor(len(pktdata2a_roll) / Config.nsamp - Config.sfdend - 0.5)
+    code_cnt = math.floor(len(pktdata2a_roll) / Config.nsamp - Config.sfdend - 0.5)
     code_ests = cp.zeros((code_cnt,), dtype=int)
     angle1 = cp.zeros((code_cnt,), dtype=float)
     angle2 = cp.zeros((code_cnt,), dtype=float)
@@ -462,14 +467,18 @@ def fine_work_new(pktdata2a):  # TODO working
             est_cfo_percentile = cfofreq / Config.sig_freq
             inif = code / Config.n_classes * Config.bw
             tsig = Config.tsig * (1 - est_cfo_percentile) * (1 - code / Config.n_classes)
-            upchirp1 = gen_upchirp(tstart_sig1, -Config.bw / 2 + cfofreq + inif, tstart_sig1 + tsig, Config.bw / 2 + cfofreq)
-            res1 = tocpu(cp.conj(togpu(upchirp1)).dot(pktdata2a_roll[math.ceil(tstart_sig1): math.ceil(tstart_sig1 + tsig)]))
+            upchirp1 = gen_upchirp(tstart_sig1, -Config.bw / 2 + cfofreq + inif, tstart_sig1 + tsig,
+                                   Config.bw / 2 + cfofreq)
+            res1 = tocpu(
+                cp.conj(togpu(upchirp1)).dot(pktdata2a_roll[math.ceil(tstart_sig1): math.ceil(tstart_sig1 + tsig)]))
 
             if code != 0:
                 tstart_sig1 += tsig
                 tsig = Config.tsig * (1 - est_cfo_percentile) * (code / Config.n_classes)
-                upchirp2 = gen_upchirp(tstart_sig1, -Config.bw / 2 + cfofreq, tstart_sig1 + tsig, -Config.bw / 2 + cfofreq + inif)
-                res2 = tocpu(cp.conj(togpu(upchirp2)).dot(pktdata2a_roll[math.ceil(tstart_sig1): math.ceil(tstart_sig1 + tsig)]))
+                upchirp2 = gen_upchirp(tstart_sig1, -Config.bw / 2 + cfofreq, tstart_sig1 + tsig,
+                                       -Config.bw / 2 + cfofreq + inif)
+                res2 = tocpu(
+                    cp.conj(togpu(upchirp2)).dot(pktdata2a_roll[math.ceil(tstart_sig1): math.ceil(tstart_sig1 + tsig)]))
                 tstart_sig1 += tsig
             else:
                 res2 = 0
@@ -491,7 +500,8 @@ def fine_work_new(pktdata2a):  # TODO working
         est_cfo_percentile = cfofreq / Config.sig_freq
         inif = code / Config.n_classes * Config.bw
         tsig = Config.tsig * (1 - est_cfo_percentile) * (1 - code / Config.n_classes)
-        upchirp1 = gen_upchirp(tstart_sig1, -Config.bw / 2 + cfofreq + inif, tstart_sig1 + tsig, Config.bw / 2 + cfofreq)
+        upchirp1 = gen_upchirp(tstart_sig1, -Config.bw / 2 + cfofreq + inif, tstart_sig1 + tsig,
+                               Config.bw / 2 + cfofreq)
         upchirp1 = cp.conj(upchirp1)
         res1 = tocpu(togpu(upchirp1).dot(pktdata2a_roll[math.ceil(tstart_sig1): math.ceil(tstart_sig1 + tsig)]))
         upchirp1 /= res1 / cp.abs(res1)
@@ -501,7 +511,8 @@ def fine_work_new(pktdata2a):  # TODO working
         if code != 0:
             tstart_sig1 += tsig
             tsig = Config.tsig * (1 - est_cfo_percentile) * (code / Config.n_classes)
-            upchirp2 = gen_upchirp(tstart_sig1, -Config.bw / 2 + cfofreq, tstart_sig1 + tsig, -Config.bw / 2 + cfofreq + inif)
+            upchirp2 = gen_upchirp(tstart_sig1, -Config.bw / 2 + cfofreq, tstart_sig1 + tsig,
+                                   -Config.bw / 2 + cfofreq + inif)
             upchirp2 = cp.conj(upchirp2)
             res2 = tocpu(togpu(upchirp2).dot(pktdata2a_roll[math.ceil(tstart_sig1): math.ceil(tstart_sig1 + tsig)]))
             upchirp2 /= res2 / cp.abs(res2)
@@ -511,7 +522,8 @@ def fine_work_new(pktdata2a):  # TODO working
         else:
             angle2[codeid] = 0
 
-        dataX = pktdata2a_roll[math.ceil(tstart_sig): math.ceil(tstart_sig + Config.tsig * (1 - est_cfo_percentile))][:Config.nsamp]
+        dataX = pktdata2a_roll[math.ceil(tstart_sig): math.ceil(tstart_sig + Config.tsig * (1 - est_cfo_percentile))][
+                :Config.nsamp]
         dataX = dataX.T
         data1 = cp.matmul(Config.dataE1, dataX)
         data2 = cp.matmul(Config.dataE2, dataX)
@@ -519,34 +531,22 @@ def fine_work_new(pktdata2a):  # TODO working
         est = tocpu(cp.argmax(vals))
         angle3[codeid] = tocpu(cp.angle(data1[est]))
         angle4[codeid] = tocpu(cp.angle(data2[est]))
-        logger.info(f"{codeid=} {abs(tocpu(data1[est]))=} {abs(tocpu(data2[est]))=} {angle3[codeid]=} {angle4[codeid]=}")
+        logger.info(
+            f"{codeid=} {abs(tocpu(data1[est]))=} {abs(tocpu(data2[est]))=} {angle3[codeid]=} {angle4[codeid]=}")
 
         if code != 0:
             complex_array = cp.conj(cp.concatenate((upchirp1, upchirp2), axis=0))
         else:
             complex_array = upchirp1
-            # Extract the phase and unwrap it
         phase = cp.angle(complex_array)
         unwrapped_phase = cp.unwrap(phase)
-
-        # Compute the difference between consecutive unwrapped phase values
-        phase_diff = cp.diff(unwrapped_phase)
-
-        # Plotting
         plt.figure(figsize=(10, 6))
-
         myplot(unwrapped_phase, linestyle='-', color='b', label=f"{code=}")
 
         logger.info(f"{tstart_sig=} {tstart_sig1=}")
         complex_array = tocpu(pktdata2a_roll[math.ceil(tstart_sig): math.ceil(tstart_sig1)])
-        # Extract the phase and unwrap it
         phase = cp.angle(complex_array)
         unwrapped_phase = cp.unwrap(phase)
-
-        # Compute the difference between consecutive unwrapped phase values
-        phase_diff = cp.diff(unwrapped_phase)
-
-        # Plotting
         myplot(unwrapped_phase, linestyle='--', color='r', label="input")
 
         plt.title('Ref')
@@ -587,43 +587,7 @@ def fine_work_new(pktdata2a):  # TODO working
     plt.clf()
 
     sys.exit(0)
-    tstart_range = cp.linspace(-1, 0, Config.time_upsamp + 1)[:-1]
 
-    detect_array_up = [[[] for _ in tstart_range] for _ in cfofreq_range]
-    progress_bar = tqdm(total=len(tstart_range) * len(cfofreq_range), desc="Generating Reference Chirps")
-    for freq_idx, cfofreq in enumerate(cfofreq_range):
-        for tstart_idx, tstart in enumerate(tstart_range):
-            detect_symb = gen_refchirp(cfofreq, tstart)
-            detect_array_up[freq_idx][tstart_idx] = togpu(cp.conj(cp.concatenate(detect_symb)))
-            progress_bar.update(1)
-    progress_bar.close()
-    # logger.info(str([len(x) for x in detect_array_up]))
-    # logger.info(f'{cfofreq=} {est_cfo_percentile=}')
-
-    time_error_range = range(Config.nsamp)
-    evals = cp.zeros((len(time_error_range), len(tstart_range), len(cfofreq_range)), dtype=float)
-    if 0:
-        progress_bar = tqdm(total=len(time_error_range) * len(tstart_range) * len(cfofreq_range), desc="Computing")
-        # logger.info(f'{len(pktdata2a)=}')
-        for time_error_idx, time_error in enumerate(time_error_range):
-            for tstart_idx, tstart in enumerate(tstart_range):
-                for freq_idx in range(len(cfofreq_range)):
-                    pktdata2a_roll = cp.roll(pktdata2a, - time_error)
-                    ssymb = detect_array_up[freq_idx][tstart_idx]
-                    evals[time_error_idx][tstart_idx][freq_idx] = cp.abs(pktdata2a_roll[:len(ssymb)].dot(ssymb)) / len(ssymb)
-                    progress_bar.update(1)
-        progress_bar.close()
-
-    max_evals = cp.unravel_index(cp.argmax(evals), evals.shape)
-    max_evals = [int(x) for x in max_evals]
-    time_error = time_error_range[max_evals[0]] + tstart_range[max_evals[1]]
-    cfo_freq_est = cfofreq_range[max_evals[2]]
-
-    logger.info(f'{max_evals=} {time_error=} samples, {cfo_freq_est=} Hz {cp.max(evals)=} \n\n')
-    with open('eval.pkl', 'wb') as f:
-        pickle.dump(evals, f)
-
-    sys.exit(0)
     return time_error, cfo_freq_est
 
 
@@ -639,26 +603,15 @@ def gen_refchirp(cfofreq, tstart):
         upchirp[-20:] = cp.zeros((20,))
         detect_symb.append(upchirp)
         tstart_sig += tsig
-    # for tid in range(Config.code_len):
-    #     inif = Config.codes[tid] / Config.nsamp * Config.bw
-    #     tsig = Config.tsig * (1 - est_cfo_percentile) * (1 - Config.codes[tid] / Config.nsamp)
-    #     upchirp = gen_upchirp(tstart_sig, -Config.bw / 2 + cfofreq + inif, tstart_sig + tsig, Config.bw / 2 + cfofreq)
-    #     detect_symb.append(upchirp)
-    #     tstart_sig += tsig
-    #     tsig = Config.tsig * (1 - est_cfo_percentile) * (Config.codes[tid] / Config.nsamp)
-    #     upchirp = gen_upchirp(tstart_sig, -Config.bw / 2 + cfofreq, tstart_sig + tsig, -Config.bw / 2 + cfofreq + inif)
-    #     detect_symb.append(upchirp)
-    #     tstart_sig += tsig
     detect_symb.append(cp.zeros((math.ceil(tstart_sig + tsig * 2) - math.ceil(tstart_sig),)))
     tstart_sig += tsig * 2
     for tid in range(2):
-        upchirp = gen_upchirp(tstart_sig, Config.bw / 2 + cfofreq, tstart_sig + tsig, -Config.bw / 2 + cfofreq)  # TODO ???
+        upchirp = gen_upchirp(tstart_sig, Config.bw / 2 + cfofreq, tstart_sig + tsig,
+                              -Config.bw / 2 + cfofreq)  # TODO ???
         upchirp[:20] = cp.zeros((20,))
         upchirp[-20:] = cp.zeros((20,))
         detect_symb.append(upchirp)
-        # logger.info(f'{len(upchirp) =} {tstart_sig + tsig=} {tstart_sig=}')
         assert len(upchirp) == math.ceil(tstart_sig + tsig) - math.ceil(tstart_sig)
-        # logger.warning(f'warn {len(upchirp) =} {tstart_sig + tsig=} {tstart_sig=}')
         tstart_sig += tsig
 
     tsig = Config.tsig * (1 - est_cfo_percentile) * 0.25
@@ -669,6 +622,33 @@ def gen_refchirp(cfofreq, tstart):
     assert len(upchirp) == math.ceil(tstart_sig + tsig) - math.ceil(tstart_sig)
     detect_symb.append(upchirp)
     return detect_symb, tstart_sig
+
+
+
+def read_large_file(file_path_in, chunk_size):
+    with open(file_path_in, 'rb') as file:
+        while True:
+            try:
+                rawdata = cp.fromfile(file, dtype=cp.complex64, count=Config.nsamp)
+            except EOFError:
+                logger.info("file complete with EOF")
+                break
+            if len(rawdata) < Config.nsamp:
+                logger.debug(f"file complete, {len(rawdata)=}")
+                break
+            yield rawdata
+
+
+def read_pkt(file_path_in, threshold, chunk_size, min_length=20):
+    current_sequence = []
+    for rawdata in read_large_file(file_path_in, chunk_size=chunk_size):
+        number = cp.max(cp.abs(rawdata))
+        if number > threshold:
+            current_sequence.append(rawdata)
+        else:
+            if len(current_sequence) > min_length:
+                yield cp.concatenate(current_sequence)
+            current_sequence = []
 
 
 # read packets from file
@@ -688,56 +668,16 @@ if __name__ == "__main__":
 
         power_eval_len = 5000
         nmaxs = cp.zeros((power_eval_len,))
-        with open(file_path, "rb") as f:
-            for i in tqdm(range(power_eval_len), disable=not Config.debug):  # while True:
-                try:
-                    rawdata = cp.fromfile(f, dtype=cp.complex64, count=Config.nsamp)
-                except EOFError:
-                    logger.debug("file complete")
-                    break
-                if len(rawdata) < Config.nsamp:
-                    logger.debug("file complete", len(rawdata))
-                    break
-                nmaxs[i] = cp.max(cp.abs(rawdata))
+        for idx, rawdata in enumerate(read_large_file(file_path, Config.nsamp)):
+            nmaxs[idx] = cp.max(cp.abs(rawdata))
+            if idx == power_eval_len - 1: break
         kmeans = KMeans(n_clusters=2, random_state=0, n_init=10)
         kmeans.fit(tocpu(nmaxs.reshape(-1, 1)))
         thresh = cp.mean(kmeans.cluster_centers_)
-        counts, bins = cp.histogram(nmaxs, bins=100)
-        logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
+        # counts, bins = cp.histogram(nmaxs, bins=100)
+        # logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
 
         pkt_totcnt = 0
-
-        with open(file_path, "rb") as f:
-            while True:
-                try:
-                    rawdata = cp.fromfile(f, dtype=cp.complex64, count=Config.nsamp)
-                except EOFError:
-                    logger.info("file complete with EOF")
-                    break
-                if len(rawdata) < Config.nsamp:
-                    logger.debug(f"file complete, {len(rawdata)=}")
-                    break
-                nmax = cp.max(cp.abs(rawdata))
-                # logger.debug(nmax)
-
-                if nmax < thresh:
-                    if len(pktdata) > 14 and pkt_cnt > 20:
-                        if pkt_totcnt < 21:
-                            # and False:
-                            pktdata = []
-                            pkt_totcnt += 1
-                            continue
-                        logger.info(f"start parsing pkt {pkt_totcnt} len: {len(pktdata)}")
-                        # idata = cp.concatenate(pktdata)
-                        # with open('test.dat', 'wb') as f: idata.tofile(f)
-                        # sys.exit(0)
-
-                        work(pkt_totcnt, cp.concatenate(pktdata))
-                        if Config.breakflag:
-                            logger.error("terminate after one packet")
-                            sys.exit(0)
-                        pkt_totcnt += 1
-                    pkt_cnt += 1
-                    pktdata = []
-                else:
-                    pktdata.append(rawdata)
+        for pkt_idx, pkt_data in enumerate(read_pkt(file_path, thresh, Config.nsamp, min_length=20)):
+            if pkt_idx < 20: continue
+            work(pkt_idx, pkt_data)
