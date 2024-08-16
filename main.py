@@ -102,18 +102,21 @@ class Config:
     # base_dir = '/data/djl/datasets/Dataset_50Nodes'
     figpath = "fig"
     if not os.path.exists(figpath): os.mkdir(figpath)
-    file_paths = ['/data/djl/datasets/Dataset_50Nodes/sf7-470-new-70.bin']
+    # file_paths = ['/data/djl/datasets/Dataset_50Nodes/sf7-470-new-70.bin']
+    file_paths = ['/data/djl/datasets/sf7-470-pre-2.bin']
     # for file_name in os.listdir(base_dir):
     #     if file_name.startswith('sf7') and file_name.endswith('.bin'):
     #         file_paths.append(os.path.join(base_dir, file_name))
+
 
     nsamp = round(n_classes * fs / bw)
     nfreq = 1024 + 1
     time_upsamp = 32
 
-    preamble_len = 8
+
+    preamble_len = 64 # TODO
     code_len = 2
-    codes = [50, 101]  # TODO set codes
+    # codes = [50, 101]  # TODO set codes
     fft_upsamp = 1024
     sfdpos = preamble_len + code_len
     sfdend = sfdpos + 2
@@ -414,7 +417,7 @@ def fine_work_new(pktdata2a):  # TODO working
     plt.clf()
 
     # Perform optimization
-    if 0:
+    if 1:
         def objective(params):
             cfofreq, time_error = params
             pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
