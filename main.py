@@ -1,9 +1,10 @@
 import logging
 import os
-import pickle
+import random
 import sys
 import time
-
+import seaborn as sns
+from scipy.optimize import curve_fit
 import cmath
 import math
 import matplotlib.pyplot as plt
@@ -43,7 +44,7 @@ def mychirp(t, f0, f1, t1, method, phi):
 
 
 def cp_str(x, precision=2, suppress_small=False):
-    return np.array2string(tocpu(x), precision=precision, formatter={'float_kind': lambda x: f"{x:.2f}"},
+    return np.array2string(tocpu(x), precision=precision, formatter={'float_kind': lambda k: f"{k:.2f}"},
                            floatmode='fixed', suppress_small=suppress_small)
 
 
@@ -159,7 +160,6 @@ def myfft(chirp_data, n, plan):
 def dechirp_phase(ndata, refchirp, upsamp=None):
     if len(ndata.shape) == 1:
         ndata = ndata.reshape(1, -1)
-    global Config
     if not upsamp:
         upsamp = Config.fft_upsamp
     # upsamp = Config.fft_upsamp #!!!
@@ -183,7 +183,6 @@ def dechirp_phase(ndata, refchirp, upsamp=None):
 def dechirp(ndata, refchirp, upsamp=None):
     if len(ndata.shape) == 1:
         ndata = ndata.reshape(1, -1)
-    global Config
     if not upsamp:
         upsamp = Config.fft_upsamp
     # upsamp = Config.fft_upsamp #!!!
@@ -244,7 +243,7 @@ def coarse_work(pktdata_in):
 
 def work(pkt_totcnt, pktdata_in):
     pktdata_in /= cp.mean(cp.abs(pktdata_in))
-    # time_error, cfo_freq_est = fine_work_new(pktdata_in)
+    time_error, cfo_freq_est = fine_work_new(pktdata_in)
 
     est_cfo_freq, argmax_est_time_shift_samples = coarse_work(pktdata_in)
     pktdata2a = add_freq(pktdata_in, - est_cfo_freq)
@@ -403,53 +402,75 @@ def fine_work_new(pktdata2a):  # TODO working
     pktdata2a = togpu(pktdata2a)
 
     # Perform optimization
-    if 0:
+    if 1:
         def objective(params):
             cfofreq, time_error = params
             pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
-            detect_symb = gen_refchirp(cfofreq, time_error - math.ceil(time_error))
+            detect_symb, tstart_sig = gen_refchirp(cfofreq, time_error - math.ceil(time_error))
             didx = 0
             res = 0
             for sidx, ssymb in enumerate(detect_symb):
-                ress = tocpu(cp.conj(togpu(ssymb)).dot(pktdata2a_roll[didx: didx + len(ssymb)]))
+                ress = tocpu(cp.conj(ssymb).dot(pktdata2a_roll[didx: didx + len(ssymb)]))
                 # logger.debug(f'{sidx=} {abs(ress)=} {cp.angle(ress)=}')
                 res += abs(ress) ** 2
                 didx += len(ssymb)
             return -res  # Negative because we use a minimizer
 
-        bestx = None
-        bestobj = cp.inf
-        for start_t in tqdm(range(Config.nsamp)):
-            for start_f in range(-27000, -26000, 100):
-                result = opt.minimize(
-                    objective,
-                    [start_f + 50, start_t + 0.5],
-                    bounds=[(start_f, start_f + 100), (start_t, start_t + 1)],
-                    method='L-BFGS-B',  # More precise method for bounded problems
-                    options={'gtol': 1e-8, 'disp': False}  # Set tolerance for convergence and display progress
-                )
-                logger.debug(f"Optimized parameters: cfofreq = {result.x[0]}, time_error = {result.x[1]} {result.fun=}")
-                if result.fun < bestobj:
-                    bestx = result.x
-                    bestobj = result.fun
-        cfo_freq_est, time_error = bestx
-        logger.info(f"Optimized parameters: {cfo_freq_est=} {time_error=}")
+
+        start_t = np.linspace(0, Config.nsamp, Config.nsamp * 5)
+        start_f = np.linspace(-24000, -29000, 100)
+        Z = np.zeros((len(start_f), len(start_t)))
+        for i, f in tqdm(enumerate(start_f), total=len(start_f)):
+            for j, t in enumerate(start_t):
+                Z[i, j] = objective((f, t))
+
+        plt.figure(figsize=(10, 8))
+        ax = sns.heatmap(Z, cmap='viridis', cbar=True)
+        ax.set_xticks(np.linspace(0, len(start_t) - 1, 10))
+        ax.set_xticklabels(np.linspace(start_t[0], start_t[-1], 10))
+        ax.set_yticks(np.linspace(0, len(start_f) - 1, 10))
+        ax.set_yticklabels(np.linspace(start_f[0], start_f[-1], 10))
+        ax.yaxis.set_tick_params(labelrotation=0)
+        plt.xlabel('start_t')
+        plt.ylabel('start_f')
+        plt.title('Heatmap of objective(start_t, start_f)')
+        plt.show()
+        maxidx = np.unravel_index(np.argmin(Z, axis=None), Z.shape, order='C')
+        best_f = start_t[maxidx[0]]
+        best_t = start_t[maxidx[1]]
+        logger.info(f'{objective((best_f, best_t))=} {np.min(Z)=} {best_f=} {best_t=}')
+        sys.exit(0)
+
     else:
         cfo_freq_est = -26695.219805083307
-        time_error = 157.733830380595
+        time_error = 257.733830380595
+    est_cfo_percentile = cfo_freq_est / Config.sig_freq
     pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
     detect_symb, tstart_sig = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
     didx = 0
     res_angle = cp.zeros((Config.preamble_len,), dtype=cp.float64)
     for sidx, ssymb in enumerate(detect_symb[:Config.preamble_len]):
-        ress = tocpu(cp.conj(togpu(ssymb)).dot(pktdata2a_roll[didx: didx + len(ssymb)]))
+        ress = cp.conj(togpu(ssymb)).dot(pktdata2a_roll[didx: didx + len(ssymb)])
         rangle = cp.angle(ress)
         res_angle[sidx] = rangle
         logger.info(f'{rangle=}')
         didx += len(ssymb)
-    myplot(res_angle)
-    plt.savefig(f"res_angle_{code}.png")
+
+    def quadratic(x, a, b, c):
+        return a * x ** 2 + b * x + c
+    x_data = np.arange(Config.preamble_len)
+    # add_data = cp.array([2,2,1,1,0,0,0,0])
+    # res_angle += add_data * cp.pi * 2
+    params, covariance = curve_fit(quadratic, x_data, tocpu(res_angle))
+    myscatter(x_data, res_angle, label='Data Points')
+    myplot(x_data, quadratic(x_data, *params), color='red', label='Fitted Curve')
+    print(params)
+    plt.legend()
+    plt.savefig(f"res_angle.png")
+    plt.show()
     plt.clf()
+    sys.exit(0)
+
 
     code_cnt = math.floor(len(pktdata2a_roll) / Config.nsamp - Config.sfdend - 0.5)
     code_ests = cp.zeros((code_cnt,), dtype=int)
@@ -463,8 +484,8 @@ def fine_work_new(pktdata2a):  # TODO working
         res_array = cp.zeros((Config.n_classes,), dtype=float)
         for code in range(Config.n_classes):
             tstart_sig1 = tstart_sig
-            cfofreq = est_cfo_freq
-            est_cfo_percentile = cfofreq / Config.sig_freq
+            cfofreq = cfo_freq_est
+            cfo_freq_est = cfofreq / Config.sig_freq
             inif = code / Config.n_classes * Config.bw
             tsig = Config.tsig * (1 - est_cfo_percentile) * (1 - code / Config.n_classes)
             upchirp1 = gen_upchirp(tstart_sig1, -Config.bw / 2 + cfofreq + inif, tstart_sig1 + tsig,
@@ -498,6 +519,7 @@ def fine_work_new(pktdata2a):  # TODO working
         code = est_code
         tstart_sig1 = tstart_sig
         est_cfo_percentile = cfofreq / Config.sig_freq
+        logger.info(f"{est_cfo_percentile=}")
         inif = code / Config.n_classes * Config.bw
         tsig = Config.tsig * (1 - est_cfo_percentile) * (1 - code / Config.n_classes)
         upchirp1 = gen_upchirp(tstart_sig1, -Config.bw / 2 + cfofreq + inif, tstart_sig1 + tsig,
@@ -616,10 +638,10 @@ def gen_refchirp(cfofreq, tstart):
 
     tsig = Config.tsig * (1 - est_cfo_percentile) * 0.25
     upchirp = gen_upchirp(tstart_sig, Config.bw / 2 + cfofreq, tstart_sig + tsig, Config.bw / 4 + cfofreq)  # TODO +-
-    tstart_sig += tsig
     upchirp[:20] = cp.zeros((20,))
     upchirp[-20:] = cp.zeros((20,))
     assert len(upchirp) == math.ceil(tstart_sig + tsig) - math.ceil(tstart_sig)
+    tstart_sig += tsig
     detect_symb.append(upchirp)
     return detect_symb, tstart_sig
 
