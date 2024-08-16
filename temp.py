@@ -1,18 +1,17 @@
-import matplotlib.pyplot as plt
-x = [1, 2, 3]
-y1 = [1, 2, 3]
-y2 = [1, 2, 3]
+from itertools import islice
 
-fig1, ax1 = plt.subplots()
-ax1.plot(x, y1)
-ax1.set_title('Sine Wave')
-ax1.set_xlabel('x')
-ax1.set_ylabel('sin(x)')
+# Define a simple generator
+def my_generator():
+    yield 1
+    yield 2
+    yield 3
+    yield 4
+    yield 5
 
-fig2, ax2 = plt.subplots()
-ax2.plot(x, y2)
-ax2.set_title('Cosine Wave')
-ax2.set_xlabel('x')
-ax2.set_ylabel('cos(x)')
-
-plt.show()
+# Create a generator object
+for i, x in enumerate(my_generator()):
+    print(x)
+    if i>2: break
+for i, x in enumerate(my_generator()):
+    print(x)
+    if i>2: break

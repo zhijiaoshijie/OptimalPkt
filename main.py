@@ -40,6 +40,7 @@ def tocpu(x):
 
 
 def mychirp(t, f0, f1, t1, method, phi):
+    # logger.info(f"{f0=} {f1=} {t1=}")
     return togpu(chirp(tocpu(t), f0, f1, t1, method, phi))
 
 
@@ -68,7 +69,9 @@ console_handler = logging.StreamHandler()
 console_handler.setLevel(level)  # Set the console handler level
 file_handler = logging.FileHandler('my_log_file.log')
 file_handler.setLevel(level)  # Set the file handler level
-formatter = logging.Formatter('%(message)s')
+# formatter = logging.Formatter('%(message)s')
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+formatter = logging.Formatter('%(levelname)s - %(message)s')
 console_handler.setFormatter(formatter)
 file_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
@@ -96,13 +99,13 @@ class Config:
     sig_freq = 470e6
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples
-    base_dir = '/data/djl/datasets/Dataset_50Nodes'
+    # base_dir = '/data/djl/datasets/Dataset_50Nodes'
     figpath = "fig"
     if not os.path.exists(figpath): os.mkdir(figpath)
-    file_paths = []
-    for file_name in os.listdir(base_dir):
-        if file_name.startswith('sf7') and file_name.endswith('.bin'):
-            file_paths.append(os.path.join(base_dir, file_name))
+    file_paths = ['/data/djl/datasets/Dataset_50Nodes/sf7-470-new-70.bin']
+    # for file_name in os.listdir(base_dir):
+    #     if file_name.startswith('sf7') and file_name.endswith('.bin'):
+    #         file_paths.append(os.path.join(base_dir, file_name))
 
     nsamp = round(n_classes * fs / bw)
     nfreq = 1024 + 1
@@ -285,6 +288,7 @@ def work(pkt_totcnt, pktdata_in):
     angles = calc_angles(payload_data)
     if opts.debug:
         myscatter(range(len(angles)), angles, s=0.5)
+        plt.show()
         plt.savefig(os.path.join(Config.figpath, f'temp_sf7_{pkt_totcnt}.png'))
         plt.clf()
         for i in range(min(len(ans2n), len(angles))):
@@ -392,6 +396,7 @@ def fine_work(pktdata2a):
 def gen_upchirp(t0, f0, t1, f1):
     t = cp.arange(math.ceil(t0), math.ceil(t1)) / Config.fs
     fslope = (f1 - f0) / (t1 - t0) * Config.fs
+    # logger.info(f"{f1=}")
     chirpI1 = mychirp(t, f0=f0 - t0 / Config.fs * fslope, f1=f1, t1=t1 / Config.fs, method='linear', phi=90)
     chirpQ1 = mychirp(t, f0=f0 - t0 / Config.fs * fslope, f1=f1, t1=t1 / Config.fs, method='linear', phi=0)
     upchirp = cp.array(chirpI1 + 1j * chirpQ1)
@@ -400,6 +405,13 @@ def gen_upchirp(t0, f0, t1, f1):
 
 def fine_work_new(pktdata2a):  # TODO working
     pktdata2a = togpu(pktdata2a)
+
+    phase = cp.angle(pktdata2a)
+    unwrapped_phase = cp.unwrap(phase)
+    myplot(unwrapped_phase[:15*1024], linestyle='-')
+    plt.title("input data 15 symbol")
+    plt.show()
+    plt.clf()
 
     # Perform optimization
     if 0:
@@ -437,13 +449,24 @@ def fine_work_new(pktdata2a):  # TODO working
 
     else:
         cfo_freq_est = -24454.530
-        cfo_freq_est += 100
+        cfo_freq_est_delta = 0#100
         time_error = 331.000
-        time_error -= 2
-        # cfo_freq_est = -26695.219805083307
-        # time_error = 257.733830380595
+        time_error_delta = 0
+        cfo_freq_est += cfo_freq_est_delta
+        time_error += time_error_delta
+        cfo_freq_est = -26695.219805083307
+        time_error = 257.733830380595
     est_cfo_percentile = cfo_freq_est / Config.sig_freq
     pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
+
+    phase = cp.angle(pktdata2a_roll)
+    unwrapped_phase = cp.unwrap(phase)
+    myplot(unwrapped_phase[:15*1024], linestyle='-')
+    plt.title("aligned pkt")
+    plt.show()
+    plt.clf()
+
+
     detect_symb, tstart_sig = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
     didx = 0
     res_angle = cp.zeros((Config.preamble_len,), dtype=cp.float64)
@@ -456,20 +479,21 @@ def fine_work_new(pktdata2a):  # TODO working
 
     def quadratic(x, a, b, c):
         return a * x ** 2 + b * x + c
-    x_data = np.arange(Config.preamble_len)
+    res_angle = res_angle[1:-1] # TODO
+    x_data = np.arange(len(res_angle))
     # add_data = cp.array([2,2,1,1,0,0,0,0])
     # res_angle += add_data * cp.pi * 2
     res_angle = np.unwrap(res_angle)
-    # res_angle[-1] += np.pi * 2
+    # res_angle[-1] += np.pi * 2 # TODO
     params, covariance = curve_fit(quadratic, x_data, tocpu(res_angle))
     myscatter(x_data, res_angle, label='Data Points')
     myplot(x_data, quadratic(x_data, *params), color='red', label='Fitted Curve')
-    logger.info(f"a={params[0]} b={params[1]} c={params[2]}")
+    logger.info(f"fd={cfo_freq_est_delta} td={time_error_delta} a={params[0]} b={params[1]} c={params[2]}")
     plt.legend()
-    plt.savefig(f"res_angle.png")
     plt.show()
+    plt.savefig(f"res_angle.png")
     plt.clf()
-    sys.exit(0)
+    # sys.exit(0)
 
 
     code_cnt = math.floor(len(pktdata2a_roll) / Config.nsamp - Config.sfdend - 0.5)
@@ -482,61 +506,66 @@ def fine_work_new(pktdata2a):  # TODO working
         logger.info(f"{tstart_sig=}")
         # tsig = Config.tsig * (1 - est_cfo_percentile)
         res_array = cp.zeros((Config.n_classes,), dtype=float)
+        est_cfo_percentile = cfo_freq_est / Config.sig_freq
         for code in range(Config.n_classes):
             tstart_sig1 = tstart_sig
-            cfofreq = cfo_freq_est
-            cfo_freq_est = cfofreq / Config.sig_freq
             inif = code / Config.n_classes * Config.bw
             tsig = Config.tsig * (1 - est_cfo_percentile) * (1 - code / Config.n_classes)
-            upchirp1 = gen_upchirp(tstart_sig1, -Config.bw / 2 + cfofreq + inif, tstart_sig1 + tsig,
-                                   Config.bw / 2 + cfofreq)
-            res1 = tocpu(
-                cp.conj(togpu(upchirp1)).dot(pktdata2a_roll[math.ceil(tstart_sig1): math.ceil(tstart_sig1 + tsig)]))
+            upchirp1 = gen_upchirp(tstart_sig1, -Config.bw / 2 + cfo_freq_est + inif, tstart_sig1 + tsig, Config.bw / 2 + cfo_freq_est)
+            res1 = cp.conj(togpu(upchirp1)).dot(pktdata2a_roll[math.ceil(tstart_sig1): math.ceil(tstart_sig1 + tsig)])
 
+            tstart_sig1 += tsig
             if code != 0:
-                tstart_sig1 += tsig
                 tsig = Config.tsig * (1 - est_cfo_percentile) * (code / Config.n_classes)
-                upchirp2 = gen_upchirp(tstart_sig1, -Config.bw / 2 + cfofreq, tstart_sig1 + tsig,
-                                       -Config.bw / 2 + cfofreq + inif)
-                res2 = tocpu(
-                    cp.conj(togpu(upchirp2)).dot(pktdata2a_roll[math.ceil(tstart_sig1): math.ceil(tstart_sig1 + tsig)]))
+                # logger.info(f"{-Config.bw / 2 + cfo_freq_est + inif=} {-Config.bw / 2=} {cfo_freq_est=} {inif=} {code=}")
+                upchirp2 = gen_upchirp(tstart_sig1, -Config.bw / 2 + cfo_freq_est, tstart_sig1 + tsig, -Config.bw / 2 + cfo_freq_est + inif)
+                res2 = cp.conj(togpu(upchirp2)).dot(pktdata2a_roll[math.ceil(tstart_sig1): math.ceil(tstart_sig1 + tsig)])
+                # logger.info(cp.mean(cp.abs(pktdata2a_roll[tstart_sig: tstart_sig1 + tsig])))
                 tstart_sig1 += tsig
             else:
                 res2 = 0
 
-            res = abs(res1) ** 2 + abs(res2) ** 2
+            res = cp.abs(res1) ** 2 + cp.abs(res2) ** 2
             # logger.info(f"{code=} {abs(res1)=} {cp.angle(res1)=} {abs(res2)=} {cp.angle(res2)=}")
             res_array[code] = res
         est_code = cp.argmax(res_array)
-        logger.info(f"{est_code=}")
+        logger.info(f"{est_code=} {cp.max(res_array)=}")
         code_ests[codeid] = est_code
         myplot(res_array)
-        plt.title("resarray")
-        plt.axvline(est_code, color="k")
+        plt.title(f"resarray {codeid=}")
+        plt.axvline(tocpu(est_code), color="k")
+        plt.show()
         plt.savefig(os.path.join(Config.figpath, f"pk{code}.png"))
+        plt.clf()
+
+        phase = cp.angle(pktdata2a_roll[math.ceil(tstart_sig): math.ceil(tstart_sig1)])
+        unwrapped_phase = cp.unwrap(phase)
+        myplot(unwrapped_phase[:1024], linestyle='-')
+        plt.title("pkt 1st code")
+        plt.show()
         plt.clf()
 
         code = est_code
         tstart_sig1 = tstart_sig
-        est_cfo_percentile = cfofreq / Config.sig_freq
-        logger.info(f"{est_cfo_percentile=}")
+        est_cfo_percentile = cfo_freq_est / Config.sig_freq
+        # logger.info(f"{est_cfo_percentile=}")
         inif = code / Config.n_classes * Config.bw
         tsig = Config.tsig * (1 - est_cfo_percentile) * (1 - code / Config.n_classes)
-        upchirp1 = gen_upchirp(tstart_sig1, -Config.bw / 2 + cfofreq + inif, tstart_sig1 + tsig,
-                               Config.bw / 2 + cfofreq)
+        upchirp1 = gen_upchirp(tstart_sig1, -Config.bw / 2 + cfo_freq_est + inif, tstart_sig1 + tsig,
+                               Config.bw / 2 + cfo_freq_est)
         upchirp1 = cp.conj(upchirp1)
-        res1 = tocpu(togpu(upchirp1).dot(pktdata2a_roll[math.ceil(tstart_sig1): math.ceil(tstart_sig1 + tsig)]))
+        res1 = togpu(upchirp1).dot(pktdata2a_roll[math.ceil(tstart_sig1): math.ceil(tstart_sig1 + tsig)])
         upchirp1 /= res1 / cp.abs(res1)
         angle1[codeid] = cp.angle(res1)
-        logger.info(f"{abs(res1)=} {cp.angle(res1)=} {code=}")
+        logger.info(f"{cp.abs(res1)=} {cp.angle(res1)=} {code=} {cp.abs(res1)**2+cp.abs(res2)**2=}")
 
+        tstart_sig1 += tsig
         if code != 0:
-            tstart_sig1 += tsig
             tsig = Config.tsig * (1 - est_cfo_percentile) * (code / Config.n_classes)
-            upchirp2 = gen_upchirp(tstart_sig1, -Config.bw / 2 + cfofreq, tstart_sig1 + tsig,
-                                   -Config.bw / 2 + cfofreq + inif)
+            upchirp2 = gen_upchirp(tstart_sig1, -Config.bw / 2 + cfo_freq_est, tstart_sig1 + tsig,
+                                   -Config.bw / 2 + cfo_freq_est + inif)
             upchirp2 = cp.conj(upchirp2)
-            res2 = tocpu(togpu(upchirp2).dot(pktdata2a_roll[math.ceil(tstart_sig1): math.ceil(tstart_sig1 + tsig)]))
+            res2 = togpu(upchirp2).dot(pktdata2a_roll[math.ceil(tstart_sig1): math.ceil(tstart_sig1 + tsig)])
             upchirp2 /= res2 / cp.abs(res2)
             angle2[codeid] = cp.angle(res2)
             tstart_sig1 += tsig
@@ -544,8 +573,7 @@ def fine_work_new(pktdata2a):  # TODO working
         else:
             angle2[codeid] = 0
 
-        dataX = pktdata2a_roll[math.ceil(tstart_sig): math.ceil(tstart_sig + Config.tsig * (1 - est_cfo_percentile))][
-                :Config.nsamp]
+        dataX = pktdata2a_roll[math.ceil(tstart_sig) : math.ceil(tstart_sig) + Config.nsamp]
         dataX = dataX.T
         data1 = cp.matmul(Config.dataE1, dataX)
         data2 = cp.matmul(Config.dataE2, dataX)
@@ -553,8 +581,7 @@ def fine_work_new(pktdata2a):  # TODO working
         est = tocpu(cp.argmax(vals))
         angle3[codeid] = tocpu(cp.angle(data1[est]))
         angle4[codeid] = tocpu(cp.angle(data2[est]))
-        logger.info(
-            f"{codeid=} {abs(tocpu(data1[est]))=} {abs(tocpu(data2[est]))=} {angle3[codeid]=} {angle4[codeid]=}")
+        logger.info(f"{codeid=} {est=} {abs(tocpu(data1[est]))=} {abs(tocpu(data2[est]))=} {angle3[codeid]=} {angle4[codeid]=}")
 
         if code != 0:
             complex_array = cp.conj(cp.concatenate((upchirp1, upchirp2), axis=0))
@@ -562,11 +589,11 @@ def fine_work_new(pktdata2a):  # TODO working
             complex_array = upchirp1
         phase = cp.angle(complex_array)
         unwrapped_phase = cp.unwrap(phase)
-        plt.figure(figsize=(10, 6))
+        # plt.figure(figsize=(10, 6))
         myplot(unwrapped_phase, linestyle='-', color='b', label=f"{code=}")
 
         logger.info(f"{tstart_sig=} {tstart_sig1=}")
-        complex_array = tocpu(pktdata2a_roll[math.ceil(tstart_sig): math.ceil(tstart_sig1)])
+        complex_array = pktdata2a_roll[math.ceil(tstart_sig): math.ceil(tstart_sig1)]
         phase = cp.angle(complex_array)
         unwrapped_phase = cp.unwrap(phase)
         myplot(unwrapped_phase, linestyle='--', color='r', label="input")
@@ -575,23 +602,27 @@ def fine_work_new(pktdata2a):  # TODO working
         plt.xlabel('Index')
         plt.ylabel('Phase')
         plt.grid(True)
-        plt.axvline(Config.tsig * (1 - est_cfo_percentile) * (1 - code / Config.n_classes), color='k')
+        plt.axvline(tocpu(Config.tsig * (1 - est_cfo_percentile) * (1 - code / Config.n_classes)), color='k')
         plt.legend()
         plt.title(f'{codeid=}')
+        plt.show()
         plt.savefig(os.path.join(Config.figpath, f'code{codeid}.png'))
         plt.clf()
 
         tstart_sig = tstart_sig1
+        sys.exit(0)
     myplot(angle1, label="angle1")
     myplot(angle2, label="angle2")
     plt.legend()
     plt.title(f"angleA.png")
+    plt.show()
     plt.savefig(os.path.join(Config.figpath, f"angleA.png"))
     plt.clf()
     myscatter(code_ests, angle1, label="angle1")
     myscatter(code_ests, angle2, label="angle2")
     plt.legend()
     plt.title(f"angleB.png")
+    plt.show()
     plt.savefig(os.path.join(Config.figpath, f"angleB.png"))
     plt.clf()
 
@@ -599,12 +630,14 @@ def fine_work_new(pktdata2a):  # TODO working
     myplot(angle4, label="angle4")
     plt.legend()
     plt.title(f"angleC.png")
+    plt.show()
     plt.savefig(os.path.join(Config.figpath, f"angleC.png"))
     plt.clf()
     myscatter(code_ests, angle3, label="angle3")
     myscatter(code_ests, angle4, label="angle4")
     plt.legend()
     plt.title(f"angleD.png")
+    plt.show()
     plt.savefig(os.path.join(Config.figpath, f"angleD.png"))
     plt.clf()
 
@@ -647,23 +680,23 @@ def gen_refchirp(cfofreq, tstart):
 
 
 
-def read_large_file(file_path_in, chunk_size):
+def read_large_file(file_path_in):
     with open(file_path_in, 'rb') as file:
         while True:
             try:
                 rawdata = cp.fromfile(file, dtype=cp.complex64, count=Config.nsamp)
             except EOFError:
-                logger.info("file complete with EOF")
+                logger.warning("file complete with EOF")
                 break
             if len(rawdata) < Config.nsamp:
-                logger.debug(f"file complete, {len(rawdata)=}")
+                logger.warning(f"file complete, {len(rawdata)=}")
                 break
             yield rawdata
 
 
 def read_pkt(file_path_in, threshold, chunk_size, min_length=20):
     current_sequence = []
-    for rawdata in read_large_file(file_path_in, chunk_size=chunk_size):
+    for rawdata in read_large_file(file_path_in):
         number = cp.max(cp.abs(rawdata))
         if number > threshold:
             current_sequence.append(rawdata)
@@ -690,16 +723,17 @@ if __name__ == "__main__":
 
         power_eval_len = 5000
         nmaxs = cp.zeros((power_eval_len,))
-        for idx, rawdata in enumerate(read_large_file(file_path, Config.nsamp)):
+        for idx, rawdata in enumerate(read_large_file(file_path)):
             nmaxs[idx] = cp.max(cp.abs(rawdata))
             if idx == power_eval_len - 1: break
         kmeans = KMeans(n_clusters=2, random_state=0, n_init=10)
         kmeans.fit(tocpu(nmaxs.reshape(-1, 1)))
         thresh = cp.mean(kmeans.cluster_centers_)
-        # counts, bins = cp.histogram(nmaxs, bins=100)
-        # logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
+        counts, bins = cp.histogram(nmaxs, bins=100)
+        logger.info(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
 
         pkt_totcnt = 0
         for pkt_idx, pkt_data in enumerate(read_pkt(file_path, thresh, Config.nsamp, min_length=20)):
             if pkt_idx < 20: continue
+            logger.info(f"{pkt_idx=} {len(pkt_data)=}")
             work(pkt_idx, pkt_data)
