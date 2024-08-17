@@ -112,7 +112,8 @@ class Config:
     # base_dir = '/data/djl/datasets/Dataset_50Nodes'
     figpath = "fig"
     if not os.path.exists(figpath): os.mkdir(figpath)
-    file_paths = ['/data/djl/datasets/Dataset_50Nodes/sf7-470-new-70.bin']
+    # file_paths = ['/data/djl/datasets/Dataset_50Nodes/sf7-470-new-70.bin']
+    file_paths = ['/data/djl/datasets/sf7-470-pre-2.bin']
     # file_paths = ['/data/djl/datasets/sf7-470-pre-2.bin']
     # for file_name in os.listdir(base_dir):
     #     if file_name.startswith('sf7') and file_name.endswith('.bin'):
@@ -122,7 +123,7 @@ class Config:
     nfreq = 1024 + 1
     time_upsamp = 32
 
-    preamble_len = 8  # TODO
+    preamble_len = 64  # TODO
     code_len = 2
     # codes = [50, 101]  # TODO set codes
     fft_upsamp = 1024
@@ -298,7 +299,7 @@ def work(pkt_totcnt, pktdata_in):
         fig, ax = plt.subplots()
         myscatter(ax, range(len(angles)), angles, s=0.5)
         plt.show()
-        plt.savefig(os.path.join(Config.figpath, f'temp_sf7_{pkt_totcnt}.png'))
+        fig.savefig(os.path.join(Config.figpath, f'temp_sf7_{pkt_totcnt}.png'))
         fig, ax = plt.subplots()
         for i in range(min(len(ans2n), len(angles))):
             if abs(angles[i]) > 0.5:
@@ -422,9 +423,8 @@ def fine_work_new(pktdata2a):  # TODO working
     unwrapped_phase = cp.unwrap(phase)
     fig, ax = plt.subplots()
     myplot(ax, unwrapped_phase[:15 * 1024], linestyle='-')
-    plt.title("input data 15 symbol")
+    ax.set_title("input data 15 symbol")
     plt.show()
-    fig, ax = plt.subplots()
 
     # Perform optimization
     if parse_opts.searchphase:
@@ -441,18 +441,16 @@ def fine_work_new(pktdata2a):  # TODO working
                 didx += len(ssymb)
             return -res  # Negative because we use a minimizer
 
-        # start_t = random.uniform(0, Config.nsamp)
-        # start_f = random.uniform(-29000, -24000)
-        # t_lower, t_upper = 0, Config.nsamp
-        # f_lower, f_upper = -30000, -23000
-        # bestx = None
-        # bestobj = cp.inf
-        f_guess = -26685.110
-        t_guess = 225.221
-        t_lower, t_upper = t_guess - 20, t_guess + 20
-        f_lower, f_upper = f_guess - 100, f_guess + 100
-        bestx = [f_guess, t_guess]
-        bestobj = objective(bestx)
+        t_lower, t_upper = 0, Config.nsamp # TODO
+        f_lower, f_upper = -30000, -23000
+        bestx = None
+        bestobj = cp.inf
+        # f_guess = -26685.110
+        # t_guess = 225.221
+        # t_lower, t_upper = t_guess - 20, t_guess + 20
+        # f_lower, f_upper = f_guess - 100, f_guess + 100
+        # bestx = [f_guess, t_guess]
+        # bestobj = objective(bestx)
         for tryidx in range(10000):
             start_t = random.uniform(t_lower, t_upper)
             start_f = random.uniform(f_lower, f_upper)
@@ -460,6 +458,7 @@ def fine_work_new(pktdata2a):  # TODO working
             result = opt.minimize(objective, [start_f, start_t], bounds=[(f_lower, f_upper), (t_lower, t_upper)], method='L-BFGS-B',
                                   options={'gtol': 1e-8, 'disp': False}
                                   )
+
             if result.fun < bestobj:
                 logger.debug(f"{tryidx=: 6d} cfo_freq_est = {result.x[0]:.3f}, time_error = {result.x[1]:.3f} {result.fun=:.3f}")
                 bestx = result.x
@@ -474,28 +473,30 @@ def fine_work_new(pktdata2a):  # TODO working
             for i, f in tqdm(enumerate(start_f), total=len(start_f)):
                 for j, t in enumerate(start_t):
                     Z[i, j] = objective((f, t))
-            plt.figure(figsize=(10, 8))
+
             ax = sns.heatmap(Z, cmap='viridis', cbar=True)
             ax.set_xticks(np.linspace(0, len(start_t) - 1, 10))
             ax.set_xticklabels(np.linspace(start_t[0], start_t[-1], 10))
             ax.set_yticks(np.linspace(0, len(start_f) - 1, 10))
             ax.set_yticklabels(np.linspace(start_f[0], start_f[-1], 10))
             ax.yaxis.set_tick_params(labelrotation=0)
-            plt.xlabel('start_t')
-            plt.ylabel('start_f')
-            plt.title('Heatmap of objective(start_t, start_f)')
+            ax.set_xlabel('start_t')
+            ax.set_ylabel('start_f')
+            ax.set_title('Heatmap of objective(start_t, start_f)')
             plt.show()
             maxidx = np.unravel_index(np.argmin(Z, axis=None), Z.shape, order='C')
             best_f = start_t[maxidx[0]]
             best_t = start_t[maxidx[1]]
-            logger.info(f'{objective((best_f, best_t))=} {np.min(Z)=} {best_f=} {best_t=}')
+            logger.info(f'PlotMap {objective((best_f, best_t))=} {np.min(Z)=} {best_f=} {best_t=}')
             sys.exit(0)
         cfo_freq_est_delta = 0  # 100
         time_error_delta = 0
     else:
-        cfo_freq_est = -26685.110
-        time_error = 225.221
-        cfo_freq_est_delta = 0  # 100
+        # cfo_freq_est = -26685.110 # best for 50/sf7/20
+        # time_error = 225.221
+        cfo_freq_est = -27912.440
+        time_error = 901.555
+        cfo_freq_est_delta = 0  # TODO
         time_error_delta = 0
         cfo_freq_est += cfo_freq_est_delta
         time_error += time_error_delta
@@ -507,20 +508,19 @@ def fine_work_new(pktdata2a):  # TODO working
     detect_symb_plt *= (pktdata2a_roll[0] / cp.abs(pktdata2a_roll[0]))
     tstart = time_error - math.ceil(time_error) + (Config.sfdend - 0.75) * Config.tsig * (1 - cfo_freq_est / Config.sig_freq)
     # xval = cp.arange(800, 1024)
-    logger.info(len(detect_symb_plt))
     xval = cp.arange(len(detect_symb_plt))
     yval1 = cp.unwrap(phase1)[xval]
     yval2 = cp.unwrap(cp.angle(detect_symb_plt))[xval]
     tsfd = time_error - math.ceil(time_error) + Config.sfdpos * Config.tsig * (1 - cfo_freq_est / Config.sig_freq)
     yval2[math.ceil(tsfd):] += (yval1[math.ceil(tsfd)] - yval2[math.ceil(tsfd)])
+    fig, ax = plt.subplots()
     myplot(ax, yval1, linestyle='-', color='b', label="input")
     myplot(ax, yval2, linestyle='--', color='r', label="fit")
     # myplot(ax, cp.diff(cp.unwrap(phase1))[xval], linestyle='-', color='b', label="input")
     # myplot(ax, cp.diff(cp.unwrap(cp.angle(detect_symb)))[xval], linestyle='--', color='r', label="fit")
-    plt.title("aligned pkt")
-    plt.legend()
+    ax.set_title("aligned pkt")
+    ax.legend()
     plt.show()
-    fig, ax = plt.subplots()
     if parse_opts.end1: sys.exit(0)
 
     detect_symb_rangle = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
@@ -544,12 +544,13 @@ def fine_work_new(pktdata2a):  # TODO working
     # res_angle[-1] += np.pi * 2 # TODO
     # noinspection PyTupleAssignmentBalance
     params, covariance = curve_fit(quadratic, x_data, tocpu(res_angle))
+    fig, ax = plt.subplots()
     myscatter(ax, x_data, res_angle, label='Data Points')
     myplot(ax, x_data, quadratic(x_data, *params), color='red', label='Fitted Curve')
     # logger.info(f"fd={cfo_freq_est_delta} td={time_error_delta} a={params[0]} b={params[1]} c={params[2]}")
-    plt.legend()
+    ax.legend()
     plt.show()
-    plt.savefig(f"res_angle.png")
+    fig.savefig(f"res_angle.png")
     # sys.exit(0)
 
     code_cnt = math.floor(len(pktdata2a_roll) / Config.nsamp - Config.sfdend - 0.5)
@@ -581,21 +582,21 @@ def fine_work_new(pktdata2a):  # TODO working
             res2_arr[code] = cp.conj(upchirp2_arr[code]).dot(pktdata2a_roll[math.ceil(tid_times[tid] + tsig_arr[code]): math.ceil(tid_times[tid + 1])])
         res_array = cp.abs(res1_arr) ** 2 + cp.abs(res2_arr) ** 2
         est_code = tocpu(cp.argmax(res_array))
-        logger.info(f"L curvefit {est_code=} {cp.max(res_array)=}")
+        logger.info(f"Log curvefit {est_code=} {cp.max(res_array)=}")
         code_ests[tid] = est_code
-        myplot(ax, res_array)
-        plt.title(f"resarray {tid=} {est_code=}")
-        plt.axvline(tocpu(est_code), color="k")
-        plt.show()
-        plt.savefig(os.path.join(Config.figpath, f"resarray {tid=} {est_code=}.png"))
         fig, ax = plt.subplots()
+        myplot(ax, res_array)
+        ax.set_title(f"resarray {tid=} {est_code=}")
+        ax.axvline(tocpu(est_code), color="k")
+        plt.show()
+        fig.savefig(os.path.join(Config.figpath, f"resarray {tid=} {est_code=}.png"))
 
         phase = cp.angle(pktdata2a_roll[math.ceil(tid_times[tid]): math.ceil(tid_times[tid + 1])])
         unwrapped_phase = cp.unwrap(phase)
-        myplot(ax, unwrapped_phase, linestyle='-')
-        plt.title(f"phase {tid=} {est_code=}")
-        plt.show()
         fig, ax = plt.subplots()
+        myplot(ax, unwrapped_phase, linestyle='-')
+        ax.set_title(f"phase {tid=} {est_code=}")
+        plt.show()
 
         angle1[tid] = cp.angle(res1_arr[est_code])
         angle2[tid] = cp.angle(res2_arr[est_code])
@@ -618,52 +619,51 @@ def fine_work_new(pktdata2a):  # TODO working
             upchirp_est = cp.concatenate((upchirp_est, upchirp2_est))
         phase1 = cp.angle(upchirp_est)
         sigtt = cp.arange(math.ceil(tid_times[tid]), math.ceil(tid_times[tid + 1]), dtype=int)
-        # plt.figure(figsize=(10, 6))
+        fig, ax = plt.subplots()
         myplot(ax, sigtt, cp.unwrap(phase1), linestyle='-', color='b', label=f"{est_code=}")
         phase2 = cp.angle(pktdata2a_roll[sigtt])
         myplot(ax, sigtt, cp.unwrap(phase2), linestyle='--', color='r', label="input")
 
-        plt.title('Ref')
-        plt.xlabel('Index')
-        plt.ylabel('Phase')
-        plt.grid(True)
-        plt.axvline(tocpu(tid_times[tid] + tsig_arr[est_code]), color='k')
-        plt.legend()
-        plt.title(f'{tid=} {est_code=}')
+        ax.set_title('Ref')
+        ax.set_xlabel('Index')
+        ax.set_ylabel('Phase')
+        ax.grid(True)
+        ax.axvline(tocpu(tid_times[tid] + tsig_arr[est_code]), color='k')
+        ax.legend()
+        ax.set_title(f'{tid=} {est_code=}')
         plt.show()
-        plt.savefig(os.path.join(Config.figpath, f'code{tid}.png'))
-        fig, ax = plt.subplots()
+        fig.savefig(os.path.join(Config.figpath, f'code{tid}.png'))
 
         sys.exit(0)
+    fig, ax = plt.subplots()
     myplot(ax, angle1, label="angle1")
     myplot(ax, angle2, label="angle2")
-    plt.legend()
-    plt.title(f"angleA.png")
+    ax.legend()
+    ax.set_title(f"angleA.png")
     plt.show()
-    plt.savefig(os.path.join(Config.figpath, f"angleA.png"))
+    fig.savefig(os.path.join(Config.figpath, f"angleA.png"))
     fig, ax = plt.subplots()
     myscatter(ax, code_ests, angle1, label="angle1")
     myscatter(ax, code_ests, angle2, label="angle2")
-    plt.legend()
-    plt.title(f"angleB.png")
+    ax.legend()
+    ax.set_title(f"angleB.png")
     plt.show()
-    plt.savefig(os.path.join(Config.figpath, f"angleB.png"))
-    fig, ax = plt.subplots()
+    fig.savefig(os.path.join(Config.figpath, f"angleB.png"))
 
+    fig, ax = plt.subplots()
     myplot(ax, angle3, label="angle3")
     myplot(ax, angle4, label="angle4")
-    plt.legend()
-    plt.title(f"angleC.png")
+    ax.legend()
+    ax.set_title(f"angleC.png")
     plt.show()
-    plt.savefig(os.path.join(Config.figpath, f"angleC.png"))
+    fig.savefig(os.path.join(Config.figpath, f"angleC.png"))
     fig, ax = plt.subplots()
     myscatter(ax, code_ests, angle3, label="angle3")
     myscatter(ax, code_ests, angle4, label="angle4")
-    plt.legend()
-    plt.title(f"angleD.png")
+    ax.legend()
+    ax.set_title(f"angleD.png")
     plt.show()
-    plt.savefig(os.path.join(Config.figpath, f"angleD.png"))
-    fig, ax = plt.subplots()
+    fig.savefig(os.path.join(Config.figpath, f"angleD.png"))
 
     return time_error, cfo_freq_est
 
@@ -727,7 +727,6 @@ if __name__ == "__main__":
     plt.rcParams['font.size'] = 15
     plt.rcParams['lines.markersize'] = 12
     plt.rcParams['font.family'] = 'serif'
-    plt.figure(figsize=(8, 6))
 
     for file_path in Config.file_paths:
 
@@ -745,10 +744,10 @@ if __name__ == "__main__":
         kmeans.fit(tocpu(nmaxs.reshape(-1, 1)))
         thresh = cp.mean(kmeans.cluster_centers_)
         counts, bins = cp.histogram(nmaxs, bins=100)
-        logger.info(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
+        logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
 
         pkt_totcnt = 0
         for pkt_idx, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=20)):
             if pkt_idx < 20: continue
-            logger.info(f"{pkt_idx=} {len(pkt_data)=}")
+            logger.info(f"Prework {pkt_idx=} {len(pkt_data)=}")
             work(pkt_idx, pkt_data)
