@@ -3,7 +3,7 @@ import os
 import random
 import sys
 import time
-
+import seaborn as sns
 import cmath
 import math
 import matplotlib.pyplot as plt
@@ -428,20 +428,30 @@ def fine_work_new(pktdata2a):  # TODO working
                 didx += len(ssymb)
             return -res  # Negative because we use a minimizer
 
-        bestx = None
-        bestobj = cp.inf
-        for tryidx in range(100):
-            start_t = random.uniform(0, Config.nsamp)
-            start_f = random.uniform(-29000, -24000)
-            result = opt.minimize(objective, [start_f, start_t], bounds=[(-29000, -24000), (0, Config.nsamp)], method='L-BFGS-B',  # More precise method for bounded problems
-                options={'gtol': 1e-8, 'disp': False}  # Set tolerance for convergence and display progress
-            )
-            if result.fun < bestobj:
-                logger.debug(f"{tryidx=: 6d} {result.fun=:.3f} cfofreq = {result.x[0]:.3f}, time_error = {result.x[1]:.3f} ")
-                bestx = result.x
-                bestobj = result.fun
-        cfo_freq_est, time_error = bestx
-        logger.info(f"Optimized parameters: {cfo_freq_est=} {time_error=}")
+
+        start_t = np.linspace(0, Config.nsamp, Config.nsamp * 5)
+        start_f = np.linspace(-24000, -29000, 100)
+        Z = np.zeros((len(start_f), len(start_t)))
+        for i, f in tqdm(enumerate(start_f), total=len(start_f)):
+            for j, t in enumerate(start_t):
+                Z[i, j] = objective((f, t))
+
+        plt.figure(figsize=(10, 8))
+        ax = sns.heatmap(Z, cmap='viridis', cbar=True)
+        ax.set_xticks(np.linspace(0, len(start_t) - 1, 10))
+        ax.set_xticklabels(np.linspace(start_t[0], start_t[-1], 10))
+        ax.set_yticks(np.linspace(0, len(start_f) - 1, 10))
+        ax.set_yticklabels(np.linspace(start_f[0], start_f[-1], 10))
+        ax.yaxis.set_tick_params(labelrotation=0)
+        plt.xlabel('start_t')
+        plt.ylabel('start_f')
+        plt.title('Heatmap of objective(start_t, start_f)')
+        plt.show()
+        maxidx = np.unravel_index(np.argmin(Z, axis=None), Z.shape, order='C')
+        best_f = start_t[maxidx[0]]
+        best_t = start_t[maxidx[1]]
+        logger.info(f'{objective((best_f, best_t))=} {np.min(Z)=} {best_f=} {best_t=}')
+        sys.exit(0)
 
     else:
         cfo_freq_est = -24454.530
