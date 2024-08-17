@@ -444,21 +444,19 @@ def fine_work_new(pktdata2a):  # TODO working
         bestx = None
         bestobj = cp.inf
         for tryidx in range(10000):
-
             # start_t = random.uniform(0, Config.nsamp)
             # start_f = random.uniform(-29000, -24000)
-            # ef = -24701.029772968563 - 2000
-            # et = 241.52649543073412
-            # tu = et + 10
-            # tl = et - 10
-            # fu = ef + 500
-            # fl = ef - 500
-            tl, tu = 0, Config.nsamp
-            fl, fu = -30000, -23000
-            start_t = random.uniform(tl, tu)
-            start_f = random.uniform(fl, fu)
+            # t_lower, t_upper = 0, Config.nsamp
+            # f_lower, f_upper = -30000, -23000
+            f_guess = -26745.706
+            t_guess = 224.726
+            t_lower, t_upper = t_guess - 20, t_guess + 20
+            f_lower, f_upper = f_guess - 100, f_guess + 100
+
+            start_t = random.uniform(t_lower, t_upper)
+            start_f = random.uniform(f_lower, f_upper)
             # noinspection PyTypeChecker
-            result = opt.minimize(objective, [start_f, start_t], bounds=[(fl, fu), (tl, tu)], method='L-BFGS-B',
+            result = opt.minimize(objective, [start_f, start_t], bounds=[(f_lower, f_upper), (t_lower, t_upper)], method='L-BFGS-B',
                                   options={'gtol': 1e-8, 'disp': False}
                                   )
             if result.fun < bestobj:
