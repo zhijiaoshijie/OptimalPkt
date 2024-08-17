@@ -15,8 +15,16 @@ from scipy.optimize import curve_fit
 from scipy.signal import chirp
 from sklearn.cluster import KMeans
 from tqdm import tqdm
+import argparse
 
-use_gpu = True
+parser = argparse.ArgumentParser()
+parser.add_argument( '--cpu', action='store_true', default=False, help='Use cpu instead of gpu (numpy instead of cupy)')
+parser.add_argument( '--searchphase', action='store_true', default=False)
+parser.add_argument( '--plotmap', action='store_true', default=False)
+parser.add_argument( '--end1', action='store_true', default=False)
+parse_opts = parser.parse_args()
+
+use_gpu = not parse_opts.cpu
 if use_gpu:
     import cupy as cp
     import cupyx.scipy.fft as fft
@@ -69,7 +77,7 @@ console_handler.setLevel(level)  # Set the console handler level
 file_handler = logging.FileHandler('my_log_file.log')
 file_handler.setLevel(level)  # Set the file handler level
 # formatter = logging.Formatter('%(message)s')
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 formatter = logging.Formatter('%(levelname)s - %(message)s')
 console_handler.setFormatter(formatter)
 file_handler.setFormatter(formatter)
@@ -414,11 +422,11 @@ def fine_work_new(pktdata2a):  # TODO working
     plt.clf()
 
     # Perform optimization
-    if 0:
+    if parse_opts.searchphase:
         def objective(params):
             cfofreq, time_error = params
             pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
-            detect_symb = gen_refchirp(cfofreq, time_error - math.ceil(time_error))
+            detect_symb = gen_refchirp(cfofreq, time_error - math.ceil(time_error), deadzone=20)
             didx = 0
             res = 0
             for sidx, ssymb in enumerate(detect_symb):
@@ -448,7 +456,7 @@ def fine_work_new(pktdata2a):  # TODO working
         cfo_freq_est, time_error = bestx
         logger.info(f"Optimized parameters: {cfo_freq_est=} {time_error=}")
 
-        if 0:
+        if parse_opts.plotmap:
             start_t = np.linspace(0, Config.nsamp, Config.nsamp * 5)
             start_f = np.linspace(-24000, -29000, 100)
             Z = np.zeros((len(start_f), len(start_t)))
@@ -483,27 +491,27 @@ def fine_work_new(pktdata2a):  # TODO working
 
     pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
     phase1 = cp.angle(pktdata2a_roll)
-    detect_symb = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
-    detect_symb = cp.concatenate(detect_symb)
-    detect_symb *= (pktdata2a_roll[0] / cp.abs(pktdata2a_roll[0]))
+    detect_symb_plt = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
+    detect_symb_plt = cp.concatenate(detect_symb_plt)
+    detect_symb_plt *= (pktdata2a_roll[0] / cp.abs(pktdata2a_roll[0]))
     tstart = time_error - math.ceil(time_error) + (Config.sfdend - 0.75) * Config.tsig * (1 - cfo_freq_est / Config.sig_freq)
     # xval = cp.arange(800, 1024)
-    logger.info(len(detect_symb))
-    xval = cp.arange(len(detect_symb))
+    logger.info(len(detect_symb_plt))
+    xval = cp.arange(len(detect_symb_plt))
     myplot(cp.unwrap(phase1)[xval], linestyle='-', color='b', label="input")
-    myplot(cp.unwrap(cp.angle(detect_symb))[xval], linestyle='--', color='r', label="fit")
+    myplot(cp.unwrap(cp.angle(detect_symb_plt))[xval], linestyle='--', color='r', label="fit")
     # myplot(cp.diff(cp.unwrap(phase1))[xval], linestyle='-', color='b', label="input")
     # myplot(cp.diff(cp.unwrap(cp.angle(detect_symb)))[xval], linestyle='--', color='r', label="fit")
     plt.title("aligned pkt")
     plt.legend()
     plt.show()
     plt.clf()
-    sys.exit(0)
+    if parse_opts.end1: sys.exit(0)
 
-    detect_symb = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
+    detect_symb_rangle = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
     didx = 0
     res_angle = cp.zeros((Config.preamble_len,), dtype=float)
-    for sidx, ssymb in enumerate(detect_symb[:Config.preamble_len]):
+    for sidx, ssymb in enumerate(detect_symb_rangle[:Config.preamble_len]):
         ress = cp.conj(togpu(ssymb)).dot(pktdata2a_roll[didx: didx + len(ssymb)])
         rangle = cp.angle(ress)
         res_angle[sidx] = rangle
@@ -642,12 +650,10 @@ def fine_work_new(pktdata2a):  # TODO working
     plt.savefig(os.path.join(Config.figpath, f"angleD.png"))
     plt.clf()
 
-    sys.exit(0)
-
     return time_error, cfo_freq_est
 
 
-def gen_refchirp(cfofreq, tstart):
+def gen_refchirp(cfofreq, tstart, deadzone=0):
     est_cfo_percentile = cfofreq / Config.sig_freq
     detect_symb = []
     tind_times = cp.arange(Config.sfdend + 1, dtype=float)
@@ -657,8 +663,9 @@ def gen_refchirp(cfofreq, tstart):
     for tid in range(Config.preamble_len):
         upchirp = gen_upchirp(tid_times[tid], -Config.bw / 2 + cfofreq, tid_times[tid + 1], Config.bw / 2 + cfofreq)
         assert len(upchirp) == math.ceil(tid_times[tid + 1]) - math.ceil(tid_times[tid])
-        # upchirp[:20] = cp.zeros(20,dtype=cp.complex64)
-        # upchirp[-20:] = cp.zeros(20,dtype=cp.complex64)
+        if deadzone > 0:
+            upchirp[:deadzone] = cp.zeros(deadzone,dtype=cp.complex64)
+            upchirp[-deadzone:] = cp.zeros(deadzone,dtype=cp.complex64)
         detect_symb.append(upchirp)
         logger.warning(f"{tid=} {len(cp.concatenate(detect_symb))=}")
     for tid in range(Config.preamble_len, Config.sfdpos):
@@ -669,10 +676,10 @@ def gen_refchirp(cfofreq, tstart):
         upchirp = gen_upchirp(tid_times[tid], Config.bw / 2 + cfofreq, tid_times[tid + 1], endfreq + cfofreq)
         assert len(upchirp) == math.ceil(tid_times[tid + 1]) - math.ceil(tid_times[tid])
         logger.warning(f"{tid=} {Config.sfdend=} {len(cp.concatenate(detect_symb))=}")
-        # upchirp[:20] = cp.zeros(20,dtype=cp.complex64)
-        # upchirp[-20:] = cp.zeros(20,dtype=cp.complex64)
+        if deadzone > 0:
+            upchirp[:deadzone] = cp.zeros(deadzone,dtype=cp.complex64)
+            upchirp[-deadzone:] = cp.zeros(deadzone,dtype=cp.complex64)
         detect_symb.append(upchirp)
-    logger.warning(f"final {len(cp.concatenate(detect_symb))=}")
     return detect_symb
 
 
