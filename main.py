@@ -123,7 +123,7 @@ class Config:
     nfreq = 1024 + 1
     time_upsamp = 32
 
-    preamble_len = 649  # TODO
+    preamble_len = 64  # TODO
     code_len = 2
     # codes = [50, 101]  # TODO set codes
     fft_upsamp = 1024
@@ -421,9 +421,9 @@ def fine_work_new(pktdata2a):  # TODO working
 
     phase = cp.angle(pktdata2a)
     unwrapped_phase = cp.unwrap(phase)
-    fig, ax = plt.subplots(figsize=(100,3))
-    myplot(ax, cp.diff(unwrapped_phase), linestyle='-')
-    ax.set_title("input data")
+    fig, ax = plt.subplots()
+    myplot(ax, unwrapped_phase[:15 * 1024], linestyle='-')
+    ax.set_title("input data 15 symbol")
     plt.show()
 
     # Perform optimization
@@ -507,18 +507,15 @@ def fine_work_new(pktdata2a):  # TODO working
     detect_symb_plt = cp.concatenate(detect_symb_plt)
     detect_symb_plt *= (pktdata2a_roll[0] / cp.abs(pktdata2a_roll[0]))
     tstart = time_error - math.ceil(time_error) + (Config.sfdend - 0.75) * Config.tsig * (1 - cfo_freq_est / Config.sig_freq)
-    # xval = cp.arange(1024*60, 1024*65)
-    xval = cp.arange(len(detect_symb_plt))
+    xval = cp.arange(1024*60, 1024*65)
+    # xval = cp.arange(len(detect_symb_plt))
     yval1 = cp.unwrap(phase1)
     yval2 = cp.unwrap(cp.angle(detect_symb_plt))
     tsfd = time_error - math.ceil(time_error) + Config.sfdpos * Config.tsig * (1 - cfo_freq_est / Config.sig_freq)
     yval2[math.ceil(tsfd):] += (yval1[math.ceil(tsfd)] - yval2[math.ceil(tsfd)])
-    fig, ax = plt.subplots(figsize=(100,3))
-    yval1 = cp.diff(yval1)
-    yval2 = cp.diff(yval2)
-    myplot(ax, yval1, linestyle='-', color='b', label="input")
-    myplot(ax, yval2, linestyle='--', color='r', label="fit")
-    ax.set_ylim(-math.pi, math.pi)
+    fig, ax = plt.subplots()
+    myplot(ax, xval, yval1[xval], linestyle='-', color='b', label="input")
+    myplot(ax, xval, yval2[xval], linestyle='--', color='r', label="fit")
     # myplot(ax, cp.diff(cp.unwrap(phase1))[xval], linestyle='-', color='b', label="input")
     # myplot(ax, cp.diff(cp.unwrap(cp.angle(detect_symb)))[xval], linestyle='--', color='r', label="fit")
     ax.set_title("aligned pkt")
@@ -580,7 +577,6 @@ def fine_work_new(pktdata2a):  # TODO working
         res1_arr = cp.zeros(Config.n_classes, dtype=cp.complex64)
         res2_arr = cp.zeros(Config.n_classes, dtype=cp.complex64)
         for code in range(Config.n_classes):
-            # print(upchirp1_arr[code].shape, pktdata2a_roll[math.ceil(tid_times[tid]): math.ceil(tid_times[tid] + tsig_arr[code])].shape)
             res1_arr[code] = cp.conj(upchirp1_arr[code]).dot(pktdata2a_roll[math.ceil(tid_times[tid]): math.ceil(tid_times[tid] + tsig_arr[code])])
         for code in range(1, Config.n_classes):
             res2_arr[code] = cp.conj(upchirp2_arr[code]).dot(pktdata2a_roll[math.ceil(tid_times[tid] + tsig_arr[code]): math.ceil(tid_times[tid + 1])])
@@ -719,7 +715,7 @@ def read_large_file(file_path_in):
 
 
 def read_pkt(file_path_in, threshold, min_length=20):
-    current_sequence = [cp.zeros(Config.nsamp),]
+    current_sequence = []
     for rawdata in read_large_file(file_path_in):
         number = cp.max(cp.abs(rawdata))
         if number > threshold:
@@ -727,7 +723,7 @@ def read_pkt(file_path_in, threshold, min_length=20):
         else:
             if len(current_sequence) > min_length:
                 yield cp.concatenate(current_sequence)
-            current_sequence = [cp.zeros(Config.nsamp),]
+            current_sequence = []
 
 
 # read packets from file
