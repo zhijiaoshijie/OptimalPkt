@@ -79,9 +79,9 @@ console_handler = logging.StreamHandler()
 console_handler.setLevel(level)  # Set the console handler level
 file_handler = logging.FileHandler('my_log_file.log')
 file_handler.setLevel(level)  # Set the file handler level
-# formatter = logging.Formatter('%(message)s')
+formatter = logging.Formatter('%(message)s')
 # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-formatter = logging.Formatter('%(levelname)s - %(message)s')
+# formatter = logging.Formatter('%(levelname)s - %(message)s')
 console_handler.setFormatter(formatter)
 file_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
@@ -462,7 +462,7 @@ def fine_work_new(pktdata2a):  # TODO working
                                   options={'gtol': 1e-8, 'disp': False}
                                   )
             if result.fun < bestobj:
-                logger.debug(f"{tryidx=: 6d} cfofreq = {result.x[0]:.3f}, time_error = {result.x[1]:.3f} {result.fun=:.3f}")
+                logger.debug(f"{tryidx=: 6d} cfo_freq_est = {result.x[0]:.3f}, time_error = {result.x[1]:.3f} {result.fun=:.3f}")
                 bestx = result.x
                 bestobj = result.fun
         cfo_freq_est, time_error = bestx
@@ -494,9 +494,9 @@ def fine_work_new(pktdata2a):  # TODO working
         cfo_freq_est_delta = 0  # 100
         time_error_delta = 0
     else:
-        cfo_freq_est = -24701.029772968563
-        time_error = 241.52649543073412
-        cfo_freq_est_delta = -2000  # 100
+        cfo_freq_est = -26885.026
+        time_error = 223.738
+        cfo_freq_est_delta = 0  # 100
         time_error_delta = 0
         cfo_freq_est += cfo_freq_est_delta
         time_error += time_error_delta
@@ -510,8 +510,12 @@ def fine_work_new(pktdata2a):  # TODO working
     # xval = cp.arange(800, 1024)
     logger.info(len(detect_symb_plt))
     xval = cp.arange(len(detect_symb_plt))
-    myplot(ax, cp.unwrap(phase1)[xval], linestyle='-', color='b', label="input")
-    myplot(ax, cp.unwrap(cp.angle(detect_symb_plt))[xval], linestyle='--', color='r', label="fit")
+    yval1 = cp.unwrap(phase1)[xval]
+    yval2 = cp.unwrap(cp.angle(detect_symb_plt))[xval]
+    tsfd = time_error - math.ceil(time_error) + Config.sfdpos * Config.tsig * (1 - cfo_freq_est / Config.sig_freq)
+    yval2[math.ceil(tsfd):] += (yval1[math.ceil(tsfd)] - yval2[math.ceil(tsfd)])
+    myplot(ax, yval1, linestyle='-', color='b', label="input")
+    myplot(ax, yval2, linestyle='--', color='r', label="fit")
     # myplot(ax, cp.diff(cp.unwrap(phase1))[xval], linestyle='-', color='b', label="input")
     # myplot(ax, cp.diff(cp.unwrap(cp.angle(detect_symb)))[xval], linestyle='--', color='r', label="fit")
     plt.title("aligned pkt")
@@ -527,7 +531,7 @@ def fine_work_new(pktdata2a):  # TODO working
         ress = cp.conj(togpu(ssymb)).dot(pktdata2a_roll[didx: didx + len(ssymb)])
         rangle = cp.angle(ress)
         res_angle[sidx] = rangle
-        logger.info(f'{rangle=}')
+        # logger.info(f'{rangle=}')
         didx += len(ssymb)
 
     def quadratic(x, a, b, c):
@@ -578,7 +582,7 @@ def fine_work_new(pktdata2a):  # TODO working
             res2_arr[code] = cp.conj(upchirp2_arr[code]).dot(pktdata2a_roll[math.ceil(tid_times[tid] + tsig_arr[code]): math.ceil(tid_times[tid + 1])])
         res_array = cp.abs(res1_arr) ** 2 + cp.abs(res2_arr) ** 2
         est_code = tocpu(cp.argmax(res_array))
-        logger.info(f"{est_code=} {cp.max(res_array)=}")
+        logger.info(f"L curvefit {est_code=} {cp.max(res_array)=}")
         code_ests[tid] = est_code
         myplot(ax, res_array)
         plt.title(f"resarray {tid=} {est_code=}")
