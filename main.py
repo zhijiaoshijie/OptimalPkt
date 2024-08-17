@@ -1,9 +1,10 @@
+import argparse
 import logging
 import os
 import random
 import sys
 import time
-import seaborn as sns
+
 import cmath
 import math
 import matplotlib.pyplot as plt
@@ -11,17 +12,17 @@ import matplotlib.pyplot as plt
 # from cupyx.fallback_mode import numpy as np
 import numpy as np
 import scipy.optimize as opt
+import seaborn as sns
 from scipy.optimize import curve_fit
 from scipy.signal import chirp
 from sklearn.cluster import KMeans
 from tqdm import tqdm
-import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument( '--cpu', action='store_true', default=False, help='Use cpu instead of gpu (numpy instead of cupy)')
-parser.add_argument( '--searchphase', action='store_true', default=False)
-parser.add_argument( '--plotmap', action='store_true', default=False)
-parser.add_argument( '--end1', action='store_true', default=False)
+parser.add_argument('--cpu', action='store_true', default=False, help='Use cpu instead of gpu (numpy instead of cupy)')
+parser.add_argument('--searchphase', action='store_true', default=False)
+parser.add_argument('--plotmap', action='store_true', default=False)
+parser.add_argument('--end1', action='store_true', default=False)
 parse_opts = parser.parse_args()
 
 use_gpu = not parse_opts.cpu
@@ -56,15 +57,17 @@ def cp_str(x, precision=2, suppress_small=False):
     return np.array2string(tocpu(x), precision=precision, formatter={'float_kind': lambda k: f"{k:.2f}"}, floatmode='fixed', suppress_small=suppress_small)
 
 
-def myscatter(x, y, **kwargs):
-    plt.scatter(tocpu(x), tocpu(y), **kwargs)
+def myscatter(ax, x, y, **kwargs):
+    ax.scatter(tocpu(x), tocpu(y), **kwargs)
 
 
 def myplot(*args, **kwargs):
-    if len(args) == 1:
-        plt.plot(tocpu(args[0]), **kwargs)
-    elif len(args) == 2:
-        plt.plot(tocpu(args[0]), tocpu(args[1]), **kwargs)
+    if len(args) == 2:
+        ax = args[0]
+        ax.plot(tocpu(args[0]), **kwargs)
+    elif len(args) == 3:
+        ax = args[0]
+        ax.plot(tocpu(args[0]), tocpu(args[1]), **kwargs)
     else:
         raise ValueError("plot function accepts either 1 or 2 positional arguments")
 
@@ -292,10 +295,11 @@ def work(pkt_totcnt, pktdata_in):
     payload_data = ndatas[detect + Config.sfdpos + 4:]
     angles = calc_angles(payload_data)
     if opts.debug:
-        myscatter(range(len(angles)), angles, s=0.5)
+        fig, ax = plt.subplots()
+        myscatter(ax, range(len(angles)), angles, s=0.5)
         plt.show()
         plt.savefig(os.path.join(Config.figpath, f'temp_sf7_{pkt_totcnt}.png'))
-        plt.clf()
+        fig, ax = plt.subplots()
         for i in range(min(len(ans2n), len(angles))):
             if abs(angles[i]) > 0.5:
                 logger.debug(f'abs(angles[i]) > 0.5: {i=} {cp_str(ans2n[i])} {cp_str(angles[i])}')
@@ -405,7 +409,7 @@ def gen_upchirp(t0, f0, t1, f1):
     chirpQ1 = mychirp(t, f0=f0 - t0 / Config.fs * fslope, f1=f1, t1=t1 / Config.fs, method='linear', phi=0)
     upchirp = cp.array(chirpI1 + 1j * chirpQ1, dtype=cp.complex64)
     # plt.figure(figsize=(20,3))
-    # myplot(upchirp.real, marker='o')
+    # myplot(ax, upchirp.real, marker='o')
     # plt.show()
     # sys.exit(1)
     return upchirp
@@ -416,10 +420,11 @@ def fine_work_new(pktdata2a):  # TODO working
 
     phase = cp.angle(pktdata2a)
     unwrapped_phase = cp.unwrap(phase)
-    myplot(unwrapped_phase[:15 * 1024], linestyle='-')
+    fig, ax = plt.subplots()
+    myplot(ax, unwrapped_phase[:15 * 1024], linestyle='-')
     plt.title("input data 15 symbol")
     plt.show()
-    plt.clf()
+    fig, ax = plt.subplots()
 
     # Perform optimization
     if parse_opts.searchphase:
@@ -442,12 +447,19 @@ def fine_work_new(pktdata2a):  # TODO working
 
             # start_t = random.uniform(0, Config.nsamp)
             # start_f = random.uniform(-29000, -24000)
-            ef = -24701.029772968563 - 2000
-            et = 241.52649543073412
-            start_t = random.uniform(et - 10, et + 10)
-            start_f = random.uniform(ef - 500, ef + 500)
-            result = opt.minimize(objective, [start_f, start_t], bounds=[(ef - 500, ef + 500), (et - 10, et + 10)], method='L-BFGS-B',  # More precise method for bounded problems
-                                  options={'gtol': 1e-8, 'disp': False}  # Set tolerance for convergence and display progress
+            # ef = -24701.029772968563 - 2000
+            # et = 241.52649543073412
+            # tu = et + 10
+            # tl = et - 10
+            # fu = ef + 500
+            # fl = ef - 500
+            tl, tu = 0, Config.nsamp
+            fl, fu = 23000, 30000
+            start_t = random.uniform(tl, tu)
+            start_f = random.uniform(fl, fu)
+            # noinspection PyTypeChecker
+            result = opt.minimize(objective, [start_f, start_t], bounds=[(fl, fu), (tl, tu)], method='L-BFGS-B',
+                                  options={'gtol': 1e-8, 'disp': False}
                                   )
             if result.fun < bestobj:
                 logger.debug(f"{tryidx=: 6d} {result.fun=:.3f} cfofreq = {result.x[0]:.3f}, time_error = {result.x[1]:.3f} ")
@@ -498,14 +510,14 @@ def fine_work_new(pktdata2a):  # TODO working
     # xval = cp.arange(800, 1024)
     logger.info(len(detect_symb_plt))
     xval = cp.arange(len(detect_symb_plt))
-    myplot(cp.unwrap(phase1)[xval], linestyle='-', color='b', label="input")
-    myplot(cp.unwrap(cp.angle(detect_symb_plt))[xval], linestyle='--', color='r', label="fit")
-    # myplot(cp.diff(cp.unwrap(phase1))[xval], linestyle='-', color='b', label="input")
-    # myplot(cp.diff(cp.unwrap(cp.angle(detect_symb)))[xval], linestyle='--', color='r', label="fit")
+    myplot(ax, cp.unwrap(phase1)[xval], linestyle='-', color='b', label="input")
+    myplot(ax, cp.unwrap(cp.angle(detect_symb_plt))[xval], linestyle='--', color='r', label="fit")
+    # myplot(ax, cp.diff(cp.unwrap(phase1))[xval], linestyle='-', color='b', label="input")
+    # myplot(ax, cp.diff(cp.unwrap(cp.angle(detect_symb)))[xval], linestyle='--', color='r', label="fit")
     plt.title("aligned pkt")
     plt.legend()
     plt.show()
-    plt.clf()
+    fig, ax = plt.subplots()
     if parse_opts.end1: sys.exit(0)
 
     detect_symb_rangle = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
@@ -527,14 +539,14 @@ def fine_work_new(pktdata2a):  # TODO working
     # res_angle += add_data * cp.pi * 2
     res_angle = np.unwrap(res_angle)
     # res_angle[-1] += np.pi * 2 # TODO
+    # noinspection PyTupleAssignmentBalance
     params, covariance = curve_fit(quadratic, x_data, tocpu(res_angle))
-    myscatter(x_data, res_angle, label='Data Points')
-    myplot(x_data, quadratic(x_data, *params), color='red', label='Fitted Curve')
+    myscatter(ax, x_data, res_angle, label='Data Points')
+    myplot(ax, x_data, quadratic(x_data, *params), color='red', label='Fitted Curve')
     # logger.info(f"fd={cfo_freq_est_delta} td={time_error_delta} a={params[0]} b={params[1]} c={params[2]}")
     plt.legend()
     plt.show()
     plt.savefig(f"res_angle.png")
-    plt.clf()
     # sys.exit(0)
 
     code_cnt = math.floor(len(pktdata2a_roll) / Config.nsamp - Config.sfdend - 0.5)
@@ -568,19 +580,19 @@ def fine_work_new(pktdata2a):  # TODO working
         est_code = tocpu(cp.argmax(res_array))
         logger.info(f"{est_code=} {cp.max(res_array)=}")
         code_ests[tid] = est_code
-        myplot(res_array)
+        myplot(ax, res_array)
         plt.title(f"resarray {tid=} {est_code=}")
         plt.axvline(tocpu(est_code), color="k")
         plt.show()
         plt.savefig(os.path.join(Config.figpath, f"resarray {tid=} {est_code=}.png"))
-        plt.clf()
+        fig, ax = plt.subplots()
 
         phase = cp.angle(pktdata2a_roll[math.ceil(tid_times[tid]): math.ceil(tid_times[tid + 1])])
         unwrapped_phase = cp.unwrap(phase)
-        myplot(unwrapped_phase, linestyle='-')
+        myplot(ax, unwrapped_phase, linestyle='-')
         plt.title(f"phase {tid=} {est_code=}")
         plt.show()
-        plt.clf()
+        fig, ax = plt.subplots()
 
         angle1[tid] = cp.angle(res1_arr[est_code])
         angle2[tid] = cp.angle(res2_arr[est_code])
@@ -604,9 +616,9 @@ def fine_work_new(pktdata2a):  # TODO working
         phase1 = cp.angle(upchirp_est)
         sigtt = cp.arange(math.ceil(tid_times[tid]), math.ceil(tid_times[tid + 1]), dtype=int)
         # plt.figure(figsize=(10, 6))
-        myplot(sigtt, cp.unwrap(phase1), linestyle='-', color='b', label=f"{est_code=}")
+        myplot(ax, sigtt, cp.unwrap(phase1), linestyle='-', color='b', label=f"{est_code=}")
         phase2 = cp.angle(pktdata2a_roll[sigtt])
-        myplot(sigtt, cp.unwrap(phase2), linestyle='--', color='r', label="input")
+        myplot(ax, sigtt, cp.unwrap(phase2), linestyle='--', color='r', label="input")
 
         plt.title('Ref')
         plt.xlabel('Index')
@@ -617,38 +629,38 @@ def fine_work_new(pktdata2a):  # TODO working
         plt.title(f'{tid=} {est_code=}')
         plt.show()
         plt.savefig(os.path.join(Config.figpath, f'code{tid}.png'))
-        plt.clf()
+        fig, ax = plt.subplots()
 
         sys.exit(0)
-    myplot(angle1, label="angle1")
-    myplot(angle2, label="angle2")
+    myplot(ax, angle1, label="angle1")
+    myplot(ax, angle2, label="angle2")
     plt.legend()
     plt.title(f"angleA.png")
     plt.show()
     plt.savefig(os.path.join(Config.figpath, f"angleA.png"))
-    plt.clf()
-    myscatter(code_ests, angle1, label="angle1")
-    myscatter(code_ests, angle2, label="angle2")
+    fig, ax = plt.subplots()
+    myscatter(ax, code_ests, angle1, label="angle1")
+    myscatter(ax, code_ests, angle2, label="angle2")
     plt.legend()
     plt.title(f"angleB.png")
     plt.show()
     plt.savefig(os.path.join(Config.figpath, f"angleB.png"))
-    plt.clf()
+    fig, ax = plt.subplots()
 
-    myplot(angle3, label="angle3")
-    myplot(angle4, label="angle4")
+    myplot(ax, angle3, label="angle3")
+    myplot(ax, angle4, label="angle4")
     plt.legend()
     plt.title(f"angleC.png")
     plt.show()
     plt.savefig(os.path.join(Config.figpath, f"angleC.png"))
-    plt.clf()
-    myscatter(code_ests, angle3, label="angle3")
-    myscatter(code_ests, angle4, label="angle4")
+    fig, ax = plt.subplots()
+    myscatter(ax, code_ests, angle3, label="angle3")
+    myscatter(ax, code_ests, angle4, label="angle4")
     plt.legend()
     plt.title(f"angleD.png")
     plt.show()
     plt.savefig(os.path.join(Config.figpath, f"angleD.png"))
-    plt.clf()
+    fig, ax = plt.subplots()
 
     return time_error, cfo_freq_est
 
@@ -664,21 +676,18 @@ def gen_refchirp(cfofreq, tstart, deadzone=0):
         upchirp = gen_upchirp(tid_times[tid], -Config.bw / 2 + cfofreq, tid_times[tid + 1], Config.bw / 2 + cfofreq)
         assert len(upchirp) == math.ceil(tid_times[tid + 1]) - math.ceil(tid_times[tid])
         if deadzone > 0:
-            upchirp[:deadzone] = cp.zeros(deadzone,dtype=cp.complex64)
-            upchirp[-deadzone:] = cp.zeros(deadzone,dtype=cp.complex64)
+            upchirp[:deadzone] = cp.zeros(deadzone, dtype=cp.complex64)
+            upchirp[-deadzone:] = cp.zeros(deadzone, dtype=cp.complex64)
         detect_symb.append(upchirp)
-        logger.warning(f"{tid=} {len(cp.concatenate(detect_symb))=}")
     for tid in range(Config.preamble_len, Config.sfdpos):
         detect_symb.append(cp.zeros(math.ceil(tid_times[tid + 1]) - math.ceil(tid_times[tid]), dtype=cp.complex64))
-        logger.warning(f"{tid=} {len(cp.concatenate(detect_symb))=}")
     for tid in range(Config.sfdpos, Config.sfdend):
         endfreq = - Config.bw / 2 if tid != Config.sfdend - 1 else Config.bw / 4
         upchirp = gen_upchirp(tid_times[tid], Config.bw / 2 + cfofreq, tid_times[tid + 1], endfreq + cfofreq)
         assert len(upchirp) == math.ceil(tid_times[tid + 1]) - math.ceil(tid_times[tid])
-        logger.warning(f"{tid=} {Config.sfdend=} {len(cp.concatenate(detect_symb))=}")
         if deadzone > 0:
-            upchirp[:deadzone] = cp.zeros(deadzone,dtype=cp.complex64)
-            upchirp[-deadzone:] = cp.zeros(deadzone,dtype=cp.complex64)
+            upchirp[:deadzone] = cp.zeros(deadzone, dtype=cp.complex64)
+            upchirp[-deadzone:] = cp.zeros(deadzone, dtype=cp.complex64)
         detect_symb.append(upchirp)
     return detect_symb
 
@@ -725,7 +734,7 @@ if __name__ == "__main__":
         logger.debug(f'reading file: {file_path} SF: {Config.sf} pkts in file: {fsize}')
 
         power_eval_len = 5000
-        nmaxs = cp.zeros(power_eval_len,dtype=float)
+        nmaxs = cp.zeros(power_eval_len, dtype=float)
         for idx, rawdata in enumerate(read_large_file(file_path)):
             nmaxs[idx] = cp.max(cp.abs(rawdata))
             if idx == power_eval_len - 1: break

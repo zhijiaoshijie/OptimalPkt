@@ -1,17 +1,14 @@
-from itertools import islice
+import numpy as np
+import matplotlib.pyplot as plt
 
-# Define a simple generator
-def my_generator():
-    yield 1
-    yield 2
-    yield 3
-    yield 4
-    yield 5
+x = np.linspace(-1, 1, 100)
+y = x**2
 
-# Create a generator object
-for i, x in enumerate(my_generator()):
-    print(x)
-    if i>2: break
-for i, x in enumerate(my_generator()):
-    print(x)
-    if i>2: break
+fig, ax = plt.subplots()
+ax.plot(x, y)
+plt.show()
+fig, ax = plt.subplots()
+x = np.linspace(-1, 1, 100)
+y = x**3
+ax.plot(x, y)
+plt.show()
