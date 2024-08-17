@@ -1,14 +1,14 @@
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
-x = np.linspace(-1, 1, 100)
-y = x**2
+x = np.linspace(0, 10, 100)
+y = np.sin(x)
 
 fig, ax = plt.subplots()
 ax.plot(x, y)
+
+# Enable the toolbar for zooming and panning
 plt.show()
-fig, ax = plt.subplots()
-x = np.linspace(-1, 1, 100)
-y = x**3
-ax.plot(x, y)
-plt.show()
+
+import matplotlib
+matplotlib.use('Qt5Agg')  # or 'TkAgg', 'WebAgg', etc.

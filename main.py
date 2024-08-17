@@ -123,7 +123,7 @@ class Config:
     nfreq = 1024 + 1
     time_upsamp = 32
 
-    preamble_len = 64  # TODO
+    preamble_len = 649  # TODO
     code_len = 2
     # codes = [50, 101]  # TODO set codes
     fft_upsamp = 1024
@@ -421,9 +421,9 @@ def fine_work_new(pktdata2a):  # TODO working
 
     phase = cp.angle(pktdata2a)
     unwrapped_phase = cp.unwrap(phase)
-    fig, ax = plt.subplots()
-    myplot(ax, unwrapped_phase[:15 * 1024], linestyle='-')
-    ax.set_title("input data 15 symbol")
+    fig, ax = plt.subplots(figsize=(100,3))
+    myplot(ax, cp.diff(unwrapped_phase), linestyle='-')
+    ax.set_title("input data")
     plt.show()
 
     # Perform optimization
@@ -432,26 +432,25 @@ def fine_work_new(pktdata2a):  # TODO working
             cfofreq, time_error = params
             pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
             detect_symb = gen_refchirp(cfofreq, time_error - math.ceil(time_error), deadzone=20)
-            didx = 0
-            res = 0
+            tid_times = gen_refchirp_time(cfofreq, time_error - math.ceil(time_error))
+            tid_times_ceil = cp.ceil(tid_times).astype(int)
+            res = cp.zeros(len(detect_symb), dtype=cp.complex64)
             for sidx, ssymb in enumerate(detect_symb):
-                ress = tocpu(cp.conj(ssymb).dot(pktdata2a_roll[didx: didx + len(ssymb)]))
-                # logger.debug(f'{sidx=} {abs(ress)=} {cp.angle(ress)=}')
-                res += abs(ress) ** 2
-                didx += len(ssymb)
-            return -res  # Negative because we use a minimizer
+                ress = cp.conj(ssymb).dot(pktdata2a_roll[tid_times_ceil[sidx]: tid_times_ceil[sidx + 1]])
+                res[sidx] = ress / (tid_times_ceil[sidx + 1] - tid_times_ceil[sidx])
+            return - tocpu(cp.sum(cp.abs(res) ** 2))  # Negative because we use a minimizer
 
-        t_lower, t_upper = 0, Config.nsamp # TODO
-        f_lower, f_upper = -30000, -23000
-        bestx = None
-        bestobj = cp.inf
-        # f_guess = -26685.110
-        # t_guess = 225.221
-        # t_lower, t_upper = t_guess - 20, t_guess + 20
-        # f_lower, f_upper = f_guess - 100, f_guess + 100
-        # bestx = [f_guess, t_guess]
-        # bestobj = objective(bestx)
+        # t_lower, t_upper = 0, Config.nsamp # TODO
+        # f_lower, f_upper = -30000, -23000
+        # bestx = None
+        # bestobj = cp.inf
+        f_guess = -25364.299
+        t_guess = 922.660
         for tryidx in range(10000):
+            t_lower, t_upper = t_guess - 50, t_guess + 50
+            f_lower, f_upper = f_guess - 200, f_guess + 200
+            bestx = [f_guess, t_guess]
+            bestobj = objective(bestx)
             start_t = random.uniform(t_lower, t_upper)
             start_f = random.uniform(f_lower, f_upper)
             # noinspection PyTypeChecker
@@ -462,6 +461,7 @@ def fine_work_new(pktdata2a):  # TODO working
             if result.fun < bestobj:
                 logger.debug(f"{tryidx=: 6d} cfo_freq_est = {result.x[0]:.3f}, time_error = {result.x[1]:.3f} {result.fun=:.3f}")
                 bestx = result.x
+                f_guess, t_guess = result.x
                 bestobj = result.fun
         cfo_freq_est, time_error = bestx
         logger.info(f"Optimized parameters: {cfo_freq_est=} {time_error=}")
@@ -494,8 +494,8 @@ def fine_work_new(pktdata2a):  # TODO working
     else:
         # cfo_freq_est = -26685.110 # best for 50/sf7/20
         # time_error = 225.221
-        cfo_freq_est = -27912.440
-        time_error = 901.555
+        cfo_freq_est = -25364.299
+        time_error = 922.660
         cfo_freq_est_delta = 0  # TODO
         time_error_delta = 0
         cfo_freq_est += cfo_freq_est_delta
@@ -507,15 +507,18 @@ def fine_work_new(pktdata2a):  # TODO working
     detect_symb_plt = cp.concatenate(detect_symb_plt)
     detect_symb_plt *= (pktdata2a_roll[0] / cp.abs(pktdata2a_roll[0]))
     tstart = time_error - math.ceil(time_error) + (Config.sfdend - 0.75) * Config.tsig * (1 - cfo_freq_est / Config.sig_freq)
-    # xval = cp.arange(800, 1024)
+    # xval = cp.arange(1024*60, 1024*65)
     xval = cp.arange(len(detect_symb_plt))
-    yval1 = cp.unwrap(phase1)[xval]
-    yval2 = cp.unwrap(cp.angle(detect_symb_plt))[xval]
+    yval1 = cp.unwrap(phase1)
+    yval2 = cp.unwrap(cp.angle(detect_symb_plt))
     tsfd = time_error - math.ceil(time_error) + Config.sfdpos * Config.tsig * (1 - cfo_freq_est / Config.sig_freq)
     yval2[math.ceil(tsfd):] += (yval1[math.ceil(tsfd)] - yval2[math.ceil(tsfd)])
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(100,3))
+    yval1 = cp.diff(yval1)
+    yval2 = cp.diff(yval2)
     myplot(ax, yval1, linestyle='-', color='b', label="input")
     myplot(ax, yval2, linestyle='--', color='r', label="fit")
+    ax.set_ylim(-math.pi, math.pi)
     # myplot(ax, cp.diff(cp.unwrap(phase1))[xval], linestyle='-', color='b', label="input")
     # myplot(ax, cp.diff(cp.unwrap(cp.angle(detect_symb)))[xval], linestyle='--', color='r', label="fit")
     ax.set_title("aligned pkt")
@@ -577,12 +580,13 @@ def fine_work_new(pktdata2a):  # TODO working
         res1_arr = cp.zeros(Config.n_classes, dtype=cp.complex64)
         res2_arr = cp.zeros(Config.n_classes, dtype=cp.complex64)
         for code in range(Config.n_classes):
+            # print(upchirp1_arr[code].shape, pktdata2a_roll[math.ceil(tid_times[tid]): math.ceil(tid_times[tid] + tsig_arr[code])].shape)
             res1_arr[code] = cp.conj(upchirp1_arr[code]).dot(pktdata2a_roll[math.ceil(tid_times[tid]): math.ceil(tid_times[tid] + tsig_arr[code])])
         for code in range(1, Config.n_classes):
             res2_arr[code] = cp.conj(upchirp2_arr[code]).dot(pktdata2a_roll[math.ceil(tid_times[tid] + tsig_arr[code]): math.ceil(tid_times[tid + 1])])
         res_array = cp.abs(res1_arr) ** 2 + cp.abs(res2_arr) ** 2
         est_code = tocpu(cp.argmax(res_array))
-        logger.info(f"Log curvefit {est_code=} {cp.max(res_array)=}")
+        logger.info(f"Log curvefit {est_code=} maxval={tocpu(cp.max(res_array))}")
         code_ests[tid] = est_code
         fig, ax = plt.subplots()
         myplot(ax, res_array)
@@ -668,12 +672,17 @@ def fine_work_new(pktdata2a):  # TODO working
     return time_error, cfo_freq_est
 
 
-def gen_refchirp(cfofreq, tstart, deadzone=0):
+def gen_refchirp_time(cfofreq, tstart):
     est_cfo_percentile = cfofreq / Config.sig_freq
-    detect_symb = []
     tind_times = cp.arange(Config.sfdend + 1, dtype=float)
     tind_times[-1] -= 0.75
     tid_times = tind_times * Config.tsig * (1 - est_cfo_percentile) + tstart
+    return tid_times
+
+
+def gen_refchirp(cfofreq, tstart, deadzone=0):
+    detect_symb = []
+    tid_times = gen_refchirp_time(cfofreq, tstart)
     # logger.info(est_cfo_percentile)
     for tid in range(Config.preamble_len):
         upchirp = gen_upchirp(tid_times[tid], -Config.bw / 2 + cfofreq, tid_times[tid + 1], Config.bw / 2 + cfofreq)
@@ -710,7 +719,7 @@ def read_large_file(file_path_in):
 
 
 def read_pkt(file_path_in, threshold, min_length=20):
-    current_sequence = []
+    current_sequence = [cp.zeros(Config.nsamp),]
     for rawdata in read_large_file(file_path_in):
         number = cp.max(cp.abs(rawdata))
         if number > threshold:
@@ -718,7 +727,7 @@ def read_pkt(file_path_in, threshold, min_length=20):
         else:
             if len(current_sequence) > min_length:
                 yield cp.concatenate(current_sequence)
-            current_sequence = []
+            current_sequence = [cp.zeros(Config.nsamp),]
 
 
 # read packets from file
@@ -744,7 +753,11 @@ if __name__ == "__main__":
         kmeans.fit(tocpu(nmaxs.reshape(-1, 1)))
         thresh = cp.mean(kmeans.cluster_centers_)
         counts, bins = cp.histogram(nmaxs, bins=100)
-        logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
+        # logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
+        logger.debug(f"cluster: {kmeans.cluster_centers_[0]} {kmeans.cluster_centers_[1]} {thresh=}")
+        threshpos = np.searchsorted(tocpu(bins), thresh).item()
+        logger.debug(f"lower: {cp_str(counts[:threshpos])}")
+        logger.debug(f"higher: {cp_str(counts[threshpos:])}")
 
         pkt_totcnt = 0
         for pkt_idx, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=20)):
