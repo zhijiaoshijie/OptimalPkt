@@ -64,10 +64,10 @@ def myscatter(ax, x, y, **kwargs):
 def myplot(*args, **kwargs):
     if len(args) == 2:
         ax = args[0]
-        ax.plot(tocpu(args[0]), **kwargs)
+        ax.plot(tocpu(args[1]), **kwargs)
     elif len(args) == 3:
         ax = args[0]
-        ax.plot(tocpu(args[0]), tocpu(args[1]), **kwargs)
+        ax.plot(tocpu(args[1]), tocpu(args[2]), **kwargs)
     else:
         raise ValueError("plot function accepts either 1 or 2 positional arguments")
 
@@ -454,7 +454,7 @@ def fine_work_new(pktdata2a):  # TODO working
             # fu = ef + 500
             # fl = ef - 500
             tl, tu = 0, Config.nsamp
-            fl, fu = 23000, 30000
+            fl, fu = -30000, -23000
             start_t = random.uniform(tl, tu)
             start_f = random.uniform(fl, fu)
             # noinspection PyTypeChecker
@@ -462,7 +462,7 @@ def fine_work_new(pktdata2a):  # TODO working
                                   options={'gtol': 1e-8, 'disp': False}
                                   )
             if result.fun < bestobj:
-                logger.debug(f"{tryidx=: 6d} {result.fun=:.3f} cfofreq = {result.x[0]:.3f}, time_error = {result.x[1]:.3f} ")
+                logger.debug(f"{tryidx=: 6d} cfofreq = {result.x[0]:.3f}, time_error = {result.x[1]:.3f} {result.fun=:.3f}")
                 bestx = result.x
                 bestobj = result.fun
         cfo_freq_est, time_error = bestx
