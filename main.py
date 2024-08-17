@@ -414,7 +414,7 @@ def fine_work_new(pktdata2a):  # TODO working
     plt.clf()
 
     # Perform optimization
-    if 1:
+    if 0:
         def objective(params):
             cfofreq, time_error = params
             pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
@@ -430,10 +430,15 @@ def fine_work_new(pktdata2a):  # TODO working
 
         bestx = None
         bestobj = cp.inf
-        for tryidx in range(100):
-            start_t = random.uniform(0, Config.nsamp)
-            start_f = random.uniform(-29000, -24000)
-            result = opt.minimize(objective, [start_f, start_t], bounds=[(-29000, -24000), (0, Config.nsamp)], method='L-BFGS-B',  # More precise method for bounded problems
+        for tryidx in range(10000):
+
+            # start_t = random.uniform(0, Config.nsamp)
+            # start_f = random.uniform(-29000, -24000)
+            ef = -24701.029772968563 - 2000
+            et = 241.52649543073412
+            start_t = random.uniform(et - 10, et + 10)
+            start_f = random.uniform(ef - 500, ef + 500)
+            result = opt.minimize(objective, [start_f, start_t], bounds=[(ef - 500, ef + 500), (et - 10, et + 10)], method='L-BFGS-B',  # More precise method for bounded problems
                                   options={'gtol': 1e-8, 'disp': False}  # Set tolerance for convergence and display progress
                                   )
             if result.fun < bestobj:
@@ -466,28 +471,34 @@ def fine_work_new(pktdata2a):  # TODO working
             best_t = start_t[maxidx[1]]
             logger.info(f'{objective((best_f, best_t))=} {np.min(Z)=} {best_f=} {best_t=}')
             sys.exit(0)
-
-    else:
-        cfo_freq_est = -24454.530
         cfo_freq_est_delta = 0  # 100
-        time_error = 331.000
+        time_error_delta = 0
+    else:
+        cfo_freq_est = -24701.029772968563
+        time_error = 241.52649543073412
+        cfo_freq_est_delta = -2000  # 100
         time_error_delta = 0
         cfo_freq_est += cfo_freq_est_delta
         time_error += time_error_delta
-        cfo_freq_est = -26695.219805083307
-        time_error = 257.733830380595
 
     pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
     phase1 = cp.angle(pktdata2a_roll)
-    myplot(cp.unwrap(phase1)[:1 * 1024], linestyle='-', color='b', label="input")
-
     detect_symb = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
+    detect_symb = cp.concatenate(detect_symb)
+    detect_symb *= (pktdata2a_roll[0] / cp.abs(pktdata2a_roll[0]))
     tstart = time_error - math.ceil(time_error) + (Config.sfdend - 0.75) * Config.tsig * (1 - cfo_freq_est / Config.sig_freq)
-    myplot(cp.unwrap(cp.angle(cp.concatenate(detect_symb)[:1 * 1024])), linestyle='--', color='r', label="fit")
+    # xval = cp.arange(800, 1024)
+    logger.info(len(detect_symb))
+    xval = cp.arange(len(detect_symb))
+    myplot(cp.unwrap(phase1)[xval], linestyle='-', color='b', label="input")
+    myplot(cp.unwrap(cp.angle(detect_symb))[xval], linestyle='--', color='r', label="fit")
+    # myplot(cp.diff(cp.unwrap(phase1))[xval], linestyle='-', color='b', label="input")
+    # myplot(cp.diff(cp.unwrap(cp.angle(detect_symb)))[xval], linestyle='--', color='r', label="fit")
     plt.title("aligned pkt")
     plt.legend()
     plt.show()
     plt.clf()
+    sys.exit(0)
 
     detect_symb = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
     didx = 0
@@ -583,7 +594,7 @@ def fine_work_new(pktdata2a):  # TODO working
             upchirp2_est = upchirp2_arr[est_code] * res2_arr[est_code] / cp.abs(res2_arr[est_code])
             upchirp_est = cp.concatenate((upchirp_est, upchirp2_est))
         phase1 = cp.angle(upchirp_est)
-        sigtt = cp.arange(math.ceil(tid_times[tid]), math.ceil(tid_times[tid + 1]), dtype=float)
+        sigtt = cp.arange(math.ceil(tid_times[tid]), math.ceil(tid_times[tid + 1]), dtype=int)
         # plt.figure(figsize=(10, 6))
         myplot(sigtt, cp.unwrap(phase1), linestyle='-', color='b', label=f"{est_code=}")
         phase2 = cp.angle(pktdata2a_roll[sigtt])
@@ -646,18 +657,22 @@ def gen_refchirp(cfofreq, tstart):
     for tid in range(Config.preamble_len):
         upchirp = gen_upchirp(tid_times[tid], -Config.bw / 2 + cfofreq, tid_times[tid + 1], Config.bw / 2 + cfofreq)
         assert len(upchirp) == math.ceil(tid_times[tid + 1]) - math.ceil(tid_times[tid])
-        upchirp[:20] = cp.zeros(20,dtype=cp.complex64)
-        upchirp[-20:] = cp.zeros(20,dtype=cp.complex64)
+        # upchirp[:20] = cp.zeros(20,dtype=cp.complex64)
+        # upchirp[-20:] = cp.zeros(20,dtype=cp.complex64)
         detect_symb.append(upchirp)
+        logger.warning(f"{tid=} {len(cp.concatenate(detect_symb))=}")
     for tid in range(Config.preamble_len, Config.sfdpos):
         detect_symb.append(cp.zeros(math.ceil(tid_times[tid + 1]) - math.ceil(tid_times[tid]), dtype=cp.complex64))
+        logger.warning(f"{tid=} {len(cp.concatenate(detect_symb))=}")
     for tid in range(Config.sfdpos, Config.sfdend):
-        endfreq = - Config.bw / 2 if tid == Config.sfdend - 1 else Config.bw / 4
+        endfreq = - Config.bw / 2 if tid != Config.sfdend - 1 else Config.bw / 4
         upchirp = gen_upchirp(tid_times[tid], Config.bw / 2 + cfofreq, tid_times[tid + 1], endfreq + cfofreq)
         assert len(upchirp) == math.ceil(tid_times[tid + 1]) - math.ceil(tid_times[tid])
-        upchirp[:20] = cp.zeros(20,dtype=cp.complex64)
-        upchirp[-20:] = cp.zeros(20,dtype=cp.complex64)
+        logger.warning(f"{tid=} {Config.sfdend=} {len(cp.concatenate(detect_symb))=}")
+        # upchirp[:20] = cp.zeros(20,dtype=cp.complex64)
+        # upchirp[-20:] = cp.zeros(20,dtype=cp.complex64)
         detect_symb.append(upchirp)
+    logger.warning(f"final {len(cp.concatenate(detect_symb))=}")
     return detect_symb
 
 
