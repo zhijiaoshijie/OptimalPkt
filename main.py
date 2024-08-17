@@ -441,18 +441,19 @@ def fine_work_new(pktdata2a):  # TODO working
                 didx += len(ssymb)
             return -res  # Negative because we use a minimizer
 
-        bestx = None
-        bestobj = cp.inf
+        # start_t = random.uniform(0, Config.nsamp)
+        # start_f = random.uniform(-29000, -24000)
+        # t_lower, t_upper = 0, Config.nsamp
+        # f_lower, f_upper = -30000, -23000
+        # bestx = None
+        # bestobj = cp.inf
+        f_guess = -26685.110
+        t_guess = 225.221
+        t_lower, t_upper = t_guess - 20, t_guess + 20
+        f_lower, f_upper = f_guess - 100, f_guess + 100
+        bestx = [f_guess, t_guess]
+        bestobj = objective(bestx)
         for tryidx in range(10000):
-            # start_t = random.uniform(0, Config.nsamp)
-            # start_f = random.uniform(-29000, -24000)
-            # t_lower, t_upper = 0, Config.nsamp
-            # f_lower, f_upper = -30000, -23000
-            f_guess = -26745.706
-            t_guess = 224.726
-            t_lower, t_upper = t_guess - 20, t_guess + 20
-            f_lower, f_upper = f_guess - 100, f_guess + 100
-
             start_t = random.uniform(t_lower, t_upper)
             start_f = random.uniform(f_lower, f_upper)
             # noinspection PyTypeChecker
@@ -492,8 +493,8 @@ def fine_work_new(pktdata2a):  # TODO working
         cfo_freq_est_delta = 0  # 100
         time_error_delta = 0
     else:
-        cfo_freq_est = -26885.026
-        time_error = 223.738
+        cfo_freq_est = -26685.110
+        time_error = 225.221
         cfo_freq_est_delta = 0  # 100
         time_error_delta = 0
         cfo_freq_est += cfo_freq_est_delta
