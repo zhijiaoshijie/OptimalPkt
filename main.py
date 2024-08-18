@@ -17,6 +17,7 @@ from scipy.optimize import curve_fit
 from scipy.signal import chirp
 from sklearn.cluster import KMeans
 from tqdm import tqdm
+import scipy
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--cpu', action='store_true', default=False, help='Use cpu instead of gpu (numpy instead of cupy)')
@@ -48,9 +49,12 @@ def tocpu(x):
         return x
 
 
-def mychirp(t, f0, f1, t1, method, phi):
-    # logger.info(f"{f0=} {f1=} {t1=}")
-    return togpu(chirp(tocpu(t), f0, t1, f1, method, phi))
+def mychirp(t, f0, f1, t1):
+    beta = (f1 - f0) / t1
+    phase = 2 * cp.pi * (f0 * t + 0.5 * beta * t * t)
+    sig = cp.exp(1j * togpu(phase))
+    return sig
+
 
 
 def cp_str(x, precision=2, suppress_small=False):
@@ -135,13 +139,8 @@ class Config:
     t = cp.linspace(0, nsamp / fs, nsamp + 1)[:-1]
     # if not gpu: t = t.get()
     # logger.debug(type(t))
-    chirpI1 = mychirp(t, f0=-bw / 2, f1=bw / 2, t1=2 ** sf / bw, method='linear', phi=90)
-    chirpQ1 = mychirp(t, f0=-bw / 2, f1=bw / 2, t1=2 ** sf / bw, method='linear', phi=0)
-    upchirp = cp.array(chirpI1 + 1j * chirpQ1)
-
-    chirpI1 = mychirp(t, f0=bw / 2, f1=-bw / 2, t1=2 ** sf / bw, method='linear', phi=90)
-    chirpQ1 = mychirp(t, f0=bw / 2, f1=-bw / 2, t1=2 ** sf / bw, method='linear', phi=0)
-    downchirp = cp.array(chirpI1 + 1j * chirpQ1)
+    upchirp = mychirp(t, f0=-bw / 2, f1=bw / 2, t1=2 ** sf / bw)
+    downchirp = mychirp(t, f0=bw / 2, f1=-bw / 2, t1=2 ** sf / bw)
     if use_gpu:
         plans = {1: fft.get_fft_plan(cp.zeros(nsamp * 1, dtype=cp.complex64)), fft_upsamp: fft.get_fft_plan(cp.zeros(nsamp * fft_upsamp, dtype=cp.complex64))}
     else:
@@ -279,9 +278,7 @@ def work(pkt_totcnt, pktdata_in):
     sig_time = len(pktdata3) / Config.fs
     logger.debug(f'{all_cfo_freq=} Hz, {est_cfo_slope=} Hz/s, {sig_time=} samples')
     t = cp.linspace(0, sig_time, len(pktdata3) + 1)[:-1]
-    chirpI1 = mychirp(t, f0=0, f1=- est_cfo_slope * sig_time, t1=sig_time, method='linear', phi=90)
-    chirpQ1 = mychirp(t, f0=0, f1=- est_cfo_slope * sig_time, t1=sig_time, method='linear', phi=0)
-    est_cfo_symbol = cp.array(chirpI1 + 1j * chirpQ1)
+    est_cfo_symbol = mychirp(t, f0=0, f1=- est_cfo_slope * sig_time, t1=sig_time)
     pktdata5 = pktdata3 * est_cfo_symbol
     detect, upsamp = test_preamble(est_to_dec, pktdata5)
 
@@ -406,9 +403,7 @@ def gen_upchirp(t0, f0, t1, f1):
     t = cp.arange(math.ceil(t0), math.ceil(t1), dtype=float) / Config.fs
     fslope = (f1 - f0) / (t1 - t0) * Config.fs
     # logger.info(f"{fslope=} ref={Config.bw / Config.tsig} {f1=} {f0=} {t1=} {t0=} {t[0]} {t[-1]} {f0 - t0 / Config.fs * fslope}")
-    chirpI1 = mychirp(t, f0=f0 - t0 / Config.fs * fslope, f1=f1, t1=t1 / Config.fs, method='linear', phi=90)
-    chirpQ1 = mychirp(t, f0=f0 - t0 / Config.fs * fslope, f1=f1, t1=t1 / Config.fs, method='linear', phi=0)
-    upchirp = cp.array(chirpI1 + 1j * chirpQ1, dtype=cp.complex64)
+    upchirp = mychirp(t, f0=f0 - t0 / Config.fs * fslope, f1=f1, t1=t1 / Config.fs)
     # plt.figure(figsize=(20,3))
     # myplot(ax, upchirp.real, marker='o')
     # plt.show()
