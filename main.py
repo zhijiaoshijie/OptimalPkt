@@ -110,10 +110,10 @@ class Config:
     renew_switch = False
     s1 = 0
     s2 = 0
-    s3 = 0
-    s4 = 1
-    s5 = 1
-    s6 = 1
+    s3 = 1
+    s4 = 0
+    s5 = 0
+    s6 = 0
     s7 = 0
 
     sf = 7
@@ -428,21 +428,21 @@ def fine_work_new(pktdata2a):
         fig.write_html(os.path.join(Config.figpath, f"input_data.html"))
 
     # Perform optimization
-    if parse_opts.searchphase:
-        def objective(params):
-            cfofreq, time_error = params
-            pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
-            detect_symb = gen_refchirp(cfofreq, time_error - math.ceil(time_error), deadzone=20)
-            # tid_times = gen_refchirp_time(cfofreq, time_error - math.ceil(time_error))
-            # tid_times_ceil = cp.ceil(tid_times).astype(int)
-            res = cp.zeros(len(detect_symb), dtype=cp.complex64)
-            ddx = 0 # TODO
-            for sidx, ssymb in enumerate(detect_symb):
-                ress = cp.conj(ssymb).dot(pktdata2a_roll[ddx : ddx + len(ssymb)])
-                ddx += len(ssymb)
-                res[sidx] = ress / len(ssymb)
-            return - tocpu(cp.sum(cp.abs(res) ** 2))  # Negative because we use a minimizer
+    def objective(params):
+        cfofreq, time_error = params
+        pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
+        detect_symb = gen_refchirp(cfofreq, time_error - math.ceil(time_error), deadzone=20)
+        # tid_times = gen_refchirp_time(cfofreq, time_error - math.ceil(time_error))
+        # tid_times_ceil = cp.ceil(tid_times).astype(int)
+        res = cp.zeros(len(detect_symb), dtype=cp.complex64)
+        ddx = 0 # TODO
+        for sidx, ssymb in enumerate(detect_symb):
+            ress = cp.conj(ssymb).dot(pktdata2a_roll[ddx : ddx + len(ssymb)])
+            ddx += len(ssymb)
+            res[sidx] = ress / len(ssymb)
+        return - tocpu(cp.sum(cp.abs(res) ** 2))  # Negative because we use a minimizer
 
+    if parse_opts.searchphase:
         if parse_opts.searchfromzero:
             t_lower, t_upper = 0, Config.nsamp
             f_lower, f_upper = -30000, -23000
@@ -471,23 +471,23 @@ def fine_work_new(pktdata2a):
         cfo_freq_est, time_error = bestx
         logger.info(f"Optimized parameters:\n{cfo_freq_est=}\n{time_error=}")
 
-        if parse_opts.plotmap:
-            start_t = np.linspace(0, Config.nsamp, Config.nsamp * 5)
-            start_f = np.linspace(-24000, -29000, 100)
-            Z = np.zeros((len(start_f), len(start_t)))
-            for i, f in tqdm(enumerate(start_f), total=len(start_f)):
-                for j, t in enumerate(start_t):
-                    Z[i, j] = objective((f, t))
+    if parse_opts.plotmap:
+        start_t = np.linspace(0, Config.nsamp, Config.nsamp * 5)
+        start_f = np.linspace(-24000, -29000, 1000)
+        Z = np.zeros((len(start_f), len(start_t)))
+        for i, f in tqdm(enumerate(start_f), total=len(start_f)):
+            for j, t in enumerate(start_t):
+                Z[i, j] = objective((f, t))
 
-            fig = go.Figure(data=go.Heatmap( z=Z, x=start_t, y=start_f, colorscale='Viridis' ))
-            fig.update_layout( title='Heatmap of objective(start_t, start_f)', xaxis_title='t', yaxis_title='f')
-            fig.show()
-            fig.write_html(os.path.join(Config.figpath, f"Plotmap.html"))
-            maxidx = np.unravel_index(np.argmin(Z, axis=None), Z.shape, order='C')
-            best_f = start_t[maxidx[0]]
-            best_t = start_t[maxidx[1]]
-            logger.info(f'PlotMap {objective((best_f, best_t))=} {np.min(Z)=} {best_f=} {best_t=}')
-            sys.exit(0)
+        fig = go.Figure(data=go.Heatmap( z=Z, x=start_t, y=start_f, colorscale='Viridis' ))
+        fig.update_layout( title='Heatmap of objective(start_t, start_f)', xaxis_title='t', yaxis_title='f')
+        fig.show()
+        fig.write_html(os.path.join(Config.figpath, f"Plotmap.html"))
+        maxidx = np.unravel_index(np.argmin(Z, axis=None), Z.shape, order='C')
+        best_f = start_t[maxidx[0]]
+        best_t = start_t[maxidx[1]]
+        logger.info(f'PlotMap {objective((best_f, best_t))=} {np.min(Z)=} {best_f=} {best_t=}')
+        sys.exit(0)
         cfo_freq_est_delta = 0  # 100
         time_error_delta = 0
     else:
