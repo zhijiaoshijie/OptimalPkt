@@ -26,6 +26,7 @@ parser.add_argument('--cpu', action='store_true', default=False, help='Use cpu i
 parser.add_argument('--searchphase', action='store_true', default=False)
 parser.add_argument('--searchfromzero', action='store_true', default=False)
 parser.add_argument('--plotmap', action='store_true', default=False)
+parser.add_argument('--plotline', action='store_true', default=False)
 parser.add_argument('--end1', action='store_true', default=False)
 parse_opts = parser.parse_args()
 
@@ -110,11 +111,12 @@ class Config:
     renew_switch = False
     s1 = 0
     s2 = 0
-    s3 = 1
+    s3 = 0
     s4 = 0
     s5 = 0
     s6 = 0
-    s7 = 0
+    s7 = 1
+    s8 = 1
 
     sf = 7
     bw = 125e3
@@ -470,7 +472,17 @@ def fine_work_new(pktdata2a):
                 bestobj = result.fun
         cfo_freq_est, time_error = bestx
         logger.info(f"Optimized parameters:\n{cfo_freq_est=}\n{time_error=}")
-
+    else:
+        cfo_freq_est = -26685.110 # best for 50/sf7/20
+        time_error = 225.221
+        # cfo_freq_est = -26789.411976307307
+        # time_error = 224.64248426804352
+        # cfo_freq_est = -25364.299
+        # time_error = 922.660
+        cfo_freq_est_delta = 0
+        time_error_delta = 0
+        cfo_freq_est += cfo_freq_est_delta
+        time_error += time_error_delta
     if parse_opts.plotmap:
         start_t = np.linspace(0, Config.nsamp, Config.nsamp * 5)
         start_f = np.linspace(-24000, -29000, 1000)
@@ -490,17 +502,34 @@ def fine_work_new(pktdata2a):
         sys.exit(0)
         cfo_freq_est_delta = 0  # 100
         time_error_delta = 0
-    else:
-        cfo_freq_est = -26685.110 # best for 50/sf7/20
-        time_error = 225.221
-        # cfo_freq_est = -26789.411976307307
-        # time_error = 224.64248426804352
-        # cfo_freq_est = -25364.299
-        # time_error = 922.660
-        cfo_freq_est_delta = 0
-        time_error_delta = 0
-        cfo_freq_est += cfo_freq_est_delta
-        time_error += time_error_delta
+
+
+    if parse_opts.plotline:
+        xt_data = np.linspace(time_error - 5, time_error + 5, 1000)
+        yval = np.zeros(len(xt_data))
+        for idx, time_error_2 in enumerate(xt_data):
+            detect_symb_rangle = gen_refchirp(cfo_freq_est, time_error_2 - math.ceil(time_error_2))
+            didx = math.ceil(time_error_2)
+            ssum = 0
+            for sidx, ssymb in enumerate(detect_symb_rangle[:Config.preamble_len]):
+                ress = cp.conj(togpu(ssymb)).dot(pktdata2a[didx: didx + len(ssymb)])
+                ssum += cp.abs(ress) ** 2
+                didx += len(ssymb)
+            yval[idx] = ssum
+
+        def quadratic(x, a, b, c):
+            return a * x ** 2 + b * x + c
+
+        params, covariance = curve_fit(quadratic, xt_data, yval)
+        logger.info(f"FT fit time line curve {params=}")
+        fig = px.line(x = xt_data, y=yval, title="power with time err")
+        fig.add_trace(go.Scatter(x=xt_data, y=quadratic(xt_data, *params), mode='lines', line=dict(color='red', dash='dash'), name='Fitted Curve'))
+        fig.add_vline(x=time_error, line=dict(color='black', width=2, dash='dash'), annotation_text='est_time',
+                              annotation_position='top')
+        fig.show()
+        fig.write_html(os.path.join(Config.figpath, f"power with time err.html"))
+
+
 
     pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
     phase1 = cp.angle(pktdata2a_roll)
