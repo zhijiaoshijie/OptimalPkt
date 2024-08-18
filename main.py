@@ -7,14 +7,16 @@ import time
 
 import cmath
 import math
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt, mpld3
+import plotly.express as px
+import plotly.graph_objects as go
+import pandas as pd
 # Enable fallback mode
 # from cupyx.fallback_mode import numpy as np
 import numpy as np
 import scipy.optimize as opt
 import seaborn as sns
 from scipy.optimize import curve_fit
-from scipy.signal import chirp
 from sklearn.cluster import KMeans
 from tqdm import tqdm
 import scipy
@@ -54,7 +56,6 @@ def mychirp(t, f0, f1, t1):
     phase = 2 * cp.pi * (f0 * t + 0.5 * beta * t * t)
     sig = cp.exp(1j * togpu(phase))
     return sig
-
 
 
 def cp_str(x, precision=2, suppress_small=False):
@@ -293,11 +294,9 @@ def work(pkt_totcnt, pktdata_in):
     payload_data = ndatas[detect + Config.sfdpos + 4:]
     angles = calc_angles(payload_data)
     if opts.debug:
-        fig, ax = plt.subplots()
-        myscatter(ax, range(len(angles)), angles, s=0.5)
-        plt.show()
-        fig.savefig(os.path.join(Config.figpath, f'temp_sf7_{pkt_totcnt}.png'))
-        fig, ax = plt.subplots()
+        fig1 = px.scatter(y=tocpu(angles), mode="markers")
+        fig1.show()
+        fig1.write_html(os.path.join(Config.figpath, f'temp_sf7_{pkt_totcnt}.html'))
         for i in range(min(len(ans2n), len(angles))):
             if abs(angles[i]) > 0.5:
                 logger.debug(f'abs(angles[i]) > 0.5: {i=} {cp_str(ans2n[i])} {cp_str(angles[i])}')
@@ -399,16 +398,11 @@ def fine_work(pktdata2a):
     return est_to_dec, est_to_int, pktdata3, re_cfo_0, re_cfo_freq, detect
 
 
-def gen_upchirp(t0, f0, t1, f1):
-    t = cp.arange(math.ceil(t0), math.ceil(t1), dtype=float) / Config.fs
-    fslope = (f1 - f0) / (t1 - t0) * Config.fs
-    # logger.info(f"{fslope=} ref={Config.bw / Config.tsig} {f1=} {f0=} {t1=} {t0=} {t[0]} {t[-1]} {f0 - t0 / Config.fs * fslope}")
-    upchirp = mychirp(t, f0=f0 - t0 / Config.fs * fslope, f1=f1, t1=t1 / Config.fs)
-    # plt.figure(figsize=(20,3))
-    # myplot(ax, upchirp.real, marker='o')
-    # plt.show()
-    # sys.exit(1)
-    return upchirp
+def gen_upchirp(t0, td, f0, beta):
+    t = cp.arange(math.ceil(t0), math.ceil(t0 + td), dtype=float) / Config.fs
+    phase = 2 * cp.pi * (f0 * t + 0.5 * beta * t * t)
+    sig = cp.exp(1j * phase)
+    return sig
 
 
 def fine_work_new(pktdata2a):  # TODO working
@@ -416,10 +410,9 @@ def fine_work_new(pktdata2a):  # TODO working
 
     phase = cp.angle(pktdata2a)
     unwrapped_phase = cp.unwrap(phase)
-    fig, ax = plt.subplots()
-    myplot(ax, unwrapped_phase[:15 * 1024], linestyle='-')
-    ax.set_title("input data 15 symbol")
-    plt.show()
+    fig = px.line(y=tocpu(unwrapped_phase[:15 * 1024]), title="input data 15 symbol")
+    fig.show()
+    fig.write_html(os.path.join(Config.figpath, f"input_data.html"))
 
     # Perform optimization
     if parse_opts.searchphase:
@@ -469,16 +462,10 @@ def fine_work_new(pktdata2a):  # TODO working
                 for j, t in enumerate(start_t):
                     Z[i, j] = objective((f, t))
 
-            ax = sns.heatmap(Z, cmap='viridis', cbar=True)
-            ax.set_xticks(np.linspace(0, len(start_t) - 1, 10))
-            ax.set_xticklabels(np.linspace(start_t[0], start_t[-1], 10))
-            ax.set_yticks(np.linspace(0, len(start_f) - 1, 10))
-            ax.set_yticklabels(np.linspace(start_f[0], start_f[-1], 10))
-            ax.yaxis.set_tick_params(labelrotation=0)
-            ax.set_xlabel('start_t')
-            ax.set_ylabel('start_f')
-            ax.set_title('Heatmap of objective(start_t, start_f)')
-            plt.show()
+            fig = go.Figure(data=go.Heatmap( z=Z, x=start_t, y=start_f, colorscale='Viridis' ))
+            fig.update_layout( title='Heatmap of objective(start_t, start_f)', xaxis_title='t', yaxis_title='f')
+            fig.show()
+            fig.write_html(os.path.join(Config.figpath, f"Plotmap.html"))
             maxidx = np.unravel_index(np.argmin(Z, axis=None), Z.shape, order='C')
             best_f = start_t[maxidx[0]]
             best_t = start_t[maxidx[1]]
@@ -508,14 +495,13 @@ def fine_work_new(pktdata2a):  # TODO working
     yval2 = cp.unwrap(cp.angle(detect_symb_plt))
     tsfd = time_error - math.ceil(time_error) + Config.sfdpos * Config.tsig * (1 - cfo_freq_est / Config.sig_freq)
     yval2[math.ceil(tsfd):] += (yval1[math.ceil(tsfd)] - yval2[math.ceil(tsfd)])
-    fig, ax = plt.subplots()
-    myplot(ax, xval, yval1[xval], linestyle='-', color='b', label="input")
-    myplot(ax, xval, yval2[xval], linestyle='--', color='r', label="fit")
-    # myplot(ax, cp.diff(cp.unwrap(phase1))[xval], linestyle='-', color='b', label="input")
-    # myplot(ax, cp.diff(cp.unwrap(cp.angle(detect_symb)))[xval], linestyle='--', color='r', label="fit")
-    ax.set_title("aligned pkt")
-    ax.legend()
-    plt.show()
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=tocpu(xval), y=tocpu(yval1[xval]), mode='lines', name='input', line=dict(color='blue')))
+    fig.add_trace(go.Scatter(x=tocpu(xval), y=tocpu(yval2[xval]), mode='lines', name='fit', line=dict(dash='dash', color='red')))
+    fig.update_layout(title='aligned pkt', legend=dict(x=0.1, y=1.1))
+    fig.show()
+
     if parse_opts.end1: sys.exit(0)
 
     detect_symb_rangle = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
@@ -535,18 +521,15 @@ def fine_work_new(pktdata2a):  # TODO working
     x_data = np.arange(len(res_angle), dtype=float)
     # add_data = cp.array([2,2,1,1,0,0,0,0])
     # res_angle += add_data * cp.pi * 2
-    res_angle = np.unwrap(res_angle)
+    res_angle = cp.unwrap(res_angle)
     # res_angle[-1] += np.pi * 2 # TODO
     # noinspection PyTupleAssignmentBalance
     params, covariance = curve_fit(quadratic, x_data, tocpu(res_angle))
-    fig, ax = plt.subplots()
-    myscatter(ax, x_data, res_angle, label='Data Points')
-    myplot(ax, x_data, quadratic(x_data, *params), color='red', label='Fitted Curve')
-    # logger.info(f"fd={cfo_freq_est_delta} td={time_error_delta} a={params[0]} b={params[1]} c={params[2]}")
-    ax.legend()
-    plt.show()
-    fig.savefig(f"res_angle.png")
-    # sys.exit(0)
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=x_data, y=tocpu(res_angle), mode='markers', name='Input Data'))
+    fig.add_trace(go.Scatter(x=x_data, y=quadratic(x_data, *params), mode="lines", name='Fitted Curve'))
+    fig.show()
+    fig.write_html(os.path.join(Config.figpath, f"res_angle.html"))
 
     code_cnt = math.floor(len(pktdata2a_roll) / Config.nsamp - Config.sfdend - 0.5)
     code_ests = cp.zeros((code_cnt,), dtype=int)
@@ -554,20 +537,18 @@ def fine_work_new(pktdata2a):  # TODO working
     angle2 = cp.zeros((code_cnt,), dtype=float)
     angle3 = cp.zeros((code_cnt,), dtype=float)
     angle4 = cp.zeros((code_cnt,), dtype=float)
-    tid_times = (cp.arange(code_cnt + 1, dtype=float) + Config.sfdpos + 2.25) * Config.tsig * (1 - cfo_freq_est / Config.sig_freq) + tstart
-    inif_arr = cp.arange(Config.n_classes, dtype=float) / Config.n_classes * Config.bw
-    tsig_arr = Config.tsig * (1 - cfo_freq_est / Config.sig_freq) * (1 - cp.arange(Config.n_classes, dtype=float) / Config.n_classes)
-    for tid in range(code_cnt):
 
-        upchirp1_arr = [gen_upchirp(tid_times[tid],
-                                    -Config.bw / 2 + cfo_freq_est + inif_arr[code],
-                                    tid_times[tid] + tsig_arr[code],
-                                    Config.bw / 2 + cfo_freq_est)
+    sigt = Config.tsig * (1 - cfo_freq_est / Config.sig_freq)
+    tstart_p = (Config.sfdpos + 2.25) * sigt + tstart
+    beta = Config.bw / sigt
+    tid_times = (cp.arange(code_cnt + 1, dtype=float) + Config.sfdpos + 2.25) * sigt + tstart
+    tsig_arr = sigt * (1 - cp.arange(Config.n_classes, dtype=float) / Config.n_classes)
+    for tid in range(code_cnt):
+        upchirp1_arr = [gen_upchirp(tstart_p + sigt * tid, sigt * (1 - code / Config.n_classes),
+                                    ((code / Config.n_classes - 0.5) * Config.bw) + cfo_freq_est, beta)
                         for code in range(Config.n_classes)]
-        upchirp2_arr = [gen_upchirp(tid_times[tid] + tsig_arr[code],
-                                    -Config.bw / 2 + cfo_freq_est,
-                                    tid_times[tid + 1],
-                                    -Config.bw / 2 + cfo_freq_est + inif_arr[code]) if code != 0 else None
+        upchirp2_arr = [gen_upchirp(tstart_p + sigt * (tid + 1 - code / Config.n_classes), sigt * code / Config.n_classes,
+                                    -Config.bw / 2 + cfo_freq_est, beta) if code != 0 else None
                         for code in range(Config.n_classes)]
         res1_arr = cp.zeros(Config.n_classes, dtype=cp.complex64)
         res2_arr = cp.zeros(Config.n_classes, dtype=cp.complex64)
@@ -579,19 +560,17 @@ def fine_work_new(pktdata2a):  # TODO working
         est_code = tocpu(cp.argmax(res_array))
         logger.info(f"Log curvefit {est_code=} maxval={tocpu(cp.max(res_array))}")
         code_ests[tid] = est_code
-        fig, ax = plt.subplots()
-        myplot(ax, res_array)
-        ax.set_title(f"resarray {tid=} {est_code=}")
-        ax.axvline(tocpu(est_code), color="k")
-        plt.show()
-        fig.savefig(os.path.join(Config.figpath, f"resarray {tid=} {est_code=}.png"))
+
+        fig = px.line(y=tocpu(res_array), title=f"resarray {tid=} {est_code=}")
+        fig.add_vline(x=est_code, line=dict(color='black', width=2, dash='dash'), annotation_text='est_code',
+                      annotation_position='top')
+        fig.write_html(os.path.join(Config.figpath, f"resarray {tid=} {est_code=}.html"))
 
         phase = cp.angle(pktdata2a_roll[math.ceil(tid_times[tid]): math.ceil(tid_times[tid + 1])])
         unwrapped_phase = cp.unwrap(phase)
-        fig, ax = plt.subplots()
-        myplot(ax, unwrapped_phase, linestyle='-')
-        ax.set_title(f"phase {tid=} {est_code=}")
-        plt.show()
+        fig = px.line(y=tocpu(unwrapped_phase), title=f"phase {tid=} {est_code=}")
+        fig.show()
+        fig.write_html(os.path.join(Config.figpath, f"phase {tid=} {est_code=}.html"))
 
         angle1[tid] = cp.angle(res1_arr[est_code])
         angle2[tid] = cp.angle(res2_arr[est_code])
@@ -612,82 +591,58 @@ def fine_work_new(pktdata2a):  # TODO working
         if est_code != 0:
             upchirp2_est = upchirp2_arr[est_code] * res2_arr[est_code] / cp.abs(res2_arr[est_code])
             upchirp_est = cp.concatenate((upchirp_est, upchirp2_est))
-        phase1 = cp.angle(upchirp_est)
         sigtt = cp.arange(math.ceil(tid_times[tid]), math.ceil(tid_times[tid + 1]), dtype=int)
-        fig, ax = plt.subplots()
-        myplot(ax, sigtt, cp.unwrap(phase1), linestyle='-', color='b', label=f"{est_code=}")
-        phase2 = cp.angle(pktdata2a_roll[sigtt])
-        myplot(ax, sigtt, cp.unwrap(phase2), linestyle='--', color='r', label="input")
-
-        ax.set_title('Ref')
-        ax.set_xlabel('Index')
-        ax.set_ylabel('Phase')
-        ax.grid(True)
-        ax.axvline(tocpu(tid_times[tid] + tsig_arr[est_code]), color='k')
-        ax.legend()
-        ax.set_title(f'{tid=} {est_code=}')
-        plt.show()
-        fig.savefig(os.path.join(Config.figpath, f'code{tid}.png'))
-
+        phase1 = cp.angle(pktdata2a_roll[sigtt])
+        phase2 = cp.angle(upchirp_est)
+        fig = px.line(x=tocpu(sigtt), y=[tocpu(cp.unwrap(phase1)), tocpu(cp.unwrap(phase2))], color_discrete_sequence=['blue', 'red'], title=f"fit code {tid=} {est_code=}")
+        fig.data[0].name = 'Input'
+        fig.data[1].name = 'Fitting'
+        fig.data[1].line = dict(dash='dash')
+        fig.add_vline(x=tid_times[tid] + tsig_arr[est_code], line=dict(color='black', width=2, dash='dash'), annotation_text='est_code',
+                      annotation_position='top')
+        fig.show()
+        fig.write_html(os.path.join(Config.figpath, f"fit code {tid=} {est_code=}.html"))
         sys.exit(0)
-    fig, ax = plt.subplots()
-    myplot(ax, angle1, label="angle1")
-    myplot(ax, angle2, label="angle2")
-    ax.legend()
-    ax.set_title(f"angleA.png")
-    plt.show()
-    fig.savefig(os.path.join(Config.figpath, f"angleA.png"))
-    fig, ax = plt.subplots()
-    myscatter(ax, code_ests, angle1, label="angle1")
-    myscatter(ax, code_ests, angle2, label="angle2")
-    ax.legend()
-    ax.set_title(f"angleB.png")
-    plt.show()
-    fig.savefig(os.path.join(Config.figpath, f"angleB.png"))
-
-    fig, ax = plt.subplots()
-    myplot(ax, angle3, label="angle3")
-    myplot(ax, angle4, label="angle4")
-    ax.legend()
-    ax.set_title(f"angleC.png")
-    plt.show()
-    fig.savefig(os.path.join(Config.figpath, f"angleC.png"))
-    fig, ax = plt.subplots()
-    myscatter(ax, code_ests, angle3, label="angle3")
-    myscatter(ax, code_ests, angle4, label="angle4")
-    ax.legend()
-    ax.set_title(f"angleD.png")
-    plt.show()
-    fig.savefig(os.path.join(Config.figpath, f"angleD.png"))
+    fig = px.line(y=[angle1, angle2], color_discrete_sequence=['blue', 'red'],
+                  title=f"angles of symbols")
+    fig.write_html(os.path.join(Config.figpath, f"angles of symbols.html"))
+    fig = px.scatter(x=code_ests, y=[angle1, angle2], color_discrete_sequence=['blue', 'red'], mode="markers",
+                  title=f"angles of symbols vs code")
+    fig.write_html(os.path.join(Config.figpath, f"angles of symbols vs code.html"))
+    fig = px.line(y=[angle3, angle4], color_discrete_sequence=['blue', 'red'],
+                  title=f"angles of symbols LT method")
+    fig.write_html(os.path.join(Config.figpath, f"angles of symbols LT method.html"))
+    fig = px.scatter(x=code_ests, y=[angle3, angle4], color_discrete_sequence=['blue', 'red'], mode="markers",
+                     title=f"angles of symbols vs code LT method")
+    fig.write_html(os.path.join(Config.figpath, f"angles of symbols vs code LT method.html"))
 
     return time_error, cfo_freq_est
 
 
 def gen_refchirp_time(cfofreq, tstart):
-    est_cfo_percentile = cfofreq / Config.sig_freq
     tind_times = cp.arange(Config.sfdend + 1, dtype=float)
     tind_times[-1] -= 0.75
-    tid_times = tind_times * Config.tsig * (1 - est_cfo_percentile) + tstart
+    tid_times = tind_times * Config.tsig * (1 - cfofreq / Config.sig_freq) + tstart
     return tid_times
 
 
 def gen_refchirp(cfofreq, tstart, deadzone=0):
     detect_symb = []
-    tid_times = gen_refchirp_time(cfofreq, tstart)
-    # logger.info(est_cfo_percentile)
+    # tid_times = gen_refchirp_time(cfofreq, tstart)
+    sigt = Config.tsig * (1 - cfofreq / Config.sig_freq)
+    beta = Config.bw / sigt
     for tid in range(Config.preamble_len):
-        upchirp = gen_upchirp(tid_times[tid], -Config.bw / 2 + cfofreq, tid_times[tid + 1], Config.bw / 2 + cfofreq)
-        assert len(upchirp) == math.ceil(tid_times[tid + 1]) - math.ceil(tid_times[tid])
+        upchirp = gen_upchirp(tstart + sigt * tid, sigt, -Config.bw / 2 + cfofreq, beta)
+        # assert len(upchirp) == math.ceil(tid_times[tid + 1]) - math.ceil(tid_times[tid])
         if deadzone > 0:
             upchirp[:deadzone] = cp.zeros(deadzone, dtype=cp.complex64)
             upchirp[-deadzone:] = cp.zeros(deadzone, dtype=cp.complex64)
         detect_symb.append(upchirp)
     for tid in range(Config.preamble_len, Config.sfdpos):
-        detect_symb.append(cp.zeros(math.ceil(tid_times[tid + 1]) - math.ceil(tid_times[tid]), dtype=cp.complex64))
+        detect_symb.append(cp.zeros(math.ceil(tstart + sigt * (tid + 1)) - math.ceil(tstart + sigt * tid), dtype=cp.complex64))
     for tid in range(Config.sfdpos, Config.sfdend):
-        endfreq = - Config.bw / 2 if tid != Config.sfdend - 1 else Config.bw / 4
-        upchirp = gen_upchirp(tid_times[tid], Config.bw / 2 + cfofreq, tid_times[tid + 1], endfreq + cfofreq)
-        assert len(upchirp) == math.ceil(tid_times[tid + 1]) - math.ceil(tid_times[tid])
+        upchirp = gen_upchirp(tstart + sigt * tid, sigt, Config.bw / 2 + cfofreq, - beta)
+        # assert len(upchirp) == math.ceil(tid_times[tid + 1]) - math.ceil(tid_times[tid])
         if deadzone > 0:
             upchirp[:deadzone] = cp.zeros(deadzone, dtype=cp.complex64)
             upchirp[-deadzone:] = cp.zeros(deadzone, dtype=cp.complex64)
@@ -724,9 +679,6 @@ def read_pkt(file_path_in, threshold, min_length=20):
 # read packets from file
 if __name__ == "__main__":
     angles = []
-    plt.rcParams['font.size'] = 15
-    plt.rcParams['lines.markersize'] = 12
-    plt.rcParams['font.family'] = 'serif'
 
     for file_path in Config.file_paths:
 
