@@ -4,27 +4,27 @@ import os
 import random
 import sys
 import time
-from turtledemo.penrose import start
 
 import cmath
 import math
 # import matplotlib.pyplot as plt, mpld3
 import plotly.express as px
 import plotly.graph_objects as go
-import pandas as pd
+# import pandas as pd
 # Enable fallback mode
 # from cupyx.fallback_mode import numpy as np
 import numpy as np
 import scipy.optimize as opt
-import seaborn as sns
+# import seaborn as sns
 from scipy.optimize import curve_fit
 from sklearn.cluster import KMeans
 from tqdm import tqdm
-import scipy
+# import scipy
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--cpu', action='store_true', default=False, help='Use cpu instead of gpu (numpy instead of cupy)')
 parser.add_argument('--searchphase', action='store_true', default=False)
+parser.add_argument('--searchfromzero', action='store_true', default=False)
 parser.add_argument('--plotmap', action='store_true', default=False)
 parser.add_argument('--end1', action='store_true', default=False)
 parse_opts = parser.parse_args()
@@ -295,6 +295,7 @@ def work(pkt_totcnt, pktdata_in):
     payload_data = ndatas[detect + Config.sfdpos + 4:]
     angles = calc_angles(payload_data)
     if opts.debug:
+        # noinspection PyArgumentList
         fig1 = px.scatter(y=tocpu(angles), mode="markers")
         fig1.show()
         fig1.write_html(os.path.join(Config.figpath, f'temp_sf7_{pkt_totcnt}.html'))
@@ -409,7 +410,7 @@ def gen_upchirp(t0, td, f0, beta):
     return sig
 
 
-def fine_work_new(pktdata2a):  # TODO working
+def fine_work_new(pktdata2a):
     pktdata2a = togpu(pktdata2a)
 
     phase = cp.angle(pktdata2a)
@@ -434,17 +435,19 @@ def fine_work_new(pktdata2a):  # TODO working
                 res[sidx] = ress / len(ssymb)
             return - tocpu(cp.sum(cp.abs(res) ** 2))  # Negative because we use a minimizer
 
-        t_lower, t_upper = 0, Config.nsamp # TODO
-        f_lower, f_upper = -30000, -23000
-        bestx = None
-        bestobj = cp.inf
-        # f_guess = -25364.299
-        # t_guess = 922.660
+        if parse_opts.searchfromzero:
+            t_lower, t_upper = 0, Config.nsamp
+            f_lower, f_upper = -30000, -23000
+            bestx = None
+            bestobj = cp.inf
+        else:
+            f_guess = -26685.110 # best for 50/sf7/20
+            t_guess = 225.221
+            t_lower, t_upper = t_guess - 50, t_guess + 50
+            f_lower, f_upper = f_guess - 200, f_guess + 200
+            bestx = [f_guess, t_guess]
+            bestobj = objective(bestx)
         for tryidx in range(10000):
-            # t_lower, t_upper = t_guess - 50, t_guess + 50
-            # f_lower, f_upper = f_guess - 200, f_guess + 200
-            # bestx = [f_guess, t_guess]
-            # bestobj = objective(bestx)
             start_t = random.uniform(t_lower, t_upper)
             start_f = random.uniform(f_lower, f_upper)
             # noinspection PyTypeChecker
@@ -455,7 +458,7 @@ def fine_work_new(pktdata2a):  # TODO working
             if result.fun < bestobj:
                 logger.debug(f"{tryidx=: 6d} cfo_freq_est = {result.x[0]:.3f}, time_error = {result.x[1]:.3f} {result.fun=:.3f}")
                 bestx = result.x
-                f_guess, t_guess = result.x
+                # f_guess, t_guess = result.x
                 bestobj = result.fun
         cfo_freq_est, time_error = bestx
         logger.info(f"Optimized parameters:\n{cfo_freq_est=}\n{time_error=}")
@@ -486,7 +489,7 @@ def fine_work_new(pktdata2a):  # TODO working
         # time_error = 224.64248426804352
         # cfo_freq_est = -25364.299
         # time_error = 922.660
-        cfo_freq_est_delta = 0  # TODO
+        cfo_freq_est_delta = 0
         time_error_delta = 0
         cfo_freq_est += cfo_freq_est_delta
         time_error += time_error_delta
@@ -614,12 +617,14 @@ def fine_work_new(pktdata2a):  # TODO working
     fig = px.line(y=[angle1, angle2], color_discrete_sequence=['blue', 'red'],
                   title=f"angles of symbols")
     fig.write_html(os.path.join(Config.figpath, f"angles of symbols.html"))
+    # noinspection PyArgumentList
     fig = px.scatter(x=code_ests, y=[angle1, angle2], color_discrete_sequence=['blue', 'red'], mode="markers",
                   title=f"angles of symbols vs code")
     fig.write_html(os.path.join(Config.figpath, f"angles of symbols vs code.html"))
     fig = px.line(y=[angle3, angle4], color_discrete_sequence=['blue', 'red'],
                   title=f"angles of symbols LT method")
     fig.write_html(os.path.join(Config.figpath, f"angles of symbols LT method.html"))
+    # noinspection PyArgumentList
     fig = px.scatter(x=code_ests, y=[angle3, angle4], color_discrete_sequence=['blue', 'red'], mode="markers",
                      title=f"angles of symbols vs code LT method")
     fig.write_html(os.path.join(Config.figpath, f"angles of symbols vs code LT method.html"))
