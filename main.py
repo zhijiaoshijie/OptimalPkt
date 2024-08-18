@@ -108,6 +108,13 @@ def average_modulus(lst, n_classes):
 
 class Config:
     renew_switch = False
+    s1 = 0
+    s2 = 0
+    s3 = 0
+    s4 = 1
+    s5 = 1
+    s6 = 1
+    s7 = 0
 
     sf = 7
     bw = 125e3
@@ -413,11 +420,12 @@ def gen_upchirp(t0, td, f0, beta):
 def fine_work_new(pktdata2a):
     pktdata2a = togpu(pktdata2a)
 
-    phase = cp.angle(pktdata2a)
-    unwrapped_phase = cp.unwrap(phase)
-    fig = px.line(y=tocpu(unwrapped_phase[:15 * 1024]), title="input data 15 symbol")
-    fig.show()
-    fig.write_html(os.path.join(Config.figpath, f"input_data.html"))
+    if Config.s1:
+        phase = cp.angle(pktdata2a)
+        unwrapped_phase = cp.unwrap(phase)
+        fig = px.line(y=tocpu(unwrapped_phase[:15 * 1024]), title="input data 15 symbol")
+        fig.show()
+        fig.write_html(os.path.join(Config.figpath, f"input_data.html"))
 
     # Perform optimization
     if parse_opts.searchphase:
@@ -425,8 +433,8 @@ def fine_work_new(pktdata2a):
             cfofreq, time_error = params
             pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
             detect_symb = gen_refchirp(cfofreq, time_error - math.ceil(time_error), deadzone=20)
-            tid_times = gen_refchirp_time(cfofreq, time_error - math.ceil(time_error))
-            tid_times_ceil = cp.ceil(tid_times).astype(int)
+            # tid_times = gen_refchirp_time(cfofreq, time_error - math.ceil(time_error))
+            # tid_times_ceil = cp.ceil(tid_times).astype(int)
             res = cp.zeros(len(detect_symb), dtype=cp.complex64)
             ddx = 0 # TODO
             for sidx, ssymb in enumerate(detect_symb):
@@ -444,10 +452,10 @@ def fine_work_new(pktdata2a):
             f_guess = -26685.110 # best for 50/sf7/20
             t_guess = 225.221
             t_lower, t_upper = t_guess - 50, t_guess + 50
-            f_lower, f_upper = f_guess - 200, f_guess + 200
+            f_lower, f_upper = f_guess - 500, f_guess + 500
             bestx = [f_guess, t_guess]
             bestobj = objective(bestx)
-        for tryidx in range(10000):
+        for tryidx in tqdm(range(100000)):
             start_t = random.uniform(t_lower, t_upper)
             start_f = random.uniform(f_lower, f_upper)
             # noinspection PyTypeChecker
@@ -507,11 +515,12 @@ def fine_work_new(pktdata2a):
     tsfd = time_error - math.ceil(time_error) + Config.sfdpos * Config.tsig * (1 - cfo_freq_est / Config.sig_freq)
     yval2[math.ceil(tsfd):] += (yval1[math.ceil(tsfd)] - yval2[math.ceil(tsfd)])
 
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=tocpu(xval), y=tocpu(yval1[xval]), mode='lines', name='input', line=dict(color='blue')))
-    fig.add_trace(go.Scatter(x=tocpu(xval), y=tocpu(yval2[xval]), mode='lines', name='fit', line=dict(dash='dash', color='red')))
-    fig.update_layout(title='aligned pkt', legend=dict(x=0.1, y=1.1))
-    fig.show()
+    if Config.s2:
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=tocpu(xval), y=tocpu(yval1[xval]), mode='lines', name='input', line=dict(color='blue')))
+        fig.add_trace(go.Scatter(x=tocpu(xval), y=tocpu(yval2[xval]), mode='lines', name='fit', line=dict(dash='dash', color='red')))
+        fig.update_layout(title='aligned pkt', legend=dict(x=0.1, y=1.1))
+        fig.show()
 
     if parse_opts.end1: sys.exit(0)
 
@@ -535,12 +544,13 @@ def fine_work_new(pktdata2a):
     res_angle = cp.unwrap(res_angle)
     # res_angle[-1] += np.pi * 2 # TODO
     # noinspection PyTupleAssignmentBalance
-    params, covariance = curve_fit(quadratic, x_data, tocpu(res_angle))
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=x_data, y=tocpu(res_angle), mode='markers', name='Input Data'))
-    fig.add_trace(go.Scatter(x=x_data, y=quadratic(x_data, *params), mode="lines", name='Fitted Curve'))
-    fig.show()
-    fig.write_html(os.path.join(Config.figpath, f"res_angle.html"))
+    if Config.s3:
+        params, covariance = curve_fit(quadratic, x_data, tocpu(res_angle))
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=x_data, y=tocpu(res_angle), mode='markers', name='Input Data'))
+        fig.add_trace(go.Scatter(x=x_data, y=quadratic(x_data, *params), mode="lines", name='Fitted Curve'))
+        fig.show()
+        fig.write_html(os.path.join(Config.figpath, f"res_angle.html"))
 
     code_cnt = math.floor(len(pktdata2a_roll) / Config.nsamp - Config.sfdend - 0.5)
     code_ests = cp.zeros((code_cnt,), dtype=int)
@@ -550,9 +560,10 @@ def fine_work_new(pktdata2a):
     angle4 = cp.zeros((code_cnt,), dtype=float)
 
     sigt = Config.tsig * (1 - cfo_freq_est / Config.sig_freq)
-    tstart_p = (Config.sfdpos + 2.25) * sigt + tstart
+    #tstart_p = (Config.sfdpos + 2.25) * sigt + tstart
+    tstart_p = tstart
     beta = Config.bw / sigt
-    tid_times = (cp.arange(code_cnt + 1, dtype=float) + Config.sfdpos + 2.25) * sigt + tstart
+    tid_times = (cp.arange(code_cnt + 1, dtype=float)) * sigt + tstart
     tsig_arr = sigt * (1 - cp.arange(Config.n_classes, dtype=float) / Config.n_classes)
     for tid in range(code_cnt):
         upchirp1_arr = [gen_upchirp(tstart_p + sigt * tid, sigt * (1 - code / Config.n_classes),
@@ -564,24 +575,27 @@ def fine_work_new(pktdata2a):
         res1_arr = cp.zeros(Config.n_classes, dtype=cp.complex64)
         res2_arr = cp.zeros(Config.n_classes, dtype=cp.complex64)
         for code in range(Config.n_classes):
-            res1_arr[code] = cp.conj(upchirp1_arr[code]).dot(pktdata2a_roll[math.ceil(tid_times[tid]): math.ceil(tid_times[tid] + tsig_arr[code])])
+            res1_arr[code] = cp.conj(upchirp1_arr[code]).dot(pktdata2a_roll[math.ceil(tid_times[tid]): math.ceil(tid_times[tid] + tsig_arr[code])]) #/ tsig_arr[code]
         for code in range(1, Config.n_classes):
-            res2_arr[code] = cp.conj(upchirp2_arr[code]).dot(pktdata2a_roll[math.ceil(tid_times[tid] + tsig_arr[code]): math.ceil(tid_times[tid + 1])])
+            res2_arr[code] = cp.conj(upchirp2_arr[code]).dot(pktdata2a_roll[math.ceil(tid_times[tid] + tsig_arr[code]): math.ceil(tid_times[tid + 1])]) # / (tid_times[tid + 1] - tid_times[tid] - tsig_arr[code])
         res_array = cp.abs(res1_arr) ** 2 + cp.abs(res2_arr) ** 2
         est_code = tocpu(cp.argmax(res_array))
         logger.info(f"Log curvefit {est_code=} maxval={tocpu(cp.max(res_array))}")
         code_ests[tid] = est_code
+        if Config.s4:
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(y=tocpu(res_array), mode='lines+markers'))
+            fig.add_vline(x=est_code, line=dict(color='black', width=2, dash='dash'), annotation_text='est_code',
+                          annotation_position='top')
+            fig.update_layout(title=f"resarray {tid=} {est_code=}")
+            fig.show()
+            fig.write_html(os.path.join(Config.figpath, f"resarray {tid=} {est_code=}.html"))
 
-        fig = px.line(y=tocpu(res_array), title=f"resarray {tid=} {est_code=}")
-        fig.add_vline(x=est_code, line=dict(color='black', width=2, dash='dash'), annotation_text='est_code',
-                      annotation_position='top')
-        fig.write_html(os.path.join(Config.figpath, f"resarray {tid=} {est_code=}.html"))
-
-        phase = cp.angle(pktdata2a_roll[math.ceil(tid_times[tid]): math.ceil(tid_times[tid + 1])])
-        unwrapped_phase = cp.unwrap(phase)
-        fig = px.line(y=tocpu(unwrapped_phase), title=f"phase {tid=} {est_code=}")
-        fig.show()
-        fig.write_html(os.path.join(Config.figpath, f"phase {tid=} {est_code=}.html"))
+            # phase = cp.angle(pktdata2a_roll[math.ceil(tid_times[tid]): math.ceil(tid_times[tid + 1])])
+            # unwrapped_phase = cp.unwrap(phase)
+            # fig = px.line(y=tocpu(unwrapped_phase), title=f"phase {tid=} {est_code=}")
+            # fig.show()
+            # fig.write_html(os.path.join(Config.figpath, f"phase {tid=} {est_code=}.html"))
 
         angle1[tid] = cp.angle(res1_arr[est_code])
         angle2[tid] = cp.angle(res2_arr[est_code])
@@ -589,6 +603,7 @@ def fine_work_new(pktdata2a):
         # logger.info(f"{cp.abs(res1)=} {cp.angle(res1)=} {code=} {cp.abs(res1)**2+cp.abs(res2)**2=}")
 
         dataX = pktdata2a_roll[math.ceil(tid_times[tid]): math.ceil(tid_times[tid]) + Config.nsamp]
+        dataX = add_freq(dataX, - cfo_freq_est)
         dataX = dataX.T
         data1 = cp.matmul(Config.dataE1, dataX)
         data2 = cp.matmul(Config.dataE2, dataX)
@@ -603,16 +618,26 @@ def fine_work_new(pktdata2a):
             upchirp2_est = upchirp2_arr[est_code] * res2_arr[est_code] / cp.abs(res2_arr[est_code])
             upchirp_est = cp.concatenate((upchirp_est, upchirp2_est))
         sigtt = cp.arange(math.ceil(tid_times[tid]), math.ceil(tid_times[tid + 1]), dtype=int)
-        phase1 = cp.angle(pktdata2a_roll[sigtt])
+        phase1 = cp.angle(pktdata2a_roll[ math.ceil(tid_times[tid]) : math.ceil(tid_times[tid + 1])])
+        # logger.info(f"P1 {tid_times[tid]=} {tid=} {sigt=}")
         phase2 = cp.angle(upchirp_est)
-        fig = px.line(x=tocpu(sigtt), y=[tocpu(cp.unwrap(phase1)), tocpu(cp.unwrap(phase2))], color_discrete_sequence=['blue', 'red'], title=f"fit code {tid=} {est_code=}")
-        fig.data[0].name = 'Input'
-        fig.data[1].name = 'Fitting'
-        fig.data[1].line = dict(dash='dash')
-        fig.add_vline(x=tid_times[tid] + tsig_arr[est_code], line=dict(color='black', width=2, dash='dash'), annotation_text='est_code',
-                      annotation_position='top')
-        fig.show()
-        fig.write_html(os.path.join(Config.figpath, f"fit code {tid=} {est_code=}.html"))
+        if Config.s5:
+            fig = px.line(x=tocpu(sigtt), y=[tocpu(cp.unwrap(phase1)), tocpu(cp.unwrap(phase2))], color_discrete_sequence=['blue', 'red'], title=f"fit code {tid=} {est_code=}")
+            fig.data[0].name = 'Input'
+            fig.data[1].name = 'Fitting'
+            fig.data[1].line = dict(dash='dash')
+            fig.add_vline(x=tid_times[tid] + tsig_arr[est_code], line=dict(color='black', width=2, dash='dash'), annotation_text='est_code',
+                          annotation_position='top')
+            fig.show()
+            fig.write_html(os.path.join(Config.figpath, f"fit code {tid=} {est_code=}.html"))
+        if Config.s6:
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(y=tocpu(cp.diff(cp.unwrap(phase1))), mode='lines', name='Input Data'))
+            fig.add_trace(go.Scatter(y=tocpu(cp.diff(cp.unwrap(phase2))), mode="lines", line=dict(dash='dash', color='red'), name='Fitted Curve'))
+            # fig.add_vline(x=tid_times[tid] + tsig_arr[est_code], line=dict(color='black', width=2, dash='dash'), annotation_text='est_code',
+            #               annotation_position='top')
+            fig.show()
+            fig.write_html(os.path.join(Config.figpath, f"fit code2 {tid=} {est_code=}.html"))
         sys.exit(0)
     fig = px.line(y=[angle1, angle2], color_discrete_sequence=['blue', 'red'],
                   title=f"angles of symbols")
