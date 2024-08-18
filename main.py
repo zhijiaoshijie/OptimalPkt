@@ -4,6 +4,7 @@ import os
 import random
 import sys
 import time
+from turtledemo.penrose import start
 
 import cmath
 import math
@@ -91,7 +92,6 @@ console_handler.setFormatter(formatter)
 file_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 logger.addHandler(file_handler)
-logger2 = logging.getLogger('debug_logger')
 
 script_path = __file__
 mod_time = os.path.getmtime(script_path)
@@ -400,11 +400,11 @@ def fine_work(pktdata2a):
 
 
 def gen_upchirp(t0, td, f0, beta):
-    logger2.debug(f"{t0=} {td=} {f0=} {beta=}")
-    assert -1 <= t0 <= 0
-    t = (cp.arange(math.floor(t0 + td), dtype=float) - t0) / Config.fs
-    logger2.debug(f"{t[0]=} {t[-1]=}")
-    phase = 2 * cp.pi * (f0 * t + 0.5 * beta * t * t)
+    # start from ceil(t0in), end
+    # logger.debug(f"D {t0=} {td=} {f0=} {beta=}")
+    t = (cp.arange(math.ceil(t0), math.ceil(t0 + td), dtype=float) - t0)
+    # logger.debug(f"D {t[0]=} {t[-1]=}")
+    phase = 2 * cp.pi * (f0 * t + 0.5 * beta * t * t) / Config.fs
     sig = cp.exp(1j * phase)
     return sig
 
@@ -427,22 +427,24 @@ def fine_work_new(pktdata2a):  # TODO working
             tid_times = gen_refchirp_time(cfofreq, time_error - math.ceil(time_error))
             tid_times_ceil = cp.ceil(tid_times).astype(int)
             res = cp.zeros(len(detect_symb), dtype=cp.complex64)
+            ddx = 0 # TODO
             for sidx, ssymb in enumerate(detect_symb):
-                ress = cp.conj(ssymb).dot(pktdata2a_roll[tid_times_ceil[sidx]: tid_times_ceil[sidx + 1]])
-                res[sidx] = ress / (tid_times_ceil[sidx + 1] - tid_times_ceil[sidx])
+                ress = cp.conj(ssymb).dot(pktdata2a_roll[ddx : ddx + len(ssymb)])
+                ddx += len(ssymb)
+                res[sidx] = ress / len(ssymb)
             return - tocpu(cp.sum(cp.abs(res) ** 2))  # Negative because we use a minimizer
 
-        # t_lower, t_upper = 0, Config.nsamp # TODO
-        # f_lower, f_upper = -30000, -23000
-        # bestx = None
-        # bestobj = cp.inf
-        f_guess = -25364.299
-        t_guess = 922.660
+        t_lower, t_upper = 0, Config.nsamp # TODO
+        f_lower, f_upper = -30000, -23000
+        bestx = None
+        bestobj = cp.inf
+        # f_guess = -25364.299
+        # t_guess = 922.660
         for tryidx in range(10000):
-            t_lower, t_upper = t_guess - 50, t_guess + 50
-            f_lower, f_upper = f_guess - 200, f_guess + 200
-            bestx = [f_guess, t_guess]
-            bestobj = objective(bestx)
+            # t_lower, t_upper = t_guess - 50, t_guess + 50
+            # f_lower, f_upper = f_guess - 200, f_guess + 200
+            # bestx = [f_guess, t_guess]
+            # bestobj = objective(bestx)
             start_t = random.uniform(t_lower, t_upper)
             start_f = random.uniform(f_lower, f_upper)
             # noinspection PyTypeChecker
@@ -456,7 +458,7 @@ def fine_work_new(pktdata2a):  # TODO working
                 f_guess, t_guess = result.x
                 bestobj = result.fun
         cfo_freq_est, time_error = bestx
-        logger.info(f"Optimized parameters: {cfo_freq_est=} {time_error=}")
+        logger.info(f"Optimized parameters:\n{cfo_freq_est=}\n{time_error=}")
 
         if parse_opts.plotmap:
             start_t = np.linspace(0, Config.nsamp, Config.nsamp * 5)
@@ -478,10 +480,12 @@ def fine_work_new(pktdata2a):  # TODO working
         cfo_freq_est_delta = 0  # 100
         time_error_delta = 0
     else:
-        # cfo_freq_est = -26685.110 # best for 50/sf7/20
-        # time_error = 225.221
-        cfo_freq_est = -25364.299
-        time_error = 922.660
+        cfo_freq_est = -26685.110 # best for 50/sf7/20
+        time_error = 225.221
+        # cfo_freq_est = -26789.411976307307
+        # time_error = 224.64248426804352
+        # cfo_freq_est = -25364.299
+        # time_error = 922.660
         cfo_freq_est_delta = 0  # TODO
         time_error_delta = 0
         cfo_freq_est += cfo_freq_est_delta
@@ -493,7 +497,7 @@ def fine_work_new(pktdata2a):  # TODO working
     detect_symb_plt = cp.concatenate(detect_symb_plt)
     detect_symb_plt *= (pktdata2a_roll[0] / cp.abs(pktdata2a_roll[0]))
     tstart = time_error - math.ceil(time_error) + (Config.sfdend - 0.75) * Config.tsig * (1 - cfo_freq_est / Config.sig_freq)
-    xval = cp.arange(1024*60, 1024*65)
+    xval = cp.arange(len(detect_symb_plt))
     # xval = cp.arange(len(detect_symb_plt))
     yval1 = cp.unwrap(phase1)
     yval2 = cp.unwrap(cp.angle(detect_symb_plt))
@@ -645,7 +649,8 @@ def gen_refchirp(cfofreq, tstart, deadzone=0):
     for tid in range(Config.preamble_len, Config.sfdpos):
         detect_symb.append(cp.zeros(math.ceil(tstart + sigt * (tid + 1)) - math.ceil(tstart + sigt * tid), dtype=cp.complex64))
     for tid in range(Config.sfdpos, Config.sfdend):
-        upchirp = gen_upchirp(tstart + sigt * tid, sigt, Config.bw / 2 + cfofreq, - beta)
+        upchirp = gen_upchirp(tstart + sigt * tid, sigt if tid != Config.sfdend - 1 else sigt / 4,
+                              Config.bw / 2 + cfofreq, - beta)
         # assert len(upchirp) == math.ceil(tid_times[tid + 1]) - math.ceil(tid_times[tid])
         if deadzone > 0:
             upchirp[:deadzone] = cp.zeros(deadzone, dtype=cp.complex64)
