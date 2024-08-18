@@ -91,6 +91,7 @@ console_handler.setFormatter(formatter)
 file_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 logger.addHandler(file_handler)
+logger2 = logging.getLogger('debug_logger')
 
 script_path = __file__
 mod_time = os.path.getmtime(script_path)
@@ -117,8 +118,8 @@ class Config:
     # base_dir = '/data/djl/datasets/Dataset_50Nodes'
     figpath = "fig"
     if not os.path.exists(figpath): os.mkdir(figpath)
-    # file_paths = ['/data/djl/datasets/Dataset_50Nodes/sf7-470-new-70.bin']
-    file_paths = ['/data/djl/datasets/sf7-470-pre-2.bin']
+    file_paths = ['/data/djl/datasets/Dataset_50Nodes/sf7-470-new-70.bin']
+    # file_paths = ['/data/djl/datasets/sf7-470-pre-2.bin']
     # file_paths = ['/data/djl/datasets/sf7-470-pre-2.bin']
     # for file_name in os.listdir(base_dir):
     #     if file_name.startswith('sf7') and file_name.endswith('.bin'):
@@ -128,7 +129,7 @@ class Config:
     nfreq = 1024 + 1
     time_upsamp = 32
 
-    preamble_len = 64  # TODO
+    preamble_len = 8  # TODO
     code_len = 2
     # codes = [50, 101]  # TODO set codes
     fft_upsamp = 1024
@@ -399,7 +400,10 @@ def fine_work(pktdata2a):
 
 
 def gen_upchirp(t0, td, f0, beta):
-    t = cp.arange(math.ceil(t0), math.ceil(t0 + td), dtype=float) / Config.fs
+    logger2.debug(f"{t0=} {td=} {f0=} {beta=}")
+    assert -1 <= t0 <= 0
+    t = (cp.arange(math.floor(t0 + td), dtype=float) - t0) / Config.fs
+    logger2.debug(f"{t[0]=} {t[-1]=}")
     phase = 2 * cp.pi * (f0 * t + 0.5 * beta * t * t)
     sig = cp.exp(1j * phase)
     return sig
