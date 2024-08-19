@@ -1,17 +1,18 @@
-import plotly.express as px
-import plotly.graph_objects as go
-import pandas as pd
+import numpy as np
 
-# Sample data
-xval = list(range(10))
-yval1= [1, 3, 2, 5, 7, 8, 6, 9, 11, 12]
-yval2= [2, 4, 1, 6, 8, 7, 5, 10, 12, 13]
+# Coefficients of the trigonometric polynomial
+a = [1,1j,-1,-1j,1]
+n= 5
 
-fig = px.line(y=[yval1, yval2],color_discrete_sequence=['blue', 'red'], title="input data 15 symbol")
-fig.data[0].name = 'Line 1'
-fig.data[1].name = 'Line 2'
-fig.show()
-fig.write_html("input_data.html")
-fig.write_html(os.path.join(Config.figpath, f"resarray {tid=} {est_code=}.html"))
-fig.add_vline(x=est_code, line=dict(color='black', width=2, dash='dash'), annotation_text='est_code',
-              annotation_position='top')
+# Construct the companion matrix
+n = len(a) - 1
+C = np.zeros((n, n))
+C[1:, :-1] = np.eye(n-1)
+C[:, -1] = -np.array(a[1:])
+
+# Find the eigenvalues
+eigenvalues = np.linalg.eigvals(C)
+
+# Convert eigenvalues to angles
+roots = np.angle(eigenvalues)
+print(roots)

@@ -419,6 +419,15 @@ def gen_upchirp(t0, td, f0, beta):
     return sig
 
 
+def gen_upchirp_de(t0, td, f0, beta):
+    # start from ceil(t0in), end
+    # logger.debug(f"D {t0=} {td=} {f0=} {beta=}")
+    t = (cp.arange(math.ceil(t0), math.ceil(t0 + td), dtype=float) - t0)
+    # logger.debug(f"D {t[0]=} {t[-1]=}")
+    sig = cp.exp(2j * cp.pi * (f0 * t + 0.5 * beta * t * t) / Config.fs) * 1j * cp.pi * (f0 + beta * t ) / Config.fs
+    return sig
+
+
 def fine_work_new(pktdata2a):
     pktdata2a = togpu(pktdata2a)
 
@@ -505,31 +514,35 @@ def fine_work_new(pktdata2a):
 
 
     if parse_opts.plotline:
-        xt_data = np.linspace(time_error - 5, time_error + 5, 1000)
+        xt_data = np.linspace(time_error - 200, time_error + 200, 1000)
         yval = np.zeros(len(xt_data))
+        yval2 = np.zeros(len(xt_data))
         for idx, time_error_2 in enumerate(xt_data):
-            detect_symb_rangle = gen_refchirp(cfo_freq_est, time_error_2 - math.ceil(time_error_2))
+            detect_symb_p = gen_refchirp(cfo_freq_est, time_error_2 - math.ceil(time_error_2))
+            detect_symb_p2 = gen_refchirp_de(cfo_freq_est, time_error_2 - math.ceil(time_error_2))
             didx = math.ceil(time_error_2)
             ssum = 0
-            for sidx, ssymb in enumerate(detect_symb_rangle[:Config.preamble_len]):
+            ssum2 = 0
+            for sidx, ssymb in enumerate(detect_symb_p[:Config.preamble_len]):
                 ress = cp.conj(togpu(ssymb)).dot(pktdata2a[didx: didx + len(ssymb)])
                 ssum += cp.abs(ress) ** 2
+                ress2 = cp.conj(togpu(detect_symb_p2[sidx])).dot(pktdata2a[didx: didx + len(ssymb)])
+                ssum2 += cp.abs(ress2) ** 2
                 didx += len(ssymb)
             yval[idx] = ssum
+            yval2[idx] = ssum2
 
-        def quadratic(x, a, b, c):
-            return a * x ** 2 + b * x + c
-
-        params, covariance = curve_fit(quadratic, xt_data, yval)
-        logger.info(f"FT fit time line curve {params=}")
-        fig = px.line(x = xt_data, y=yval, title="power with time err")
-        fig.add_trace(go.Scatter(x=xt_data, y=quadratic(xt_data, *params), mode='lines', line=dict(color='red', dash='dash'), name='Fitted Curve'))
+        # def quadratic(x, a, b, c):
+        #     return a * x ** 2 + b * x + c
+        # params, covariance = curve_fit(quadratic, xt_data, yval)
+        # logger.info(f"FT fit time line curve {params=}")
+        fig = px.line(x = xt_data, y=yval / np.max(yval), title="power with time err")
+        # fig.add_trace(go.Scatter(x=xt_data, y=quadratic(xt_data, *params), mode='lines', line=dict(color='red', dash='dash'), name='Fitted Curve'))
+        fig.add_trace(go.Scatter(x=xt_data, y=yval2 / np.max(yval2), mode='lines', line=dict(color='red', dash='dash'), name='Derivative'))
         fig.add_vline(x=time_error, line=dict(color='black', width=2, dash='dash'), annotation_text='est_time',
                               annotation_position='top')
         fig.show()
         fig.write_html(os.path.join(Config.figpath, f"power with time err.html"))
-
-
 
     pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
     phase1 = cp.angle(pktdata2a_roll)
@@ -553,10 +566,10 @@ def fine_work_new(pktdata2a):
 
     if parse_opts.end1: sys.exit(0)
 
-    detect_symb_rangle = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
+    detect_symb_p = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
     didx = 0
     res_angle = cp.zeros((Config.preamble_len,), dtype=float)
-    for sidx, ssymb in enumerate(detect_symb_rangle[:Config.preamble_len]):
+    for sidx, ssymb in enumerate(detect_symb_p[:Config.preamble_len]):
         ress = cp.conj(togpu(ssymb)).dot(pktdata2a_roll[didx: didx + len(ssymb)])
         rangle = cp.angle(ress)
         res_angle[sidx] = rangle
@@ -709,6 +722,30 @@ def gen_refchirp(cfofreq, tstart, deadzone=0):
         detect_symb.append(cp.zeros(math.ceil(tstart + sigt * (tid + 1)) - math.ceil(tstart + sigt * tid), dtype=cp.complex64))
     for tid in range(Config.sfdpos, Config.sfdend):
         upchirp = gen_upchirp(tstart + sigt * tid, sigt if tid != Config.sfdend - 1 else sigt / 4,
+                              Config.bw / 2 + cfofreq, - beta)
+        # assert len(upchirp) == math.ceil(tid_times[tid + 1]) - math.ceil(tid_times[tid])
+        if deadzone > 0:
+            upchirp[:deadzone] = cp.zeros(deadzone, dtype=cp.complex64)
+            upchirp[-deadzone:] = cp.zeros(deadzone, dtype=cp.complex64)
+        detect_symb.append(upchirp)
+    return detect_symb
+
+def gen_refchirp_de(cfofreq, tstart, deadzone=0):
+    detect_symb = []
+    # tid_times = gen_refchirp_time(cfofreq, tstart)
+    sigt = Config.tsig * (1 - cfofreq / Config.sig_freq)
+    beta = Config.bw / sigt
+    for tid in range(Config.preamble_len):
+        upchirp = gen_upchirp_de(tstart + sigt * tid, sigt, -Config.bw / 2 + cfofreq, beta)
+        # assert len(upchirp) == math.ceil(tid_times[tid + 1]) - math.ceil(tid_times[tid])
+        if deadzone > 0:
+            upchirp[:deadzone] = cp.zeros(deadzone, dtype=cp.complex64)
+            upchirp[-deadzone:] = cp.zeros(deadzone, dtype=cp.complex64)
+        detect_symb.append(upchirp)
+    for tid in range(Config.preamble_len, Config.sfdpos):
+        detect_symb.append(cp.zeros(math.ceil(tstart + sigt * (tid + 1)) - math.ceil(tstart + sigt * tid), dtype=cp.complex64))
+    for tid in range(Config.sfdpos, Config.sfdend):
+        upchirp = gen_upchirp_de(tstart + sigt * tid, sigt if tid != Config.sfdend - 1 else sigt / 4,
                               Config.bw / 2 + cfofreq, - beta)
         # assert len(upchirp) == math.ceil(tid_times[tid + 1]) - math.ceil(tid_times[tid])
         if deadzone > 0:
