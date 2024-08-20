@@ -48,6 +48,10 @@ parser.add_argument('--end1', action='store_true', default=False)
 parser.add_argument('--savefile', action='store_true', default=False)
 parser.add_argument('--noplot', action='store_true', default=False)
 parser.add_argument('--fromfile', type=str, default=None)
+parser.add_argument('--compLTSNR', action='store_true', default=False)
+parser.add_argument('--decode_unknown', action='store_true', default=False)
+parser.add_argument('--snrlow', type=int, default=-20)
+parser.add_argument('--snrhigh', type=int, default=-19)
 parse_opts = parser.parse_args()
 
 use_gpu = not parse_opts.cpu
@@ -121,7 +125,7 @@ class Config:
     s4 = 0
     s5 = 0
     s6 = 0
-    s7 = 1
+    s7 = 0
     s8 = 0
     sflag_end = None
 
@@ -452,7 +456,7 @@ def fine_work_new(pktidx, pktdata2a):
         phase = cp.angle(pktdata2a)
         unwrapped_phase = cp.unwrap(phase)
         fig = px.line(y=tocpu(unwrapped_phase[:15 * 1024]), title="input data 15 symbol")
-        fig.show()
+        if not parse_opts.noplot: fig.show()
         fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} input_data.html"))
 
     # Perform optimization
@@ -519,7 +523,7 @@ def fine_work_new(pktidx, pktdata2a):
 
         fig = go.Figure(data=go.Heatmap( z=Z, x=start_t, y=start_f, colorscale='Viridis' ))
         fig.update_layout( title='Heatmap of objective(start_t, start_f)', xaxis_title='t', yaxis_title='f')
-        fig.show()
+        if not parse_opts.noplot: fig.show()
         fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} Plotmap.html"))
         maxidx = np.unravel_index(np.argmin(Z, axis=None), Z.shape, order='C')
         best_f = start_t[maxidx[0]]
@@ -558,7 +562,7 @@ def fine_work_new(pktidx, pktdata2a):
         fig.add_trace(go.Scatter(x=xt_data, y=yval2 / np.max(yval2), mode='lines', line=dict(color='red', dash='dash'), name='Derivative'))
         fig.add_vline(x=time_error, line=dict(color='black', width=2, dash='dash'), annotation_text='est_time',
                               annotation_position='top')
-        fig.show()
+        if not parse_opts.noplot: fig.show()
         fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} power with time err.html"))
 
     pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
@@ -579,7 +583,7 @@ def fine_work_new(pktidx, pktdata2a):
         fig.add_trace(go.Scatter(x=tocpu(xval), y=tocpu(yval1[xval]), mode='lines', name='input', line=dict(color='blue')))
         fig.add_trace(go.Scatter(x=tocpu(xval), y=tocpu(yval2[xval]), mode='lines', name='fit', line=dict(dash='dash', color='red')))
         fig.update_layout(title='aligned pkt', legend=dict(x=0.1, y=1.1))
-        fig.show()
+        if not parse_opts.noplot: fig.show()
 
     if parse_opts.end1: sys.exit(0)
 
@@ -604,7 +608,7 @@ def fine_work_new(pktidx, pktdata2a):
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=x_data, y=tocpu(res_angle), mode='markers', name='Input Data'))
         fig.add_trace(go.Scatter(x=x_data, y=quadratic(x_data, *params), mode="lines", name='Fitted Curve'))
-        fig.show()
+        if not parse_opts.noplot: fig.show()
         fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} res_angle.html"))
 
     if parse_opts.savefile:
@@ -625,6 +629,7 @@ def decode_new(pktidx, pktdatas, tstart_p, cfo_freq_est):
     tid_times = (cp.arange(code_cnt + 1, dtype=float)) * sigt + tstart_p
 
     code_ests = cp.zeros((code_cnt,), dtype=int)
+    code_ests_LT = cp.zeros((code_cnt,), dtype=int)
     code_powers = cp.zeros((code_cnt,), dtype=int)
     angle1 = cp.zeros((code_cnt,), dtype=float)
     angle2 = cp.zeros((code_cnt,), dtype=float)
@@ -633,55 +638,57 @@ def decode_new(pktidx, pktdatas, tstart_p, cfo_freq_est):
     beta = Config.bw / sigt
     tsig_arr = sigt * (1 - cp.arange(Config.n_classes, dtype=float) / Config.n_classes)
 
-    for tid in tqdm(range(code_cnt)):
-        upchirp1_arr = [gen_upchirp(tstart_p + sigt * tid, sigt * (1 - code / Config.n_classes),
+    for codeid in tqdm(range(code_cnt)):
+        upchirp1_arr = [gen_upchirp(tstart_p + sigt * codeid, sigt * (1 - code / Config.n_classes),
                                     ((code / Config.n_classes - 0.5) * Config.bw) + cfo_freq_est, beta)
                         for code in range(Config.n_classes)]
-        upchirp2_arr = [gen_upchirp(tstart_p + sigt * (tid + 1 - code / Config.n_classes), sigt * code / Config.n_classes,
+        upchirp2_arr = [gen_upchirp(tstart_p + sigt * (codeid + 1 - code / Config.n_classes), sigt * code / Config.n_classes,
                                     -Config.bw / 2 + cfo_freq_est, beta) if code != 0 else None
                         for code in range(Config.n_classes)]
         res1_arr = cp.zeros(Config.n_classes, dtype=cp.complex64)
         res2_arr = cp.zeros(Config.n_classes, dtype=cp.complex64)
         for code in range(Config.n_classes):
-            res1_arr[code] = cp.conj(upchirp1_arr[code]).dot(pktdatas[math.ceil(tid_times[tid]): math.ceil(tid_times[tid] + tsig_arr[code])]) #/ tsig_arr[code]
+            res1_arr[code] = cp.conj(upchirp1_arr[code]).dot(pktdatas[math.ceil(tid_times[codeid]): math.ceil(tid_times[codeid] + tsig_arr[code])]) #/ tsig_arr[code]
         for code in range(1, Config.n_classes):
-            res2_arr[code] = cp.conj(upchirp2_arr[code]).dot(pktdatas[math.ceil(tid_times[tid] + tsig_arr[code]): math.ceil(tid_times[tid + 1])]) # / (tid_times[tid + 1] - tid_times[tid] - tsig_arr[code])
+            res2_arr[code] = cp.conj(upchirp2_arr[code]).dot(pktdatas[math.ceil(tid_times[codeid] + tsig_arr[code]): math.ceil(tid_times[codeid + 1])]) # / (tid_times[tid + 1] - tid_times[tid] - tsig_arr[code])
         res_array = cp.abs(res1_arr) ** 2 + cp.abs(res2_arr) ** 2
         est_code = tocpu(cp.argmax(res_array))
-        code_powers[tid] = cp.max(res_array)
+        code_powers[codeid] = cp.max(res_array)
         logger.debug(f"L curvefit {est_code=} maxval={tocpu(cp.max(res_array))}")
-        code_ests[tid] = est_code
+        code_ests[codeid] = est_code
         if Config.s4:
             fig = go.Figure()
             fig.add_trace(go.Scatter(y=tocpu(res_array), mode='lines+markers'))
             fig.add_vline(x=est_code, line=dict(color='black', width=2, dash='dash'), annotation_text='est_code',
                           annotation_position='top')
-            fig.update_layout(title=f"resarray {tid=} {est_code=}")
-            fig.show()
-            fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} resarray {tid=} {est_code=}.html"))
+            fig.update_layout(title=f"resarray {codeid=} {est_code=}")
+            if not parse_opts.noplot: fig.show()
+            fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} resarray {codeid=} {est_code=}.html"))
 
             # phase = cp.angle(pktdata2a_roll[math.ceil(tid_times[tid]): math.ceil(tid_times[tid + 1])])
             # unwrapped_phase = cp.unwrap(phase)
             # fig = px.line(y=tocpu(unwrapped_phase), title=f"phase {tid=} {est_code=}")
-            # fig.show()
+            # if not parse_opts.noplot: fig.show()
             # fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} phase {tid=} {est_code=}.html"))
 
-        if Config.s7:
-            angle1[tid] = cp.angle(res1_arr[est_code])
-            angle2[tid] = cp.angle(res2_arr[est_code])
-            # logger.info(f"abs1={cp.abs(res1_arr[est_code])} angle1={cp.angle(res1_arr[est_code])} abs2={cp.abs(res2_arr[est_code])} angle2={cp.angle(res2_arr[est_code])} {est_code=} tot_power={cp.abs(res1_arr[est_code])**2+cp.abs(res2_arr[est_code])**2}")
-
-            dataX = pktdatas[math.ceil(tid_times[tid]): math.ceil(tid_times[tid]) + Config.nsamp]
+        if Config.s7 or parse_opts.compLTSNR:
+            dataX = pktdatas[math.ceil(tid_times[codeid]): math.ceil(tid_times[codeid]) + Config.nsamp]
             dataX = add_freq(dataX, - cfo_freq_est)
             dataX = dataX.T
             data1 = cp.matmul(Config.dataE1, dataX)
             data2 = cp.matmul(Config.dataE2, dataX)
             vals = cp.abs(data1) ** 2 + cp.abs(data2) ** 2
             est = tocpu(cp.argmax(vals))
-            angle3[tid] = cp.angle(data1[est])
-            angle4[tid] = cp.angle(data2[est])
-            # logger.info(f"LT: {tid=} {est=} {cp.abs(data1[est])=} {cp.abs(data2[est])=} {angle3[tid]=} {angle4[tid]=}")
-        if Config.sflag_end is not None and tid >= code_cnt - Config.sflag_end:
+            code_ests_LT[codeid] = est
+            if Config.s7:
+                angle1[codeid] = cp.angle(res1_arr[est_code])
+                angle2[codeid] = cp.angle(res2_arr[est_code])
+                # logger.info(f"abs1={cp.abs(res1_arr[est_code])} angle1={cp.angle(res1_arr[est_code])} abs2={cp.abs(res2_arr[est_code])} angle2={cp.angle(res2_arr[est_code])} {est_code=} tot_power={cp.abs(res1_arr[est_code])**2+cp.abs(res2_arr[est_code])**2}")
+
+                angle3[codeid] = cp.angle(data1[est])
+                angle4[codeid] = cp.angle(data2[est])
+                # logger.info(f"LT: {tid=} {est=} {cp.abs(data1[est])=} {cp.abs(data2[est])=} {angle3[tid]=} {angle4[tid]=}")
+        if Config.sflag_end is not None and codeid >= code_cnt - Config.sflag_end:
             Config.s5 = 1
             Config.s6 = 1
         else:
@@ -692,62 +699,62 @@ def decode_new(pktidx, pktdatas, tstart_p, cfo_freq_est):
             if est_code != 0:
                 upchirp2_est = upchirp2_arr[est_code] * res2_arr[est_code] / cp.abs(res2_arr[est_code])
                 upchirp_est = cp.concatenate((upchirp_est, upchirp2_est))
-            sigtt = cp.arange(math.ceil(tid_times[tid]), math.ceil(tid_times[tid + 1]), dtype=int)
-            phase1 = cp.angle(pktdatas[math.ceil(tid_times[tid]): math.ceil(tid_times[tid + 1])])
+            sigtt = cp.arange(math.ceil(tid_times[codeid]), math.ceil(tid_times[codeid + 1]), dtype=int)
+            phase1 = cp.angle(pktdatas[math.ceil(tid_times[codeid]): math.ceil(tid_times[codeid + 1])])
             # logger.info(f"P1 {tid_times[tid]=} {tid=} {sigt=}")
             phase2 = cp.angle(upchirp_est)
         if Config.s5:
-            fig = px.line(x=tocpu(sigtt), y=[tocpu(cp.unwrap(phase1)), tocpu(cp.unwrap(phase2))], color_discrete_sequence=['blue', 'red'], title=f"fit code {tid=} {est_code=}")
+            fig = px.line(x=tocpu(sigtt), y=[tocpu(cp.unwrap(phase1)), tocpu(cp.unwrap(phase2))], color_discrete_sequence=['blue', 'red'], title=f"fit code {codeid=} {est_code=}")
             fig.data[0].name = 'Input'
             fig.data[1].name = 'Fitting'
             fig.data[1].line = dict(dash='dash')
-            fig.add_vline(x=tid_times[tid] + tsig_arr[est_code], line=dict(color='black', width=2, dash='dash'), annotation_text='est_code',
+            fig.add_vline(x=tid_times[codeid] + tsig_arr[est_code], line=dict(color='black', width=2, dash='dash'), annotation_text='est_code',
                           annotation_position='top')
-            fig.show()
-            fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} fit code {tid=} {est_code=}.html"))
+            if not parse_opts.noplot: fig.show()
+            fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} fit code {codeid=} {est_code=}.html"))
         if Config.s6:
             fig = go.Figure()
             fig.add_trace(go.Scatter(y=tocpu(cp.diff(cp.unwrap(phase1))), mode='lines', name='Input Data'))
             fig.add_trace(go.Scatter(y=tocpu(cp.diff(cp.unwrap(phase2))), mode="lines", line=dict(dash='dash', color='red'), name='Fitted Curve'))
             # fig.add_vline(x=tid_times[tid] + tsig_arr[est_code], line=dict(color='black', width=2, dash='dash'), annotation_text='est_code',
             #               annotation_position='top')
-            fig.show()
-            fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} fit code2 {tid=} {est_code=}.html"))
+            if not parse_opts.noplot: fig.show()
+            fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} fit code2 {codeid=} {est_code=}.html"))
     if Config.s7:
         fig = px.scatter(y=tocpu(code_ests), title=f"pkt{pktidx} code estimations")
-        fig.show()
+        if not parse_opts.noplot: fig.show()
         fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} code estsyy.html"))
 
         fig = px.scatter(y=tocpu(code_powers), title=f"pkt{pktidx} code powers")
-        fig.show()
+        if not parse_opts.noplot: fig.show()
         fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} code powers.html"))
 
         fig = px.scatter(x=tocpu(code_ests), y=tocpu(code_powers), title=f"pkt{pktidx} code powers to code")
-        fig.show()
+        if not parse_opts.noplot: fig.show()
         fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} code powers to code.html"))
 
         fig = px.line(y=[tocpu(angle1), tocpu(angle2)], color_discrete_sequence=['blue', 'red'],
                       title=f"pkt{pktidx} angles of symbols")
-        fig.show()
+        if not parse_opts.noplot: fig.show()
         fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} angles of symbols.html"))
 
         # noinspection PyArgumentList
         fig = px.scatter(x=tocpu(code_ests), y=[tocpu(angle1), tocpu(angle2)], color_discrete_sequence=['blue', 'red'],
                       title=f"pkt{pktidx} angles of symbols vs code")
-        fig.show()
+        if not parse_opts.noplot: fig.show()
         fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} angles of symbols vs code.html"))
 
         fig = px.line(y=[tocpu(angle3), tocpu(angle4)], color_discrete_sequence=['blue', 'red'],
                       title=f"pkt{pktidx} angles of symbols LT method")
-        fig.show()
+        if not parse_opts.noplot: fig.show()
         fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} angles of symbols LT method.html"))
 
         # noinspection PyArgumentList
         fig = px.scatter(x=tocpu(code_ests), y=[tocpu(angle3), tocpu(angle4)], color_discrete_sequence=['blue', 'red'],
                          title=f"pkt{pktidx} angles of symbols vs code LT method")
-        fig.show()
+        if not parse_opts.noplot: fig.show()
         fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} angles of symbols vs code LT method.html"))
-    return code_ests
+    return code_ests, code_ests_LT
 
 
 def gen_refchirp_time(cfofreq, tstart):
@@ -839,16 +846,55 @@ if __name__ == "__main__":
     if parse_opts.fromfile:
         with open(f"{parse_opts.fromfile}", "rb") as f:
             pktdata_lst, tstart_lst, cfo_freq_est = pickle.load(f)
-            # code_ref = None
             code_ref = cp.array([33,61,61,113,73,25,29,45,51,102,75,86,110,43,91,78,10,109,39,109,76,103,110,10,90,52,40,80,6,12,118,68,104,79,99,59,120,23,84,64,123,11,108,55,20,48,69,102,25,50,29,40,96,71,115,86,4,8,113,63,125,2,1,52,4,8,16,32,100,58,28,62,105,48,32,32,69,122,109,23,97,63,68,71,114,22,81,90,126,6,117,10,43,93,116,31,56,18,29,25,39,76,85,122,62,124,55,77,111,46,95,0,7,116,26,20,57,0,3,1,7,13,25,49,9,17,59,27,28,56,17,64,93,79,18,89,114,29,121,47,86,91,120,32,60,10,45,121,55,108,33,78,3,65,32,33,32,16,3,0])
+            if parse_opts.decode_unknown: code_ref = None
+            snr_range = np.arange(parse_opts.snrlow, parse_opts.snrhigh, dtype=int)
+            snr_list = np.zeros((2, len(snr_range)))
+            snr_list_cnt = 0
+            logger.info(f"{len(snr_range)=} {snr_list.shape=}")
             for idx, (p, t, c) in enumerate(zip(pktdata_lst, tstart_lst, cfo_freq_est)):
-                code_res = decode_new(idx, p, t, c)
-                if code_ref is None:
-                    code_ref = code_res
-                    logger.info(f"ref:{cp_str(code_ref, precision=0)}")
+                if parse_opts.compLTSNR:
+                    if code_ref is None:
+                        code_ref, code_ref_LT = decode_new(idx, p, t, c)
+                        logger.info(f"decoderef: ACC:{tocpu(cp.sum(code_ref_LT[:lenc]==code_ref[:lenc])/lenc)}")
+                        logger.info(f"ref:{cp_str(code_ref, precision=0)}")
+                    else:
+                        code_res, code_res_LT = decode_new(idx, p, t, c)
+                        lenc = min(len(code_res), len(code_ref))
+                        if cp.sum(code_ref[:lenc]==code_res[:lenc]) != lenc:
+                            logger.warning(f"skipping: decodecheck ACC:{tocpu(cp.sum(code_ref[:lenc] == code_res[:lenc]) / lenc)}")
+                            continue
+                        if cp.sum(code_ref[:lenc] == code_res_LT[:lenc]) != lenc:
+                            logger.warning(f"skipping: decodecheck ACC:{tocpu(cp.sum(code_ref[:lenc] == code_res_LT[:lenc]) / lenc)}")
+                            continue
+                    snr_list_cnt += 1
+                    for snridx, snr in enumerate(snr_range):
+                        amp = math.pow(0.1, snr / 20) * np.mean(np.abs(p))
+                        noise = amp / math.sqrt(2) * cp.random.randn(len(p)) + 1j * amp / math.sqrt(2) * cp.random.randn(len(p))
+                        pX = p + togpu(noise)  # dataX: data with noise
+                        code_res, code_res_LT = decode_new(idx, pX, t, c)
+                        lenc = min(len(code_res), len(code_ref))
+                        acc = tocpu(cp.sum(code_res[:lenc] == code_ref[:lenc]) / lenc)
+                        snr_list[0, snridx] += acc
+                        acc_LT = tocpu(cp.sum(code_res_LT[:lenc] == code_ref[:lenc]) / lenc)
+                        snr_list[1, snridx] += acc_LT
+                        logger.info(f"decode:{idx} len:{len(code_res)}/{len(code_ref)} SNR:{snr} ACC:{acc} ACCLT:{acc_LT}")
+                        fig = go.Figure()
+                        fig.add_trace(go.Scatter(x=snr_range, y=snr_list[0]/snr_list_cnt, mode='lines', name='Ours'))
+                        fig.add_trace(go.Scatter(x=snr_range, y=snr_list[1]/snr_list_cnt, mode='lines', name='LT'))
+                        fig.write_html(os.path.join(Config.figpath, f"acc_snr_ours_LT.html"))
+                        if not parse_opts.noplot: fig.show()
+                    logger.info(f"snrlow:{parse_opts.snrlow} acc:{cp_str(snr_list/snr_list_cnt)}")
                 else:
-                    lenc = min(len(code_res), len(code_ref))
-                    logger.info(f"decode:{idx} len:{len(code_res)}/{len(code_ref)} ACC:{tocpu(cp.sum(code_res[:lenc]==code_ref[:lenc])/lenc)}")
+                    code_res, _ = decode_new(idx, p, t, c)
+                    if code_ref is None:
+                        code_ref = code_res
+                        logger.info(f"ref:{cp_str(code_ref, precision=0)}")
+                    else:
+                        lenc = min(len(code_res), len(code_ref))
+                        logger.info(f"decode:{idx} len:{len(code_res)}/{len(code_ref)} ACC:{tocpu(cp.sum(code_res[:lenc]==code_ref[:lenc])/lenc)}")
+            if parse_opts.compLTSNR:
+                logger.info(f"compLTSNR fin snrlow:{parse_opts.snrlow} acc:{cp_str(snr_list/snr_list_cnt)}")
     else:
         for file_path in Config.file_paths:
             pkt_cnt = 0
