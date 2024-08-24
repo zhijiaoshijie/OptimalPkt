@@ -120,7 +120,7 @@ def average_modulus(lst, n_classes):
 class Config:
     renew_switch = False
     s1 = 0
-    s2 = 0
+    s2 = 1
     s3 = 0
     s4 = 0
     s5 = 0
@@ -139,27 +139,26 @@ class Config:
         s7 = 0
         s8 = 0
 
-    sf = 7
+    sf = 11
     bw = 125e3
     fs = 1e6
-    sig_freq = 470e6
+    sig_freq = 490e6
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples
     figpath = "fig"
     if not os.path.exists(figpath): os.mkdir(figpath)
-    # file_paths = ['/data/djl/datasets/Dataset_50Nodes/sf7-470-new-70.bin']
-    # file_paths = ['/data/djl/datasets/sf7-470-pre-2.bin']
+    file_paths = ['/data/djl/datasets//LoRaDatasetNew/LoRaDataNew/sf11_0.bin']
     # file_paths = ['/data/djl/datasets/sf7-470-pre-2.bin']
 
-    base_dir = '/data/djl/datasets/Dataset_50Nodes'
-    file_paths = []
-    for file_name in os.listdir(base_dir):
-        if file_name.startswith('sf7') and file_name.endswith('.bin'):
-            file_paths.append(os.path.join(base_dir, file_name))
+    # base_dir = '/data/djl/datasets//LoRaDatasetNew/LoRaDataNew'
+    # file_paths = []
+    # for file_name in os.listdir(base_dir):
+    #     if file_name.startswith('sf7') and file_name.endswith('.bin'):
+    #         file_paths.append(os.path.join(base_dir, file_name))
 
     nsamp = round(n_classes * fs / bw)
 
-    preamble_len = 8  # TODO
+    preamble_len = 10  # TODO
     code_len = 2
     # codes = [50, 101]  # TODO set codes
     fft_upsamp = 1024
@@ -455,9 +454,12 @@ def fine_work_new(pktidx, pktdata2a):
     if Config.s1:
         phase = cp.angle(pktdata2a)
         unwrapped_phase = cp.unwrap(phase)
-        fig = px.line(y=tocpu(unwrapped_phase[:15 * 1024]), title="input data 15 symbol")
+        fig = px.line(y=tocpu(unwrapped_phase[:18 * Config.nsamp]), title="input data 15 symbol")
         if not parse_opts.noplot: fig.show()
         fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} input_data.html"))
+        fig = px.line(y=tocpu(cp.abs(pktdata2a[:18 * Config.nsamp])), title="input power 15 symbol")
+        if not parse_opts.noplot: fig.show()
+        fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} input_power.html"))
 
     # Perform optimization
     def objective(params):
@@ -477,7 +479,8 @@ def fine_work_new(pktidx, pktdata2a):
     if parse_opts.searchphase:
         if parse_opts.searchfromzero:
             t_lower, t_upper = 0, Config.nsamp
-            f_lower, f_upper = -30000, -23000
+            # f_lower, f_upper = -30000, -23000
+            f_lower, f_upper = -1000, 1000 # TODO
             bestx = None
             bestobj = cp.inf
         else:
@@ -515,7 +518,7 @@ def fine_work_new(pktidx, pktdata2a):
         time_error += time_error_delta
     if parse_opts.plotmap:
         start_t = np.linspace(0, Config.nsamp, Config.nsamp * 5)
-        start_f = np.linspace(-24000, -29000, 1000)
+        start_f = np.linspace(-24000, -29000, 1000) # TODO
         Z = np.zeros((len(start_f), len(start_t)))
         for i, f in tqdm(enumerate(start_f), total=len(start_f)):
             for j, t in enumerate(start_t):
@@ -572,6 +575,7 @@ def fine_work_new(pktidx, pktdata2a):
         detect_symb_plt = cp.concatenate(detect_symb_plt)
         detect_symb_plt *= (pktdata2a_roll[0] / cp.abs(pktdata2a_roll[0]))
         phase1 = cp.angle(pktdata2a_roll)
+        # xval1 = cp.arange(-math.ceil(time_error), len(detect_symb_plt) + Config.nsamp * 5)
         xval = cp.arange(len(detect_symb_plt))
         # xval = cp.arange(len(detect_symb_plt))
         yval1 = cp.unwrap(phase1)
@@ -581,6 +585,7 @@ def fine_work_new(pktidx, pktdata2a):
 
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=tocpu(xval), y=tocpu(yval1[xval]), mode='lines', name='input', line=dict(color='blue')))
+        # fig.add_trace(go.Scatter(x=tocpu(xval1), y=tocpu(cp.unwrap(cp.angle(pktdata2a[xval1]))), mode='lines', name='input', line=dict(color='blue')))
         fig.add_trace(go.Scatter(x=tocpu(xval), y=tocpu(yval2[xval]), mode='lines', name='fit', line=dict(dash='dash', color='red')))
         fig.update_layout(title='aligned pkt', legend=dict(x=0.1, y=1.1))
         if not parse_opts.noplot: fig.show()
@@ -928,5 +933,5 @@ if __name__ == "__main__":
                 pktdata_lst.append(p)
                 tstart_lst.append(t)
                 cfo_freq_est.append(c)
-                with open(f"dataout{parse_opts.searchphase_step}.pkl","wb") as f:
+                with open(f"data11out{parse_opts.searchphase_step}.pkl","wb") as f:
                     pickle.dump((pktdata_lst, tstart_lst, cfo_freq_est),f)
