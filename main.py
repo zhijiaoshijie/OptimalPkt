@@ -44,6 +44,7 @@ parser.add_argument('--searchphase_step', type=int, default=10000)
 parser.add_argument('--searchfromzero', action='store_true', default=False)
 parser.add_argument('--plotmap', action='store_true', default=False)
 parser.add_argument('--plotline', action='store_true', default=False)
+parser.add_argument('--plotline_s', action='store_true', default=False)
 parser.add_argument('--end1', action='store_true', default=False)
 parser.add_argument('--savefile', action='store_true', default=False)
 parser.add_argument('--noplot', action='store_true', default=False)
@@ -142,7 +143,7 @@ class Config:
     sf = 11
     bw = 125e3
     fs = 1e6
-    sig_freq = 490e6
+    sig_freq = 470e6
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples
     figpath = "fig"
@@ -506,7 +507,7 @@ def fine_work_new(pktidx, pktdata2a):
         cfo_freq_est, time_error = bestx
         logger.info(f"Optimized parameters:\n{cfo_freq_est=}\n{time_error=}")
     else:
-        cfo_freq_est = -26685.110 # best for 50/sf7/20
+        cfo_freq_est = 0#-26685.110 # best for 50/sf7/20
         time_error = 225.221
         # cfo_freq_est = -26789.411976307307
         # time_error = 224.64248426804352
@@ -567,6 +568,20 @@ def fine_work_new(pktidx, pktdata2a):
                               annotation_position='top')
         if not parse_opts.noplot: fig.show()
         fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} power with time err.html"))
+    if parse_opts.plotline_s:
+        fig = go.Figure()
+        for xt_start in range(Config.preamble_len):
+            xt_data = np.linspace(0, Config.nsamp, Config.nsamp * 2) + xt_start * Config.nsamp
+            yval = np.zeros(len(xt_data))
+            for idx, time_error_2 in enumerate(xt_data):
+                ssymb = gen_refchirp(cfo_freq_est, time_error_2 - math.ceil(time_error_2))[0]
+                didx = math.ceil(time_error_2)
+                ress = cp.conj(togpu(ssymb)).dot(pktdata2a[didx: didx + len(ssymb)])
+                yval[idx] = np.abs(tocpu(ress))
+            fig.add_trace(go.Scatter(x=xt_data, y=yval / np.max(yval), mode='lines', line=dict(color='red', dash='dash'), name=f'Line{xt_start}'))
+        fig.update_layout(title=f"pkt{pktidx} power per symb")
+        if not parse_opts.noplot: fig.show()
+        fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} power per symb.html"))
 
     pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
     tstart = time_error - math.ceil(time_error) + (Config.sfdend - 0.75) * Config.tsig * (1 - cfo_freq_est / Config.sig_freq)
