@@ -36,6 +36,11 @@ file_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 logger.addHandler(file_handler)
 
+script_path = __file__
+mod_time = os.path.getmtime(script_path)
+readable_time = time.ctime(mod_time)
+logger.info(f"Last modified time of the script: {readable_time}")
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--cpu', action='store_true', default=False, help='Use cpu instead of gpu (numpy instead of cupy)')
@@ -45,6 +50,7 @@ parser.add_argument('--searchfromzero', action='store_true', default=False)
 parser.add_argument('--plotmap', action='store_true', default=False)
 parser.add_argument('--plotline', action='store_true', default=False)
 parser.add_argument('--plotline_s', action='store_true', default=False)
+parser.add_argument('--plotline_s2', action='store_true', default=False)
 parser.add_argument('--end1', action='store_true', default=False)
 parser.add_argument('--savefile', action='store_true', default=False)
 parser.add_argument('--noplot', action='store_true', default=False)
@@ -105,10 +111,6 @@ def myplot(*args, **kwargs):
 
 
 
-script_path = __file__
-mod_time = os.path.getmtime(script_path)
-readable_time = time.ctime(mod_time)
-logger.info(f"Last modified time of the script: {readable_time}")
 
 
 def average_modulus(lst, n_classes):
@@ -570,18 +572,65 @@ def fine_work_new(pktidx, pktdata2a):
         fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} power with time err.html"))
     if parse_opts.plotline_s:
         fig = go.Figure()
-        for xt_start in range(Config.preamble_len):
-            xt_data = np.linspace(0, Config.nsamp, Config.nsamp * 2) + xt_start * Config.nsamp
+        for symbid in range(Config.preamble_len):
+            xt_data0 = np.linspace(0, Config.nsamp, Config.nsamp * 50)
+            xt_data = xt_data0 + symbid * Config.nsamp
             yval = np.zeros(len(xt_data))
-            for idx, time_error_2 in enumerate(xt_data):
+            for idx, time_error_2 in tqdm(enumerate(xt_data), total=len(xt_data)):
                 ssymb = gen_refchirp(cfo_freq_est, time_error_2 - math.ceil(time_error_2))[0]
                 didx = math.ceil(time_error_2)
                 ress = cp.conj(togpu(ssymb)).dot(pktdata2a[didx: didx + len(ssymb)])
                 yval[idx] = np.abs(tocpu(ress))
-            fig.add_trace(go.Scatter(x=xt_data, y=yval / np.max(yval), mode='lines', line=dict(color='red', dash='dash'), name=f'Line{xt_start}'))
+            fig.add_trace(go.Scatter(x=xt_data0, y=yval / np.max(yval), mode='lines', name=f'Line{symbid}'))
+            logger.info(f"upchirp{symbid} maxval={np.max(yval)} maxt={xt_data0[np.argmax(yval)]}")
         fig.update_layout(title=f"pkt{pktidx} power per symb")
         if not parse_opts.noplot: fig.show()
         fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} power per symb.html"))
+        logger.error("quitting...")
+        sys.exit(0)
+    if parse_opts.plotline_s2:
+        fig = go.Figure()
+        pre_times = np.zeros(Config.preamble_len)
+        for symbid in range(Config.preamble_len):
+            xt_data0 = np.linspace(0, Config.nsamp, Config.nsamp)
+            xt_data = xt_data0 + symbid * Config.nsamp
+            yval = np.zeros(len(xt_data))
+            for idx, time_error_2 in tqdm(enumerate(xt_data), total=len(xt_data)):
+                ssymb = gen_refchirp(cfo_freq_est, time_error_2 - math.ceil(time_error_2))[0]
+                didx = math.ceil(time_error_2)
+                ress = cp.conj(togpu(ssymb)).dot(pktdata2a[didx: didx + len(ssymb)])
+                yval[idx] = np.abs(tocpu(ress))
+            maxt = xt_data0[np.argmax(yval)]
+            bestx = None
+            bestobj = cp.inf
+            t_guess = maxt
+            f_guess = 0
+            t_lower, t_upper = t_guess - 2, t_guess + 2
+            f_lower, f_upper = f_guess - 200, f_guess + 200
+            start_t = random.uniform(t_lower, t_upper)
+            start_f = random.uniform(f_lower, f_upper)
+            # noinspection PyTypeChecker
+            for tryidx in tqdm(range(1000)):
+                result = opt.minimize(objective, [start_f, start_t], bounds=[(f_lower, f_upper), (t_lower, t_upper)],
+                                      method='L-BFGS-B',
+                                      options={'gtol': 1e-12, 'disp': False}
+                                      )
+
+                if result.fun < bestobj:
+                    logger.info(
+                        f"{tryidx=: 6d} cfo_freq_est = {result.x[0]:.3f}, time_error = {result.x[1]:.3f} {result.fun=:.3f}")
+                    bestx = result.x
+                    # f_guess, t_guess = result.x
+                    bestobj = result.fun
+            cfo_freq_est, time_error = bestx
+            logger.info(f"{symbid=} {cfo_freq_est=} {time_error=}")
+            pre_times[symbid] = time_error
+        fig.add_trace(go.Scatter(y=pre_times, mode='lines'))
+        fig.update_layout(title=f"pkt{pktidx} preamble est times")
+        if not parse_opts.noplot: fig.show()
+        fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} preamble est times.html"))
+        logger.error("quitting...")
+        sys.exit(0)
 
     pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
     tstart = time_error - math.ceil(time_error) + (Config.sfdend - 0.75) * Config.tsig * (1 - cfo_freq_est / Config.sig_freq)
