@@ -607,23 +607,37 @@ def fine_work_new(pktidx, pktdata2a):
             f_guess = 0
             t_lower, t_upper = t_guess - 2, t_guess + 2
             f_lower, f_upper = f_guess - 200, f_guess + 200
-            start_t = random.uniform(t_lower, t_upper)
-            start_f = random.uniform(f_lower, f_upper)
-            # noinspection PyTypeChecker
+            def objective_t(time_error):
+                cfofreq = 0
+                pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
+                detect_symb = gen_refchirp(cfofreq, time_error - math.ceil(time_error), deadzone=20)
+                # tid_times = gen_refchirp_time(cfofreq, time_error - math.ceil(time_error))
+                # tid_times_ceil = cp.ceil(tid_times).astype(int)
+                res = cp.zeros(len(detect_symb), dtype=cp.complex64)
+                ddx = 0  # TODO
+                for sidx, ssymb in enumerate(detect_symb):
+                    ress = cp.conj(ssymb).dot(pktdata2a_roll[ddx: ddx + len(ssymb)])
+                    ddx += len(ssymb)
+                    res[sidx] = ress / len(ssymb)
+                return - tocpu(cp.sum(cp.abs(res) ** 2))
+
             for tryidx in tqdm(range(1000)):
-                result = opt.minimize(objective, [start_f, start_t], bounds=[(f_lower, f_upper), (t_lower, t_upper)],
+                start_t = random.uniform(t_lower, t_upper)
+                # start_f = random.uniform(f_lower, f_upper)
+                # noinspection PyTypeChecker
+                result = opt.minimize(objective_t, start_t, bounds=[(t_lower, t_upper),],
                                       method='L-BFGS-B',
                                       options={'gtol': 1e-12, 'disp': False}
                                       )
 
                 if result.fun < bestobj:
                     logger.info(
-                        f"{tryidx=: 6d} cfo_freq_est = {result.x[0]:.3f}, time_error = {result.x[1]:.3f} {result.fun=:.3f}")
+                        f"{tryidx=: 6d} time_error = {result.x:.3f} {result.fun=:.3f}")
                     bestx = result.x
                     # f_guess, t_guess = result.x
                     bestobj = result.fun
-            cfo_freq_est, time_error = bestx
-            logger.info(f"{symbid=} {cfo_freq_est=} {time_error=}")
+            time_error = bestx
+            logger.info(f"{symbid=} {time_error=}")
             pre_times[symbid] = time_error
         fig.add_trace(go.Scatter(y=pre_times, mode='lines'))
         fig.update_layout(title=f"pkt{pktidx} preamble est times")
