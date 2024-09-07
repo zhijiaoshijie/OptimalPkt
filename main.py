@@ -22,8 +22,6 @@ from scipy.optimize import curve_fit
 from sklearn.cluster import KMeans
 from tqdm import tqdm
 
-from main_production import Config
-
 # import scipy
 
 logger = logging.getLogger('my_logger')
@@ -323,7 +321,7 @@ def coarse_work_fast(pktdata_in):
     # sys.exit(0)
     bestidx = cp.argmax(fft_vals[:, 2])
     if bestidx != 0:
-        logger.warning(f"bestidx!=0 {bestidx=}")
+        logger.error(f"E03_BESTIDX_NOT_ZERO: {bestidx=}")
     # logger.info(cp.argmax(fft_vals[:, 2]))
     return fft_vals[bestidx][0].item(), fft_vals[bestidx][1].item()
 
@@ -1047,7 +1045,7 @@ if __name__ == "__main__":
             # tstart_lst = []
             # cfo_freq_est = []
             for pkt_idx, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=20)):
-                if pkt_idx <= 0: continue
+                if pkt_idx <= 1: continue
                 Config.progress_bar.set_description(os.path.splitext(os.path.basename(file_path))[0] + ':' + str(pkt_idx))
                 logger.warning(f"W01_READ_PKT_START: {pkt_idx=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=}")
                 ans_list, payload_data = test_work_coarse(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
