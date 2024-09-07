@@ -21,6 +21,9 @@ import scipy.optimize as opt
 from scipy.optimize import curve_fit
 from sklearn.cluster import KMeans
 from tqdm import tqdm
+
+from main_production import Config
+
 # import scipy
 
 logger = logging.getLogger('my_logger')
@@ -143,7 +146,7 @@ class Config:
         s7 = 0
         s8 = 0
 
-    sf = 7
+    sf = 11
     bw = 125e3
     fs = 1e6
     sig_freq = 470e6
@@ -152,28 +155,28 @@ class Config:
     figpath = "fig"
     if not os.path.exists(figpath): os.mkdir(figpath)
     # file_paths = ['/data/djl/temp/sfxtest2.bin']
-    dataout_path = '/data/djl/temp/sfxtest2out'
-    # file_paths = ['/data/djl/datasets/sf11_240906_0.bin']
-    # dataout_path = '/data/djl/datasets/sf11_240906_FFT16_dataout'
+    # dataout_path = '/data/djl/temp/sfxtest2out'
+    file_paths = ['/data/djl/datasets/sf11_240906_0.bin']
+    fft_upsamp = 1024
+    dataout_path = f'/data/djl/datasets/sf11_240906_FFTFast{fft_upsamp}_dataout'
     if not os.path.exists(dataout_path):
         os.mkdir(dataout_path)
     else:
-        logger.warning(f"{dataout_path} already exists")
+        logger.error(f"E00_OUTDIR: {dataout_path} already exists")
     progress_bar = None
     progress_bar_disp = False
 
-    base_dir = '/data/djl/datasets/Dataset_50Nodes'
-    file_paths = []
-    for file_name in os.listdir(base_dir):
-        if file_name.startswith('sf7') and file_name.endswith('.bin'):
-            file_paths.append(os.path.join(base_dir, file_name))
+    # base_dir = '/data/djl/datasets/Dataset_50Nodes'
+    # file_paths = []
+    # for file_name in os.listdir(base_dir):
+    #     if file_name.startswith('sf7') and file_name.endswith('.bin'):
+    #         file_paths.append(os.path.join(base_dir, file_name))
 
     nsamp = round(n_classes * fs / bw)
 
     preamble_len = 8  # TODO
     code_len = 2
     # codes = [50, 101]  # TODO set codes
-    fft_upsamp = 1024
     sfdpos = preamble_len + code_len
     sfdend = sfdpos + 3
     debug = False
@@ -359,8 +362,8 @@ def coarse_work(pktdata_in):
 def test_work_coarse(pkt_totcnt, pktdata_in):
     est_cfo_f2, est_to_s2 = coarse_work_fast(pktdata_in)
     if abs(est_cfo_f2) >= Config.fs / 8:
-        logger.error(f"abs(est_cfo_r) too large: {pkt_totcnt=} {est_cfo_f2=} {est_to_s2=}")
-    logger.error(f"{est_cfo_f2=}, {est_to_s2=}")
+        logger.error(f"E02_LARGE_CFO: abs(est_cfo_r) too large: {pkt_totcnt=} {est_cfo_f2=} {est_to_s2=}")
+    logger.info(f"I02_WORK_RESULT {est_cfo_f2=}, {est_to_s2=}")
     # est_cfo_f1, est_to_s1 = coarse_work(pktdata_in)
     # logger.error(f"{est_cfo_f1=}, {est_to_s1=}")
 
@@ -390,6 +393,8 @@ def test_work_coarse(pkt_totcnt, pktdata_in):
     pktdata4B = pktdata2C[int(Config.nsamp * (Config.sfdpos + 2 + 0.25)):]
     ans1B, power1B = decode_payload(est_to_dec, pktdata4B, pkt_totcnt)
     logger.info(f'After SFO decode Payload : {len(ans1B)=}\n    {cp_str(ans1B)=}\n    {cp_str(power1B)=}')
+
+    return ans1B, pktdata4B
 
 
 
@@ -456,9 +461,9 @@ def work(pkt_totcnt, pktdata_in):
     # return angles
 
 
-def calc_angles(payload_data):
-    angles = cp.zeros(len(payload_data), dtype=float)
-    for idx, dataY in enumerate(payload_data):
+def calc_angles(ndatas):
+    angles = cp.zeros(len(ndatas), dtype=float)
+    for idx, dataY in enumerate(ndatas):
         dataX = cp.array(dataY)
         data1 = cp.matmul(Config.dataE1, dataX)
         data2 = cp.matmul(Config.dataE2, dataX)
@@ -1019,7 +1024,7 @@ if __name__ == "__main__":
             pkt_cnt = 0
             pktdata = []
             fsize = int(os.stat(file_path).st_size / (Config.nsamp * 4 * 2))
-            logger.info(f'reading file: {file_path} SF: {Config.sf} pkts in file: {fsize}')
+            logger.warning(f'W00_READ_START: reading file: {file_path} SF: {Config.sf} pkts in file: {fsize}')
             Config.progress_bar = tqdm(total=int(os.stat(file_path).st_size), unit='B', unit_scale=True, desc=file_path,
                                        disable = not Config.progress_bar_disp)
 
@@ -1033,10 +1038,10 @@ if __name__ == "__main__":
             thresh = cp.mean(kmeans.cluster_centers_)
             counts, bins = cp.histogram(nmaxs, bins=100)
             # logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
-            logger.debug(f"cluster: {kmeans.cluster_centers_[0]} {kmeans.cluster_centers_[1]} {thresh=}")
+            logger.debug(f"D00_CLUSTER: cluster: {kmeans.cluster_centers_[0]} {kmeans.cluster_centers_[1]} {thresh=}")
             threshpos = np.searchsorted(tocpu(bins), thresh).item()
-            logger.debug(f"lower: {cp_str(counts[:threshpos])}")
-            logger.debug(f"higher: {cp_str(counts[threshpos:])}")
+            logger.debug(f"D00_CLUSTER: lower: {cp_str(counts[:threshpos])}")
+            logger.debug(f"D00_CLUSTER: higher: {cp_str(counts[threshpos:])}")
 
             # pktdata_lst = []
             # tstart_lst = []
@@ -1044,19 +1049,19 @@ if __name__ == "__main__":
             for pkt_idx, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=20)):
                 if pkt_idx <= 0: continue
                 Config.progress_bar.set_description(os.path.splitext(os.path.basename(file_path))[0] + ':' + str(pkt_idx))
-                logger.warning(f"Reading {pkt_idx=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=}")
-                ans2n, ndatas = test_work_coarse(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
-                sys.exit(0)
-                if len(ans2n) != 23:
-                    logger.error(f"{pkt_idx=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=} {len(ans2n)=}")
+                logger.warning(f"W01_READ_PKT_START: {pkt_idx=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=}")
+                ans_list, payload_data = test_work_coarse(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
+                if len(ans_list) != 23: # TODO !!!
+                    logger.error(f"{pkt_idx=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=} {len(ans_list)=}")
                 # p, t, c = fine_work_new(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
                 # pktdata_lst.append(p)
                 # tstart_lst.append(t)
                 # cfo_freq_est.append(c)
                 outpath = os.path.join(Config.dataout_path, 'part'+str(pkt_idx // 1000), str(pkt_idx))
                 if not os.path.exists(outpath): os.makedirs(outpath)
-                for idx, (name, data) in enumerate(zip(list(tocpu(ans2n)), [row for row in tocpu(ndatas)])):
-                    data.tofile(os.path.join(outpath, f"{idx}_{round(name)}_{pkt_idx}_{Config.sf}.mat"))
+                for idx, decode_ans in enumerate(list(tocpu(ans_list))):
+                    data = payload_data[Config.nsamp * idx: Config.nsamp * (idx + 1)]
+                    data.tofile(os.path.join(outpath, f"{idx}_{round(decode_ans)}_{pkt_idx}_{Config.sf}.mat"))
 
 
 
