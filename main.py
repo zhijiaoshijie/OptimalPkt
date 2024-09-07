@@ -88,7 +88,7 @@ def mychirp(t, f0, f1, t1):
 
 
 def cp_str(x, precision=2, suppress_small=False):
-    return np.array2string(tocpu(x), precision=precision, formatter={'float_kind': lambda k: f"{k:.2f}"},
+    return np.array2string(tocpu(x), precision=precision, formatter={'float_kind': lambda k: f"{k:.3f}"},
             floatmode='fixed', suppress_small=suppress_small, max_line_width=np.inf)
 
 
@@ -143,7 +143,7 @@ class Config:
         s7 = 0
         s8 = 0
 
-    sf = 11
+    sf = 7
     bw = 125e3
     fs = 1e6
     sig_freq = 470e6
@@ -151,7 +151,7 @@ class Config:
     tsig = 2 ** sf / bw * fs  # in samples
     figpath = "fig"
     if not os.path.exists(figpath): os.mkdir(figpath)
-    file_paths = ['/data/djl/temp/sfxtest2.bin']
+    # file_paths = ['/data/djl/temp/sfxtest2.bin']
     dataout_path = '/data/djl/temp/sfxtest2out'
     # file_paths = ['/data/djl/datasets/sf11_240906_0.bin']
     # dataout_path = '/data/djl/datasets/sf11_240906_FFT16_dataout'
@@ -162,18 +162,18 @@ class Config:
     progress_bar = None
     progress_bar_disp = False
 
-    # base_dir = '/data/djl/datasets/Dataset_50Nodes'
-    # file_paths = []
-    # for file_name in os.listdir(base_dir):
-    #     if file_name.startswith('sf7') and file_name.endswith('.bin'):
-    #         file_paths.append(os.path.join(base_dir, file_name))
+    base_dir = '/data/djl/datasets/Dataset_50Nodes'
+    file_paths = []
+    for file_name in os.listdir(base_dir):
+        if file_name.startswith('sf7') and file_name.endswith('.bin'):
+            file_paths.append(os.path.join(base_dir, file_name))
 
     nsamp = round(n_classes * fs / bw)
 
     preamble_len = 8  # TODO
     code_len = 2
     # codes = [50, 101]  # TODO set codes
-    fft_upsamp = 16#24
+    fft_upsamp = 1024
     sfdpos = preamble_len + code_len
     sfdend = sfdpos + 3
     debug = False
@@ -272,43 +272,58 @@ def coarse_work_fast(pktdata_in):
     # integer detection
     detect_range_pkts = 3
     phaseFlag = False
-    if phaseFlag:
-        fft_ups = cp.zeros((Config.preamble_len + detect_range_pkts, fft_n), dtype=cp.complex64)
-        fft_downs = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.complex64)
-    else:
-        fft_ups = cp.zeros((Config.preamble_len + detect_range_pkts, fft_n), dtype=cp.float32)
-        fft_downs = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.float32)
-    for preamble_idx in range(Config.preamble_len + detect_range_pkts):
-        sig1 = pktdata_in[Config.nsamp * preamble_idx: Config.nsamp * (preamble_idx + 1)] * Config.downchirp
-        fft_raw_1 = myfft(sig1, n=fft_n, plan=Config.plans[Config.fft_upsamp])
-        if phaseFlag:
-            fft_ups[preamble_idx] = fft_raw_1
-        else:
-            fft_ups[preamble_idx] = cp.abs(fft_raw_1) ** 2
-    for preamble_idx in range(2 + detect_range_pkts):
-        sig1 = (pktdata_in[Config.nsamp * (preamble_idx + Config.sfdpos): Config.nsamp * (preamble_idx + Config.sfdpos + 1)]
+    fft_ups = cp.zeros((Config.preamble_len + detect_range_pkts, fft_n), dtype=cp.complex64)
+    fft_downs = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.complex64)
+    fft_down_lst = cp.zeros((detect_range_pkts, fft_n), dtype=cp.complex64)
+    lst_len = round(Config.nsamp * (math.sqrt(-2.25*2 + 3.25**2) - 2))
+    for pidx in range(Config.preamble_len + detect_range_pkts):
+        sig1 = pktdata_in[Config.nsamp * pidx: Config.nsamp * (pidx + 1)] * Config.downchirp
+        fft_ups[pidx] = myfft(sig1, n=fft_n, plan=Config.plans[Config.fft_upsamp])
+    for pidx in range(2 + detect_range_pkts):
+        sig1 = (pktdata_in[Config.nsamp * (pidx + Config.sfdpos): Config.nsamp * (pidx + Config.sfdpos + 1)]
                 * Config.upchirp)
-        fft_raw_1 = myfft(sig1, n=fft_n, plan=Config.plans[Config.fft_upsamp])
-        if phaseFlag:
-            fft_downs[preamble_idx] = fft_raw_1
-        else:
-            fft_downs[preamble_idx] = cp.abs(fft_raw_1) ** 2
+        fft_downs[pidx] = myfft(sig1, n=fft_n, plan=Config.plans[Config.fft_upsamp])
+    for pidx in range(detect_range_pkts):
+        sig1 = (pktdata_in[Config.nsamp * (pidx + Config.sfdpos + 2): Config.nsamp * (pidx + Config.sfdpos + 2) + lst_len]
+                * Config.upchirp[lst_len])
+        fft_down_lst[pidx] = myfft(sig1, n=fft_n, plan=Config.plans[Config.fft_upsamp])
+    if not phaseFlag:
+        fft_ups = cp.abs(fft_ups) ** 2
+        fft_downs = cp.abs(fft_downs) ** 2
+        fft_down_lst = cp.abs(fft_down_lst) ** 2
+
     fft_vals = cp.zeros((detect_range_pkts,3), dtype=cp.float32)
-    for idx in range(detect_range_pkts):
-        fft_val_up = cp.argmax(cp.abs(cp.sum(fft_ups[idx : idx + Config.preamble_len], axis=0)))
-        fft_val_down = cp.argmax(cp.abs(cp.sum(fft_downs[idx : idx + 2], axis=0)))
-        fft_val_abs = cp.max(cp.abs(cp.sum(fft_ups[idx : idx + Config.preamble_len], axis=0))) \
-                      + cp.max(cp.abs(cp.sum(fft_downs[idx : idx + 2], axis=0)))
-        est_cfo_f = (fft_val_up + fft_val_down) / 2 * (Config.fs / fft_n)
-        est_to_s = (fft_val_up + fft_val_down) / 2
-        fft_vals[idx] = cp.array((est_cfo_f, est_to_s + idx * Config.nsamp, fft_val_abs), dtype=cp.float32)
+    for pidx in range(detect_range_pkts):
+        fft_val_up = cp.argmax(cp.abs(cp.sum(fft_ups[pidx : pidx + Config.preamble_len], axis=0)))
+        if fft_val_up > fft_n / 2: fft_val_up -= fft_n
+        fft_val_down = cp.argmax(cp.abs(cp.sum(fft_downs[pidx : pidx + 2], axis=0) + fft_down_lst[pidx]))
+        if fft_val_down > fft_n / 2: fft_val_down -= fft_n
+        fft_val_abs = cp.max(cp.abs(cp.sum(fft_ups[pidx : pidx + Config.preamble_len], axis=0))) \
+                      + cp.max(cp.abs(cp.sum(fft_downs[pidx : pidx + 2], axis=0) + fft_down_lst[pidx]))
+        # logger.info(f"{fft_val_up=} {fft_val_down=} {fft_n=}")
+        est_cfo_r = (fft_val_up + fft_val_down) / 2 / fft_n # rate, [0, 1)
+        est_to_r = (fft_val_down - fft_val_up) / 2 / fft_n  # rate, [0, 1)
+        if abs(est_cfo_r - 1/2) <= 1/4: # abs(cfo) > 1/4
+            est_cfo_r += 1/2
+            est_to_r += 1/2
+        est_cfo_r %= 1 #[0, 1)
+        est_to_r %= 1 #[0, 1)
+        if est_cfo_r > 1/2: est_cfo_r -= 1 # [-1/2, 1/2)
+        est_cfo_f = est_cfo_r * Config.fs
+        est_to_s = (est_to_r * 8 + pidx) * Config.nsamp # add detect packet pos
+        fft_vals[pidx] = cp.array((est_cfo_f, est_to_s, fft_val_abs), dtype=cp.float32)
         # fig = go.Figure()
         # fig.add_trace(go.Scatter(y=fft_ups[idx].get(), mode='lines', name='Ours'))
         # fig.add_trace(go.Scatter(y=fft_downs[idx].get(), mode='lines', name='Ours'))
         # fig.update_layout(title=f"{idx=} {fft_val_up=} {fft_val_down=}")
         # fig.show()
     # sys.exit(0)
-    return fft_vals[cp.argmax(fft_vals[:, 2])]
+    bestidx = cp.argmax(fft_vals[:, 2])
+    if bestidx != 0:
+        logger.warning(f"bestidx!=0 {bestidx=}")
+    # logger.info(cp.argmax(fft_vals[:, 2]))
+    return fft_vals[bestidx][0].item(), fft_vals[bestidx][1].item()
+
 
 def coarse_work(pktdata_in):
     argmax_est_time_shift_samples = 0
@@ -342,24 +357,39 @@ def coarse_work(pktdata_in):
     return est_cfo_freq, argmax_est_time_shift_samples
 
 def test_work_coarse(pkt_totcnt, pktdata_in):
-    est_cfo_f2, est_to_s2, _ = coarse_work_fast(pktdata_in)
+    est_cfo_f2, est_to_s2 = coarse_work_fast(pktdata_in)
+    if abs(est_cfo_f2) >= Config.fs / 8:
+        logger.error(f"abs(est_cfo_r) too large: {pkt_totcnt=} {est_cfo_f2=} {est_to_s2=}")
     logger.error(f"{est_cfo_f2=}, {est_to_s2=}")
-    est_cfo_f1, est_to_s1 = coarse_work(pktdata_in)
-    logger.error(f"{est_cfo_f1=}, {est_to_s1=}")
+    # est_cfo_f1, est_to_s1 = coarse_work(pktdata_in)
+    # logger.error(f"{est_cfo_f1=}, {est_to_s1=}")
 
-    sys.exit(0)
+    # est_cfo_freq, argmax_est_time_shift_samples = coarse_work(pktdata_in)
+    pktdata2 = add_freq(pktdata_in, - est_cfo_f2)
+    est_to_int = round(est_to_s2)
+    est_to_dec = est_to_s2 - est_to_int
+    pktdata2 = cp.roll(pktdata2, - est_to_int)
 
-    est_cfo_freq, argmax_est_time_shift_samples = coarse_work(pktdata_in)
-    pktdata2a = add_freq(pktdata_in, - est_cfo_freq)
-    pktdata2a = cp.roll(pktdata2a, -argmax_est_time_shift_samples)
-    detect = 0
-    est_to_dec = 0
-    pktdata4A = pktdata2a[Config.nsamp * detect: Config.nsamp * (detect + Config.sfdpos)]
+    pktdata4A = pktdata2[:Config.nsamp * Config.sfdpos]
     ans1A, power1A = decode_payload(est_to_dec, pktdata4A, pkt_totcnt)
-    logger.info(f'Before SFO decode Preamble: {len(ans1A)=} {cp_str(ans1A)=} {cp_str(power1A)=}')
-    pktdata4B = pktdata2a[Config.nsamp * (detect + Config.sfdpos + 2) + Config.nsamp // 4:]
+    logger.info(f'Before SFO decode Preamble: {len(ans1A)=}\n    {cp_str(ans1A)=}\n    {cp_str(power1A)=}')
+    pktdata4B = pktdata2[int(Config.nsamp * (Config.sfdpos + 2 + 0.25)):]
     ans1B, power1B = decode_payload(est_to_dec, pktdata4B, pkt_totcnt)
-    logger.info(f'Before SFO decode Payload : {len(ans1B)=} {cp_str(ans1B)=} {cp_str(power1B)=}')
+    logger.info(f'Before SFO decode Payload : {len(ans1B)=}\n    {cp_str(ans1B)=}\n    {cp_str(power1B)=}')
+
+    est_cfo_slope = est_cfo_f2 / Config.sig_freq * Config.bw * Config.fs / Config.nsamp
+    sig_time = len(pktdata2) / Config.fs
+    logger.error(f'INFO: SFO {est_cfo_f2=} Hz, {est_cfo_slope=} Hz/s, {sig_time=} s')
+    t = cp.linspace(0, sig_time, len(pktdata2) + 1)[:-1]
+    est_cfo_symbol = mychirp(t, f0=0, f1=- est_cfo_slope * sig_time, t1=sig_time)
+    pktdata2C = pktdata2 * est_cfo_symbol
+
+    pktdata4A = pktdata2C[:Config.nsamp * Config.sfdpos]
+    ans1A, power1A = decode_payload(est_to_dec, pktdata4A, pkt_totcnt)
+    logger.info(f'After SFO decode Preamble: {len(ans1A)=}\n    {cp_str(ans1A)=}\n    {cp_str(power1A)=}')
+    pktdata4B = pktdata2C[int(Config.nsamp * (Config.sfdpos + 2 + 0.25)):]
+    ans1B, power1B = decode_payload(est_to_dec, pktdata4B, pkt_totcnt)
+    logger.info(f'After SFO decode Payload : {len(ans1B)=}\n    {cp_str(ans1B)=}\n    {cp_str(power1B)=}')
 
 
 
@@ -447,11 +477,12 @@ def decode_payload(est_to_dec, pktdata4, pkt_totcnt):
     ndatas = pktdata4[: symb_cnt * Config.nsamp].reshape(symb_cnt, Config.nsamp)
     ans1n, power1 = dechirp(ndatas, Config.downchirp)
     ans1n += est_to_dec / 8
+    # logger.error(f"{est_to_dec / 8=}")
     if not min(power1) > cp.mean(power1) / 2:
         drop_idx = next((idx for idx, num in enumerate(power1) if num < cp.mean(power1) / 2), -1)
+        logger.info(f'E01_POWER_DROP: {pkt_totcnt=} power1 drops: {drop_idx=} {len(ans1n)=}\n    {cp_str(ans1n)=}\n    {cp_str(power1)=}')
         ans1n = ans1n[:drop_idx]
         power1 = power1[:drop_idx]
-        logger.info(f'decode: {pkt_totcnt=} power1 drops: {drop_idx=} {len(ans1n)=} {cp_str(power1)}')
     return ans1n, power1
 
 
@@ -1011,10 +1042,11 @@ if __name__ == "__main__":
             # tstart_lst = []
             # cfo_freq_est = []
             for pkt_idx, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=20)):
-                # if pkt_idx <= 0: continue
+                if pkt_idx <= 0: continue
                 Config.progress_bar.set_description(os.path.splitext(os.path.basename(file_path))[0] + ':' + str(pkt_idx))
                 logger.warning(f"Reading {pkt_idx=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=}")
-                ans2n, ndatas = work(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
+                ans2n, ndatas = test_work_coarse(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
+                sys.exit(0)
                 if len(ans2n) != 23:
                     logger.error(f"{pkt_idx=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=} {len(ans2n)=}")
                 # p, t, c = fine_work_new(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
