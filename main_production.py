@@ -151,10 +151,8 @@ class Config:
     tsig = 2 ** sf / bw * fs  # in samples
     figpath = "fig"
     if not os.path.exists(figpath): os.mkdir(figpath)
-    file_paths = ['/data/djl/temp/sfxtest2.bin']
-    dataout_path = '/data/djl/temp/sfxtest2out'
-    # file_paths = ['/data/djl/datasets/sf11_240906_0.bin']
-    # dataout_path = '/data/djl/datasets/sf11_240906_FFT16_dataout'
+    file_paths = ['/data/djl/datasets/sf11_240906_0.bin']
+    dataout_path = '/data/djl/datasets/sf11_240906_FFT16_dataout'
     if not os.path.exists(dataout_path):
         os.mkdir(dataout_path)
     else:
@@ -957,7 +955,6 @@ if __name__ == "__main__":
                 if not os.path.exists(outpath): os.makedirs(outpath)
                 for idx, (name, data) in enumerate(zip(list(tocpu(ans2n)), [row for row in tocpu(ndatas)])):
                     data.tofile(os.path.join(outpath, f"{idx}_{round(name)}_{pkt_idx}_{Config.sf}.mat"))
-
 
 
 
