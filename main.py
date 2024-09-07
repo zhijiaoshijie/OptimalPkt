@@ -25,7 +25,7 @@ from tqdm import tqdm
 # import scipy
 
 logger = logging.getLogger('my_logger')
-level = logging.DEBUG
+level = logging.WARNING
 logger.setLevel(level)
 console_handler = logging.StreamHandler()
 console_handler.setLevel(level)  # Set the console handler level
@@ -160,7 +160,7 @@ class Config:
     if not os.path.exists(dataout_path):
         os.mkdir(dataout_path)
     else:
-        logger.error(f"E00_OUTDIR: {dataout_path} already exists")
+        logger.warning(f"E00_OUTDIR: {dataout_path} already exists")
     progress_bar = None
     progress_bar_disp = False
 
@@ -284,23 +284,23 @@ def coarse_work_fast(pktdata_in):
         sig1 = (pktdata_in[Config.nsamp * (pidx + Config.sfdpos): Config.nsamp * (pidx + Config.sfdpos + 1)]
                 * Config.upchirp)
         fft_downs[pidx] = myfft(sig1, n=fft_n, plan=Config.plans[Config.fft_upsamp])
-    for pidx in range(detect_range_pkts):
-        sig1 = (pktdata_in[Config.nsamp * (pidx + Config.sfdpos + 2): Config.nsamp * (pidx + Config.sfdpos + 2) + lst_len]
-                * Config.upchirp[lst_len])
-        fft_down_lst[pidx] = myfft(sig1, n=fft_n, plan=Config.plans[Config.fft_upsamp])
+    # for pidx in range(detect_range_pkts):
+    #     sig1 = (pktdata_in[Config.nsamp * (pidx + Config.sfdpos + 2): Config.nsamp * (pidx + Config.sfdpos + 2) + lst_len]
+    #             * Config.upchirp[lst_len])
+    #     fft_down_lst[pidx] = myfft(sig1, n=fft_n, plan=Config.plans[Config.fft_upsamp])
     if not phaseFlag:
-        fft_ups = cp.abs(fft_ups) ** 2
-        fft_downs = cp.abs(fft_downs) ** 2
-        fft_down_lst = cp.abs(fft_down_lst) ** 2
+        fft_ups = cp.abs(fft_ups) #** 2
+        fft_downs = cp.abs(fft_downs) #** 2
+        # fft_down_lst = cp.abs(fft_down_lst) #** 2
 
     fft_vals = cp.zeros((detect_range_pkts,3), dtype=cp.float32)
     for pidx in range(detect_range_pkts):
-        fft_val_up = cp.argmax(cp.abs(cp.sum(fft_ups[pidx : pidx + Config.preamble_len], axis=0)))
+        fft_val_up = cp.argmax(cp.abs(cp.sum(fft_ups[pidx + 1 : pidx + Config.preamble_len - 1], axis=0)))
         if fft_val_up > fft_n / 2: fft_val_up -= fft_n
-        fft_val_down = cp.argmax(cp.abs(cp.sum(fft_downs[pidx : pidx + 2], axis=0) + fft_down_lst[pidx]))
+        fft_val_down = cp.argmax(cp.abs(cp.sum(fft_downs[pidx + 1 : pidx + 2], axis=0)))# + fft_down_lst[pidx]))
         if fft_val_down > fft_n / 2: fft_val_down -= fft_n
-        fft_val_abs = cp.max(cp.abs(cp.sum(fft_ups[pidx : pidx + Config.preamble_len], axis=0))) \
-                      + cp.max(cp.abs(cp.sum(fft_downs[pidx : pidx + 2], axis=0) + fft_down_lst[pidx]))
+        fft_val_abs = cp.max(cp.abs(cp.sum(fft_ups[pidx + 1 : pidx + Config.preamble_len - 1], axis=0))) \
+                      + cp.max(cp.abs(cp.sum(fft_downs[pidx + 1 : pidx + 2], axis=0)))# + fft_down_lst[pidx]))
         # logger.info(f"{fft_val_up=} {fft_val_down=} {fft_n=}")
         est_cfo_r = (fft_val_up + fft_val_down) / 2 / fft_n # rate, [0, 1)
         est_to_r = (fft_val_down - fft_val_up) / 2 / fft_n  # rate, [0, 1)
@@ -310,8 +310,10 @@ def coarse_work_fast(pktdata_in):
         est_cfo_r %= 1 #[0, 1)
         est_to_r %= 1 #[0, 1)
         if est_cfo_r > 1/2: est_cfo_r -= 1 # [-1/2, 1/2)
+        if est_to_r > 1/2: est_to_r -= 1 # [-1/2, 1/2)
         est_cfo_f = est_cfo_r * Config.fs
-        est_to_s = (est_to_r * 8 + pidx) * Config.nsamp # add detect packet pos
+        est_to_s = (est_to_r + pidx) * Config.nsamp # add detect packet pos
+        # logger.warning(f"WTT01: {est_to_s=} {pidx=} {est_to_r=} {Config.nsamp=}")
         fft_vals[pidx] = cp.array((est_cfo_f, est_to_s, fft_val_abs), dtype=cp.float32)
         # fig = go.Figure()
         # fig.add_trace(go.Scatter(y=fft_ups[idx].get(), mode='lines', name='Ours'))
@@ -320,8 +322,11 @@ def coarse_work_fast(pktdata_in):
         # fig.show()
     # sys.exit(0)
     bestidx = cp.argmax(fft_vals[:, 2])
-    if bestidx != 0:
-        logger.error(f"E03_BESTIDX_NOT_ZERO: {bestidx=}")
+    # if bestidx != 0:
+    #     logger.warning(f"E05_BESTIDX_NOT_ZERO: {bestidx=}")
+    #     logger.warning(f"E05_BESTIDX_NOT_ZERO: fft_ups={cp_str(cp.argmax(cp.abs(fft_ups), axis=1)/fft_n)}")
+    #     logger.warning(f"E05_BESTIDX_NOT_ZERO: fft_dns={cp_str(cp.argmax(cp.abs(fft_downs), axis=1)/fft_n)}")
+    #     logger.warning(f"E05_BESTIDX_NOT_ZERO: fft_lls={cp_str(cp.argmax(cp.abs(fft_down_lst), axis=1)/fft_n)}")
     # logger.info(cp.argmax(fft_vals[:, 2]))
     return fft_vals[bestidx][0].item(), fft_vals[bestidx][1].item()
 
@@ -360,10 +365,10 @@ def coarse_work(pktdata_in):
 def test_work_coarse(pkt_totcnt, pktdata_in):
     est_cfo_f2, est_to_s2 = coarse_work_fast(pktdata_in)
     if abs(est_cfo_f2) >= Config.fs / 8:
-        logger.error(f"E02_LARGE_CFO: abs(est_cfo_r) too large: {pkt_totcnt=} {est_cfo_f2=} {est_to_s2=}")
+        logger.warning(f"E02_LARGE_CFO: abs(est_cfo_r) too large: {pkt_totcnt=} {est_cfo_f2=} {est_to_s2=}")
     logger.info(f"I02_WORK_RESULT {est_cfo_f2=}, {est_to_s2=}")
     # est_cfo_f1, est_to_s1 = coarse_work(pktdata_in)
-    # logger.error(f"{est_cfo_f1=}, {est_to_s1=}")
+    # logger.warning(f"{est_cfo_f1=}, {est_to_s1=}")
 
     # est_cfo_freq, argmax_est_time_shift_samples = coarse_work(pktdata_in)
     pktdata2 = add_freq(pktdata_in, - est_cfo_f2)
@@ -373,24 +378,24 @@ def test_work_coarse(pkt_totcnt, pktdata_in):
 
     pktdata4A = pktdata2[:Config.nsamp * Config.sfdpos]
     ans1A, power1A = decode_payload(est_to_dec, pktdata4A, pkt_totcnt)
-    logger.info(f'Before SFO decode Preamble: {len(ans1A)=}\n    {cp_str(ans1A)=}\n    {cp_str(power1A)=}')
+    logger.info(f'I03_1: Before SFO decode Preamble: {len(ans1A)=}\n    {cp_str(ans1A)=}\n    {cp_str(power1A)=}')
     pktdata4B = pktdata2[int(Config.nsamp * (Config.sfdpos + 2 + 0.25)):]
     ans1B, power1B = decode_payload(est_to_dec, pktdata4B, pkt_totcnt)
-    logger.info(f'Before SFO decode Payload : {len(ans1B)=}\n    {cp_str(ans1B)=}\n    {cp_str(power1B)=}')
+    logger.info(f'I03_2: Before SFO decode Payload : {len(ans1B)=}\n    {cp_str(ans1B)=}\n    {cp_str(power1B)=}')
 
     est_cfo_slope = est_cfo_f2 / Config.sig_freq * Config.bw * Config.fs / Config.nsamp
     sig_time = len(pktdata2) / Config.fs
-    logger.error(f'INFO: SFO {est_cfo_f2=} Hz, {est_cfo_slope=} Hz/s, {sig_time=} s')
+    logger.info(f'I03_3: SFO {est_cfo_f2=} Hz, {est_cfo_slope=} Hz/s, {sig_time=} s')
     t = cp.linspace(0, sig_time, len(pktdata2) + 1)[:-1]
     est_cfo_symbol = mychirp(t, f0=0, f1=- est_cfo_slope * sig_time, t1=sig_time)
     pktdata2C = pktdata2 * est_cfo_symbol
 
     pktdata4A = pktdata2C[:Config.nsamp * Config.sfdpos]
     ans1A, power1A = decode_payload(est_to_dec, pktdata4A, pkt_totcnt)
-    logger.info(f'After SFO decode Preamble: {len(ans1A)=}\n    {cp_str(ans1A)=}\n    {cp_str(power1A)=}')
+    logger.info(f'I03_4: After SFO decode Preamble: {len(ans1A)=}\n    {cp_str(ans1A)=}\n    {cp_str(power1A)=}')
     pktdata4B = pktdata2C[int(Config.nsamp * (Config.sfdpos + 2 + 0.25)):]
     ans1B, power1B = decode_payload(est_to_dec, pktdata4B, pkt_totcnt)
-    logger.info(f'After SFO decode Payload : {len(ans1B)=}\n    {cp_str(ans1B)=}\n    {cp_str(power1B)=}')
+    logger.info(f'I03_5: After SFO decode Payload : {len(ans1B)=}\n    {cp_str(ans1B)=}\n    {cp_str(power1B)=}')
 
     return ans1B, pktdata4B
 
@@ -480,7 +485,7 @@ def decode_payload(est_to_dec, pktdata4, pkt_totcnt):
     ndatas = pktdata4[: symb_cnt * Config.nsamp].reshape(symb_cnt, Config.nsamp)
     ans1n, power1 = dechirp(ndatas, Config.downchirp)
     ans1n += est_to_dec / 8
-    # logger.error(f"{est_to_dec / 8=}")
+    # logger.warning(f"{est_to_dec / 8=}")
     if not min(power1) > cp.mean(power1) / 2:
         drop_idx = next((idx for idx, num in enumerate(power1) if num < cp.mean(power1) / 2), -1)
         logger.info(f'E01_POWER_DROP: {pkt_totcnt=} power1 drops: {drop_idx=} {len(ans1n)=}\n    {cp_str(ans1n)=}\n    {cp_str(power1)=}')
@@ -941,10 +946,10 @@ def read_large_file(file_path_in):
                 rawdata = cp.fromfile(file, dtype=cp.complex64, count=Config.nsamp)
                 Config.progress_bar.update(len(rawdata) * 8)
             except EOFError:
-                logger.warning("file complete with EOF")
+                logger.warning("E04_FILE_EOF: file complete with EOF")
                 break
             if len(rawdata) < Config.nsamp:
-                logger.warning(f"file complete, {len(rawdata)=}")
+                logger.warning(f"E05_FILE_FIN: file complete, {len(rawdata)=}")
                 break
             yield rawdata
 
@@ -1050,16 +1055,17 @@ if __name__ == "__main__":
                 logger.warning(f"W01_READ_PKT_START: {pkt_idx=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=}")
                 ans_list, payload_data = test_work_coarse(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
                 if len(ans_list) != 23: # TODO !!!
-                    logger.error(f"{pkt_idx=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=} {len(ans_list)=}")
-                # p, t, c = fine_work_new(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
-                # pktdata_lst.append(p)
-                # tstart_lst.append(t)
-                # cfo_freq_est.append(c)
-                outpath = os.path.join(Config.dataout_path, 'part'+str(pkt_idx // 1000), str(pkt_idx))
-                if not os.path.exists(outpath): os.makedirs(outpath)
-                for idx, decode_ans in enumerate(list(tocpu(ans_list))):
-                    data = payload_data[Config.nsamp * idx: Config.nsamp * (idx + 1)]
-                    data.tofile(os.path.join(outpath, f"{idx}_{round(decode_ans)}_{pkt_idx}_{Config.sf}.mat"))
+                    logger.warning(f"E03_ANS_LEN: {pkt_idx=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=} {len(ans_list)=}")
+                else:
+                    # p, t, c = fine_work_new(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
+                    # pktdata_lst.append(p)
+                    # tstart_lst.append(t)
+                    # cfo_freq_est.append(c)
+                    outpath = os.path.join(Config.dataout_path, 'part'+str(pkt_idx // 1000), str(pkt_idx))
+                    if not os.path.exists(outpath): os.makedirs(outpath)
+                    for idx, decode_ans in enumerate(list(tocpu(ans_list))):
+                        data = payload_data[Config.nsamp * idx: Config.nsamp * (idx + 1)]
+                        data.tofile(os.path.join(outpath, f"{idx}_{round(decode_ans)}_{pkt_idx}_{Config.sf}.mat"))
 
 
 
