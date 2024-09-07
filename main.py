@@ -24,7 +24,7 @@ from tqdm import tqdm
 # import scipy
 
 logger = logging.getLogger('my_logger')
-level = logging.ERROR
+level = logging.DEBUG
 logger.setLevel(level)
 console_handler = logging.StreamHandler()
 console_handler.setLevel(level)  # Set the console handler level
@@ -160,8 +160,7 @@ class Config:
     else:
         logger.warning(f"{dataout_path} already exists")
     progress_bar = None
-    # file_paths = ['/data/djl/datasets/sf7-470-pre-2.bin']
-    # file_paths = ['/data/djl/datasets/sf7-470-pre-2.bin']
+    progress_bar_disp = False
 
     # base_dir = '/data/djl/datasets/Dataset_50Nodes'
     # file_paths = []
@@ -265,6 +264,52 @@ def add_freq(pktdata_in, est_cfo_freq):
     return pktdata2a
 
 
+def coarse_work_fast(pktdata_in):
+    argmax_est_time_shift_samples = 0
+    argmax_est_cfo_samples = 0
+    argmax_val = 0
+    fft_n = Config.nsamp * Config.fft_upsamp
+    # integer detection
+    detect_range_pkts = 3
+    phaseFlag = False
+    if phaseFlag:
+        fft_ups = cp.zeros((Config.preamble_len + detect_range_pkts, fft_n), dtype=cp.complex64)
+        fft_downs = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.complex64)
+    else:
+        fft_ups = cp.zeros((Config.preamble_len + detect_range_pkts, fft_n), dtype=cp.float32)
+        fft_downs = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.float32)
+    for preamble_idx in range(Config.preamble_len + detect_range_pkts):
+        sig1 = pktdata_in[Config.nsamp * preamble_idx: Config.nsamp * (preamble_idx + 1)] * Config.downchirp
+        fft_raw_1 = myfft(sig1, n=fft_n, plan=Config.plans[Config.fft_upsamp])
+        if phaseFlag:
+            fft_ups[preamble_idx] = fft_raw_1
+        else:
+            fft_ups[preamble_idx] = cp.abs(fft_raw_1) ** 2
+    for preamble_idx in range(2 + detect_range_pkts):
+        sig1 = (pktdata_in[Config.nsamp * (preamble_idx + Config.sfdpos): Config.nsamp * (preamble_idx + Config.sfdpos + 1)]
+                * Config.upchirp)
+        fft_raw_1 = myfft(sig1, n=fft_n, plan=Config.plans[Config.fft_upsamp])
+        if phaseFlag:
+            fft_downs[preamble_idx] = fft_raw_1
+        else:
+            fft_downs[preamble_idx] = cp.abs(fft_raw_1) ** 2
+    fft_vals = cp.zeros((detect_range_pkts,3), dtype=cp.float32)
+    for idx in range(detect_range_pkts):
+        fft_val_up = cp.argmax(cp.abs(cp.sum(fft_ups[idx : idx + Config.preamble_len], axis=0)))
+        fft_val_down = cp.argmax(cp.abs(cp.sum(fft_downs[idx : idx + 2], axis=0)))
+        fft_val_abs = cp.max(cp.abs(cp.sum(fft_ups[idx : idx + Config.preamble_len], axis=0))) \
+                      + cp.max(cp.abs(cp.sum(fft_downs[idx : idx + 2], axis=0)))
+        est_cfo_f = (fft_val_up + fft_val_down) / 2 * (Config.fs / fft_n)
+        est_to_s = (fft_val_up + fft_val_down) / 2
+        fft_vals[idx] = cp.array((est_cfo_f, est_to_s + idx * Config.nsamp, fft_val_abs), dtype=cp.float32)
+        # fig = go.Figure()
+        # fig.add_trace(go.Scatter(y=fft_ups[idx].get(), mode='lines', name='Ours'))
+        # fig.add_trace(go.Scatter(y=fft_downs[idx].get(), mode='lines', name='Ours'))
+        # fig.update_layout(title=f"{idx=} {fft_val_up=} {fft_val_down=}")
+        # fig.show()
+    # sys.exit(0)
+    return fft_vals[cp.argmax(fft_vals[:, 2])]
+
 def coarse_work(pktdata_in):
     argmax_est_time_shift_samples = 0
     argmax_est_cfo_samples = 0
@@ -295,6 +340,28 @@ def coarse_work(pktdata_in):
     est_to_s = argmax_est_time_shift_samples / Config.fs
     logger.info(f'coarse work: {argmax_est_time_shift_samples=}, {argmax_est_cfo_samples=}, {fft_n=}, {est_cfo_freq=} Hz, {est_to_s=} s)')
     return est_cfo_freq, argmax_est_time_shift_samples
+
+def test_work_coarse(pkt_totcnt, pktdata_in):
+    est_cfo_f2, est_to_s2, _ = coarse_work_fast(pktdata_in)
+    logger.error(f"{est_cfo_f2=}, {est_to_s2=}")
+    est_cfo_f1, est_to_s1 = coarse_work(pktdata_in)
+    logger.error(f"{est_cfo_f1=}, {est_to_s1=}")
+
+    sys.exit(0)
+
+    est_cfo_freq, argmax_est_time_shift_samples = coarse_work(pktdata_in)
+    pktdata2a = add_freq(pktdata_in, - est_cfo_freq)
+    pktdata2a = cp.roll(pktdata2a, -argmax_est_time_shift_samples)
+    detect = 0
+    est_to_dec = 0
+    pktdata4A = pktdata2a[Config.nsamp * detect: Config.nsamp * (detect + Config.sfdpos)]
+    ans1A, power1A = decode_payload(est_to_dec, pktdata4A, pkt_totcnt)
+    logger.info(f'Before SFO decode Preamble: {len(ans1A)=} {cp_str(ans1A)=} {cp_str(power1A)=}')
+    pktdata4B = pktdata2a[Config.nsamp * (detect + Config.sfdpos + 2) + Config.nsamp // 4:]
+    ans1B, power1B = decode_payload(est_to_dec, pktdata4B, pkt_totcnt)
+    logger.info(f'Before SFO decode Payload : {len(ans1B)=} {cp_str(ans1B)=} {cp_str(power1B)=}')
+
+
 
 
 def work(pkt_totcnt, pktdata_in):
@@ -922,7 +989,8 @@ if __name__ == "__main__":
             pktdata = []
             fsize = int(os.stat(file_path).st_size / (Config.nsamp * 4 * 2))
             logger.info(f'reading file: {file_path} SF: {Config.sf} pkts in file: {fsize}')
-            Config.progress_bar = tqdm(total=int(os.stat(file_path).st_size), unit='B', unit_scale=True, desc=file_path)
+            Config.progress_bar = tqdm(total=int(os.stat(file_path).st_size), unit='B', unit_scale=True, desc=file_path,
+                                       disable = not Config.progress_bar_disp)
 
             power_eval_len = 5000
             nmaxs = cp.zeros(power_eval_len, dtype=float)
@@ -943,7 +1011,7 @@ if __name__ == "__main__":
             # tstart_lst = []
             # cfo_freq_est = []
             for pkt_idx, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=20)):
-                if pkt_idx <= 967: continue
+                # if pkt_idx <= 0: continue
                 Config.progress_bar.set_description(os.path.splitext(os.path.basename(file_path))[0] + ':' + str(pkt_idx))
                 logger.warning(f"Reading {pkt_idx=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=}")
                 ans2n, ndatas = work(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
