@@ -289,18 +289,18 @@ def coarse_work_fast(pktdata_in):
     #             * Config.upchirp[lst_len])
     #     fft_down_lst[pidx] = myfft(sig1, n=fft_n, plan=Config.plans[Config.fft_upsamp])
     if not phaseFlag:
-        fft_ups = cp.abs(fft_ups) #** 2
-        fft_downs = cp.abs(fft_downs) #** 2
-        # fft_down_lst = cp.abs(fft_down_lst) #** 2
+        fft_ups = cp.abs(fft_ups) ** 2
+        fft_downs = cp.abs(fft_downs) ** 2
+        # fft_down_lst = cp.abs(fft_down_lst) ** 2
 
     fft_vals = cp.zeros((detect_range_pkts,3), dtype=cp.float32)
     for pidx in range(detect_range_pkts):
-        fft_val_up = cp.argmax(cp.abs(cp.sum(fft_ups[pidx + 1 : pidx + Config.preamble_len - 1], axis=0)))
+        fft_val_up = cp.argmax(cp.abs(cp.sum(fft_ups[pidx : pidx + Config.preamble_len], axis=0)))
         if fft_val_up > fft_n / 2: fft_val_up -= fft_n
-        fft_val_down = cp.argmax(cp.abs(cp.sum(fft_downs[pidx + 1 : pidx + 2], axis=0)))# + fft_down_lst[pidx]))
+        fft_val_down = cp.argmax(cp.abs(cp.sum(fft_downs[pidx : pidx + 2], axis=0)))# + fft_down_lst[pidx]))
         if fft_val_down > fft_n / 2: fft_val_down -= fft_n
-        fft_val_abs = cp.max(cp.abs(cp.sum(fft_ups[pidx + 1 : pidx + Config.preamble_len - 1], axis=0))) \
-                      + cp.max(cp.abs(cp.sum(fft_downs[pidx + 1 : pidx + 2], axis=0)))# + fft_down_lst[pidx]))
+        fft_val_abs = cp.max(cp.abs(cp.sum(fft_ups[pidx : pidx + Config.preamble_len], axis=0))) \
+                      + cp.max(cp.abs(cp.sum(fft_downs[pidx : pidx + 2], axis=0)))# + fft_down_lst[pidx]))
         # logger.info(f"{fft_val_up=} {fft_val_down=} {fft_n=}")
         est_cfo_r = (fft_val_up + fft_val_down) / 2 / fft_n # rate, [0, 1)
         est_to_r = (fft_val_down - fft_val_up) / 2 / fft_n  # rate, [0, 1)
@@ -310,9 +310,11 @@ def coarse_work_fast(pktdata_in):
         est_cfo_r %= 1 #[0, 1)
         est_to_r %= 1 #[0, 1)
         if est_cfo_r > 1/2: est_cfo_r -= 1 # [-1/2, 1/2)
-        if est_to_r > 1/2: est_to_r -= 1 # [-1/2, 1/2)
+        if est_to_r > 1/2:
+            est_to_r -= 1 # [-1/2, 1/2)
+            if pidx == 0: fft_val_abs *= 0 # shift left is nothing!
         est_cfo_f = est_cfo_r * Config.fs
-        est_to_s = (est_to_r + pidx) * Config.nsamp # add detect packet pos
+        est_to_s = (est_to_r * 8 + pidx) * Config.nsamp # add detect packet pos
         # logger.warning(f"WTT01: {est_to_s=} {pidx=} {est_to_r=} {Config.nsamp=}")
         fft_vals[pidx] = cp.array((est_cfo_f, est_to_s, fft_val_abs), dtype=cp.float32)
         # fig = go.Figure()
@@ -1052,7 +1054,7 @@ if __name__ == "__main__":
             for pkt_idx, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=20)):
                 if pkt_idx <= 1: continue
                 Config.progress_bar.set_description(os.path.splitext(os.path.basename(file_path))[0] + ':' + str(pkt_idx))
-                logger.warning(f"W01_READ_PKT_START: {pkt_idx=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=}")
+                logger.info(f"W01_READ_PKT_START: {pkt_idx=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=}")
                 ans_list, payload_data = test_work_coarse(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
                 if len(ans_list) != 23: # TODO !!!
                     logger.warning(f"E03_ANS_LEN: {pkt_idx=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=} {len(ans_list)=}")
