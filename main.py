@@ -5,6 +5,8 @@ import random
 import sys
 import time
 import pickle
+from os import mkdir
+
 import cmath
 import math
 # import matplotlib.pyplot as plt, mpld3
@@ -22,7 +24,7 @@ from tqdm import tqdm
 # import scipy
 
 logger = logging.getLogger('my_logger')
-level = logging.INFO
+level = logging.WARNING
 logger.setLevel(level)
 console_handler = logging.StreamHandler()
 console_handler.setLevel(level)  # Set the console handler level
@@ -52,6 +54,7 @@ parser.add_argument('--compLTSNR', action='store_true', default=False)
 parser.add_argument('--decode_unknown', action='store_true', default=False)
 parser.add_argument('--snrlow', type=int, default=-20)
 parser.add_argument('--snrhigh', type=int, default=-19)
+parser.add_argument('--calcangle', action='store_true', default=False)
 parse_opts = parser.parse_args()
 
 use_gpu = not parse_opts.cpu
@@ -80,12 +83,13 @@ def tocpu(x):
 def mychirp(t, f0, f1, t1):
     beta = (f1 - f0) / t1
     phase = 2 * cp.pi * (f0 * t + 0.5 * beta * t * t)
-    sig = cp.exp(1j * togpu(phase))
+    sig = cp.exp(1j * togpu(phase)).astype(cp.complex64)
     return sig
 
 
 def cp_str(x, precision=2, suppress_small=False):
-    return np.array2string(tocpu(x), precision=precision, formatter={'float_kind': lambda k: f"{k:.2f}"}, floatmode='fixed', suppress_small=suppress_small)
+    return np.array2string(tocpu(x), precision=precision, formatter={'float_kind': lambda k: f"{k:.2f}"},
+            floatmode='fixed', suppress_small=suppress_small, max_line_width=np.inf)
 
 
 def myscatter(ax, x, y, **kwargs):
@@ -107,7 +111,7 @@ def myplot(*args, **kwargs):
 script_path = __file__
 mod_time = os.path.getmtime(script_path)
 readable_time = time.ctime(mod_time)
-logger.info(f"Last modified time of the script: {readable_time}")
+logger.warning(f"Last modified time of the script: {readable_time}")
 
 
 def average_modulus(lst, n_classes):
@@ -139,7 +143,7 @@ class Config:
         s7 = 0
         s8 = 0
 
-    sf = 7
+    sf = 11
     bw = 125e3
     fs = 1e6
     sig_freq = 470e6
@@ -147,25 +151,30 @@ class Config:
     tsig = 2 ** sf / bw * fs  # in samples
     figpath = "fig"
     if not os.path.exists(figpath): os.mkdir(figpath)
-    # file_paths = ['/data/djl/datasets/Dataset_50Nodes/sf7-470-new-70.bin']
+    file_paths = ['/data/djl/datasets/sf11_240906_0.bin']
+    dataout_path = '/data/djl/datasets/sf11_240906_FFT16_dataout'
+    if not os.path.exists(dataout_path):
+        os.mkdir(dataout_path)
+    else:
+        logger.warning(f"{dataout_path} already exists")
     # file_paths = ['/data/djl/datasets/sf7-470-pre-2.bin']
     # file_paths = ['/data/djl/datasets/sf7-470-pre-2.bin']
 
-    base_dir = '/data/djl/datasets/Dataset_50Nodes'
-    file_paths = []
-    for file_name in os.listdir(base_dir):
-        if file_name.startswith('sf7') and file_name.endswith('.bin'):
-            file_paths.append(os.path.join(base_dir, file_name))
+    # base_dir = '/data/djl/datasets/Dataset_50Nodes'
+    # file_paths = []
+    # for file_name in os.listdir(base_dir):
+    #     if file_name.startswith('sf7') and file_name.endswith('.bin'):
+    #         file_paths.append(os.path.join(base_dir, file_name))
 
     nsamp = round(n_classes * fs / bw)
 
     preamble_len = 8  # TODO
     code_len = 2
     # codes = [50, 101]  # TODO set codes
-    fft_upsamp = 1024
+    fft_upsamp = 16#24
     sfdpos = preamble_len + code_len
     sfdend = sfdpos + 3
-    debug = True
+    debug = False
     breakflag = True
 
     t = cp.linspace(0, nsamp / fs, nsamp + 1)[:-1]
@@ -248,6 +257,7 @@ def dechirp(ndata, refchirp, upsamp=None):
 
 def add_freq(pktdata_in, est_cfo_freq):
     cfosymb = cp.exp(2j * cp.pi * est_cfo_freq * cp.linspace(0, (len(pktdata_in) - 1) / Config.fs, num=len(pktdata_in)))
+    cfosymb = cfosymb.astype(cp.complex64)
     pktdata2a = pktdata_in * cfosymb
     return pktdata2a
 
@@ -294,16 +304,18 @@ def work(pkt_totcnt, pktdata_in):
     # second detection
     # ====
     est_to_dec, est_to_int, pktdata3, re_cfo_0, re_cfo_freq, detect = fine_work(pktdata2a)
-    logger.debug(f"coarse work {re_cfo_0=}, {est_to_int=}, {est_to_dec=}")
+    logger.debug(f"fine work {re_cfo_0=}, {est_to_int=}, {est_to_dec=}")
     all_cfo_freq = re_cfo_freq + est_cfo_freq
 
     detect, upsamp = test_preamble(est_to_dec, pktdata3)
 
-    pktdata4 = pktdata3[Config.nsamp * (detect + Config.sfdpos + 2) + Config.nsamp // 4:]
+    pktdata4A = pktdata3[Config.nsamp * detect: Config.nsamp * (detect + Config.sfdpos)]
+    ans1A, power1A = decode_payload(est_to_dec, pktdata4A, pkt_totcnt)
+    logger.info(f'Before SFO decode Preamble: {len(ans1A)=} {cp_str(ans1A)=} {cp_str(power1A)=}')
+    pktdata4B = pktdata3[Config.nsamp * (detect + Config.sfdpos + 2) + Config.nsamp // 4:]
+    ans1B, power1B = decode_payload(est_to_dec, pktdata4B, pkt_totcnt)
+    logger.info(f'Before SFO decode Payload : {len(ans1B)=} {cp_str(ans1B)=} {cp_str(power1B)=}')
 
-    ans1n, ndatas = decode_payload(detect, est_to_dec, pktdata4, pkt_totcnt)
-
-    logger.debug(f'decoded data {cp_str(ans1n)}')
     # sfo correction
     est_cfo_slope = all_cfo_freq / Config.sig_freq * Config.bw * Config.bw / Config.n_classes
 
@@ -316,24 +328,32 @@ def work(pkt_totcnt, pktdata_in):
 
     est_to_dec2, est_to_int2, pktdata6, re_cfo_2, re_cfo_freq_2, detect = fine_work(pktdata5)
     all_cfo_freq = re_cfo_freq + est_cfo_freq + re_cfo_freq_2
+
     detect, upsamp = test_preamble(est_to_dec2, pktdata6)
-    pktdata7 = pktdata6[Config.nsamp * (detect + Config.sfdpos + 2) + Config.nsamp // 4:]
-    ans2n, ndatas = decode_payload(detect, est_to_dec, pktdata7, pkt_totcnt)
+    pktdata7A = pktdata6[Config.nsamp * detect: Config.nsamp * (detect + Config.sfdpos)]
+    ans2A, power2A = decode_payload(est_to_dec, pktdata7A, pkt_totcnt)
+    logger.info(f'After SFO decode Preamble: {len(ans2A)=} {cp_str(ans2A)=} {cp_str(power2A)=}')
+    pktdata7B = pktdata6[Config.nsamp * (detect + Config.sfdpos + 2) + Config.nsamp // 4:]
+    ans2B, power2B = decode_payload(est_to_dec, pktdata7B, pkt_totcnt)
+    logger.warning(f'After SFO decode Payload : {len(ans2B)=}\n {cp_str(ans2B)=}\n {cp_str(power2B)=}\n')
+    symb_cnt = len(pktdata7B) // Config.nsamp
+    pktdata7C = pktdata7B[: symb_cnt * Config.nsamp].reshape(symb_cnt, Config.nsamp)
+    return ans2B, pktdata7C
 
-    logger.debug(f'decoded data {len(ans2n)=} {cp_str(ans2n)}')
 
-    payload_data = ndatas[detect + Config.sfdpos + 4:]
-    angles = calc_angles(payload_data)
-    if opts.debug:
-        # noinspection PyArgumentList
-        fig1 = px.scatter(y=tocpu(angles), mode="markers")
-        fig1.show()
-        fig1.write_html(os.path.join(Config.figpath, f'temp_sf7_{pkt_totcnt}.html'))
-        for i in range(min(len(ans2n), len(angles))):
-            if abs(angles[i]) > 0.5:
-                logger.debug(f'abs(angles[i]) > 0.5: {i=} {cp_str(ans2n[i])} {cp_str(angles[i])}')
+    # payload_data = ndatas[detect + Config.sfdpos + 4:]
+    #
+    # angles = calc_angles(payload_data)
+    # if opts.debug:
+    #     noinspection PyArgumentList
+        # fig1 = px.scatter(y=tocpu(angles), mode="markers")
+        # fig1.show()
+        # fig1.write_html(os.path.join(Config.figpath, f'temp_sf7_{pkt_totcnt}.html'))
+        # for i in range(min(len(ans2n), len(angles))):
+        #     if abs(angles[i]) > 0.5:
+        #         logger.debug(f'abs(angles[i]) > 0.5: {i=} {cp_str(ans2n[i])} {cp_str(angles[i])}')
 
-    return angles
+    # return angles
 
 
 def calc_angles(payload_data):
@@ -352,21 +372,17 @@ def calc_angles(payload_data):
     return angles
 
 
-def decode_payload(detect, est_to_dec, pktdata4, pkt_totcnt):
+def decode_payload(est_to_dec, pktdata4, pkt_totcnt):
     symb_cnt = len(pktdata4) // Config.nsamp
     ndatas = pktdata4[: symb_cnt * Config.nsamp].reshape(symb_cnt, Config.nsamp)
-    ans1, power1 = dechirp(ndatas[detect + Config.preamble_len: detect + Config.preamble_len + 2], Config.downchirp)
-    ans2, power2 = dechirp(ndatas[detect + Config.sfdpos + 2:], Config.downchirp)
-    ans1 = cp.concatenate((ans1, ans2), axis=0)
-    power1 = cp.concatenate((power1, power2), axis=0)
-    ans1n = ans1
+    ans1n, power1 = dechirp(ndatas, Config.downchirp)
     ans1n += est_to_dec / 8
     if not min(power1) > cp.mean(power1) / 2:
         drop_idx = next((idx for idx, num in enumerate(power1) if num < cp.mean(power1) / 2), -1)
         ans1n = ans1n[:drop_idx]
-        logger.info(f'decode: {pkt_totcnt=} power1 drops: {drop_idx=} {len(ans1n)=} {cp_str(power1)}')
-    logger.info(f'decode: {len(ans1n)=} {cp_str(ans1n)=} {cp_str(power1)=}')
-    return ans1n, ndatas
+        power1 = power1[:drop_idx]
+        logger.warning(f'decode: {pkt_totcnt=} power1 drops: {drop_idx=} {len(ans1n)=} {cp_str(power1)}')
+    return ans1n, power1
 
 
 def test_preamble(est_to_dec, pktdata3):
@@ -408,19 +424,20 @@ def fine_work(pktdata2a):
     # if opts.debug:
     logger.debug(f'fine work {cp_str(ans1[: Config.preamble_len])} sfd {cp_str(ans2[Config.sfdpos: Config.sfdpos + 2])}'
                  f' {sfd_upcode=}, {sfd_downcode=}, {re_cfo_0=}, {est_to_0=}, {detect=}')
-    logger.debug('fine work angles: preamble')
-    for sig in ndatas[detect: detect + Config.preamble_len]:
-        chirp_data = sig * Config.downchirp
-        upsamp = Config.fft_upsamp
-        fft_raw = myfft(chirp_data, n=Config.nsamp * upsamp, plan=Config.plans[upsamp])
-        target_nfft = Config.n_classes * upsamp
+    if not parse_opts.calcangle:
+        logger.debug('fine work angles: preamble')
+        for sig in ndatas[detect: detect + Config.preamble_len]:
+            chirp_data = sig * Config.downchirp
+            upsamp = Config.fft_upsamp
+            fft_raw = myfft(chirp_data, n=Config.nsamp * upsamp, plan=Config.plans[upsamp])
+            target_nfft = Config.n_classes * upsamp
 
-        cut1 = cp.array(fft_raw[:target_nfft])
-        cut2 = cp.array(fft_raw[-target_nfft:])
-        dat = cp.abs(cut1) + cp.abs(cut2)
-        ans = round(tocpu(cp.argmax(dat)) / upsamp)
+            cut1 = cp.array(fft_raw[:target_nfft])
+            cut2 = cp.array(fft_raw[-target_nfft:])
+            dat = cp.abs(cut1) + cp.abs(cut2)
+            ans = round(tocpu(cp.argmax(dat)) / upsamp)
 
-        logger.debug(f'{cmath.phase(cut1[ans])=}, {cmath.phase(cut2[ans])=}')
+            logger.debug(f'{cmath.phase(cut1[ans])=}, {cmath.phase(cut2[ans])=}')
 
     re_cfo_freq = re_cfo_0 * (Config.fs / fft_n)
     est_to_int = cp.around(est_to_0)
@@ -917,16 +934,21 @@ if __name__ == "__main__":
             logger.debug(f"lower: {cp_str(counts[:threshpos])}")
             logger.debug(f"higher: {cp_str(counts[threshpos:])}")
 
-            pkt_totcnt = 0
-            pktdata_lst = []
-            tstart_lst = []
-            cfo_freq_est = []
+            # pktdata_lst = []
+            # tstart_lst = []
+            # cfo_freq_est = []
             for pkt_idx, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=20)):
                 if pkt_idx == 0: continue
-                logger.info(f"Prework {pkt_idx=} {len(pkt_data)=}")
-                p, t, c = fine_work_new(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
-                pktdata_lst.append(p)
-                tstart_lst.append(t)
-                cfo_freq_est.append(c)
-                with open(f"dataout{parse_opts.searchphase_step}.pkl","wb") as f:
-                    pickle.dump((pktdata_lst, tstart_lst, cfo_freq_est),f)
+                logger.info(f"Prework {pkt_idx=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=}")
+                ans2n, ndatas = work(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
+                # p, t, c = fine_work_new(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
+                # pktdata_lst.append(p)
+                # tstart_lst.append(t)
+                # cfo_freq_est.append(c)
+                outpath = os.path.join(Config.dataout_path, 'part'+str(pkt_idx // 7000), str(pkt_idx))
+                if not os.path.exists(outpath): os.makedirs(outpath)
+                for idx, (name, data) in enumerate(zip(list(tocpu(ans2n)), [row for row in tocpu(ndatas)])):
+                    data.tofile(os.path.join(outpath, f"{idx}_{round(name)}_{pkt_idx}_{Config.sf}.mat"))
+
+
+
