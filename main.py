@@ -7,7 +7,7 @@ from sklearn.cluster import KMeans
 from tqdm import tqdm
 
 logger = logging.getLogger('my_logger')
-level = logging.DEBUG
+level = logging.WARNING
 logger.setLevel(level)
 console_handler = logging.StreamHandler()
 console_handler.setLevel(level)  # Set the console handler level
@@ -67,15 +67,15 @@ class Config:
     sf = 11
     bw = 125e3
     fs = 1e6
-    sig_freq = 490e6
-    file_paths = ['/data/djl/datasets/LoRaDatasetNew_240417_sf1112_sfo/LoRaDataNew/sf11_0.bin']#/data/djl/datasets/sf11_240906_0.bin']
-
+    sig_freq = 470e6
+    file_paths = ['/data/djl/datasets/sf11_240906_0.bin']
     fft_upsamp = 1024
-    dataout_path = f'/data/djl/datasets/sf11_240401_out_{fft_upsamp}_test'
-    payload_len_expected = 143  # num of payload symbols
-    preamble_len = 10
+    dataout_path = f'/data/djl/datasets/sf11_240906_out_{fft_upsamp}_test'
+    payload_len_expected = 23  # num of payload symbols
+    preamble_len = 8
     code_len = 2
     progress_bar_disp = True
+    skip_pkts = 0
 
     # preprocess
     if not os.path.exists(dataout_path):
@@ -212,12 +212,12 @@ def test_work_coarse(pktdata_in):
     est_to_dec = est_to_s2 - est_to_int
     pktdata2 = cp.roll(pktdata2, - est_to_int)
 
-    pktdata4A = pktdata2[:Config.nsamp * Config.sfdpos]
-    ans1A, power1A = decode_payload(est_to_dec, pktdata4A)
-    logger.info(f'I03_1: Before SFO decode Preamble: {len(ans1A)=}\n    {cp_str(ans1A)=}\n    {cp_str(power1A)=}')
-    pktdata4B = pktdata2[int(Config.nsamp * (Config.sfdpos + 2 + 0.25)):]
-    ans1B, power1B = decode_payload(est_to_dec, pktdata4B)
-    logger.info(f'I03_2: Before SFO decode Payload : {len(ans1B)=}\n    {cp_str(ans1B)=}\n    {cp_str(power1B)=}')
+    # pktdata4A = pktdata2[:Config.nsamp * Config.sfdpos]
+    # ans1A, power1A = decode_payload(est_to_dec, pktdata4A)
+    # logger.info(f'I03_1: Before SFO decode Preamble: {len(ans1A)=}\n    {cp_str(ans1A)=}\n    {cp_str(power1A)=}')
+    # pktdata4B = pktdata2[int(Config.nsamp * (Config.sfdpos + 2 + 0.25)):]
+    # ans1B, power1B = decode_payload(est_to_dec, pktdata4B)
+    # logger.info(f'I03_2: Before SFO decode Payload : {len(ans1B)=}\n    {cp_str(ans1B)=}\n    {cp_str(power1B)=}')
 
     est_cfo_slope = est_cfo_f2 / Config.sig_freq * Config.bw * Config.fs / Config.nsamp
     sig_time = len(pktdata2) / Config.fs
@@ -285,7 +285,7 @@ if __name__ == "__main__":
         pkt_cnt = 0
         pktdata = []
         fsize = int(os.stat(file_path).st_size / (Config.nsamp * 4 * 2))
-        logger.warning(f'W01_READ_START: reading file: {file_path} SF: {Config.sf} pkts in file: {fsize}')
+        logger.warning(f'W01_READ_START: reading file: {file_path} SF: {Config.sf} pkts in file: {fsize} {Config.skip_pkts=}')
         Config.progress_bar = tqdm(total=int(os.stat(file_path).st_size), unit='B', unit_scale=True, desc=file_path,
                                    disable=not Config.progress_bar_disp)
 
@@ -304,6 +304,7 @@ if __name__ == "__main__":
         logger.debug(f"D00_CLUSTER: higher: {cp_str(counts[threshpos:])}")
 
         for Config.pkt_idx, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=20)):
+            if Config.pkt_idx <= Config.skip_pkts: continue
             Config.progress_bar.set_description(os.path.splitext(os.path.basename(file_path))[0] + ':' + str(Config.pkt_idx))
             logger.info(f"W02_READ_PKT_START: {Config.pkt_idx=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=}")
             pkt_data_0 = cp.concatenate((cp.zeros(Config.nsamp // 2, dtype=cp.complex64), pkt_data,

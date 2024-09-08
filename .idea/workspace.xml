@@ -7,7 +7,9 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="2aff2121-33c0-4530-87f0-ec2306243960" name="Changes" comment="lite production can run">
+    <list default="true" id="2aff2121-33c0-4530-87f0-ec2306243960" name="Changes" comment="temp">
+      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -68,7 +70,7 @@
     "node.js.selected.package.tslint": "(autodetect)",
     "nodejs_package_manager_path": "npm",
     "run.code.analysis.last.selected.profile": "aDefault",
-    "settings.editor.selected.configurable": "preferences.pluginManager",
+    "settings.editor.selected.configurable": "project.propVCSSupport.CommitDialog",
     "vue.rearranger.settings.migration": "true"
   }
 }]]></component>
@@ -124,7 +126,7 @@
       <workItem from="1725683176154" duration="271000" />
       <workItem from="1725697169198" duration="13930000" />
       <workItem from="1725724085477" duration="8410000" />
-      <workItem from="1725776358447" duration="5476000" />
+      <workItem from="1725776358447" duration="6092000" />
     </task>
     <task id="LOCAL-00001" summary="Running production detect sf11 240906 FFT16(1024 20min/pkt)">
       <option name="closed" value="true" />
@@ -230,7 +232,15 @@
       <option name="project" value="LOCAL" />
       <updated>1725777591202</updated>
     </task>
-    <option name="localTasksCounter" value="14" />
+    <task id="LOCAL-00014" summary="temp">
+      <option name="closed" value="true" />
+      <created>1725786541748</created>
+      <option name="number" value="00014" />
+      <option name="presentableId" value="LOCAL-00014" />
+      <option name="project" value="LOCAL" />
+      <updated>1725786541748</updated>
+    </task>
+    <option name="localTasksCounter" value="15" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -248,8 +258,8 @@
     </option>
   </component>
   <component name="VcsManagerConfiguration">
+    <option name="CHECK_NEW_TODO" value="false" />
     <MESSAGE value="Running production detect sf11 240906 FFT16(1024 20min/pkt)" />
-    <MESSAGE value="temp" />
     <MESSAGE value="fast cfo working" />
     <MESSAGE value="not work back in 0906 data" />
     <MESSAGE value="seems fine, 1, 2st pkt should discard" />
@@ -258,7 +268,8 @@
     <MESSAGE value="working, todo: twice estimation?" />
     <MESSAGE value="working, twice estimation, production" />
     <MESSAGE value="lite production can run" />
-    <option name="LAST_COMMIT_MESSAGE" value="lite production can run" />
+    <MESSAGE value="temp" />
+    <option name="LAST_COMMIT_MESSAGE" value="temp" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/OptimalPkt$main.coverage" NAME="main Coverage Results" MODIFIED="1725786386132" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
