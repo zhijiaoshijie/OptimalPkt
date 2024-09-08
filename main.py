@@ -162,7 +162,7 @@ class Config:
     else:
         logger.warning(f"E00_OUTDIR: {dataout_path} already exists")
     progress_bar = None
-    progress_bar_disp = False
+    progress_bar_disp = True
 
     # base_dir = '/data/djl/datasets/Dataset_50Nodes'
     # file_paths = []
@@ -378,12 +378,12 @@ def test_work_coarse(pkt_totcnt, pktdata_in):
     est_to_dec = est_to_s2 - est_to_int
     pktdata2 = cp.roll(pktdata2, - est_to_int)
 
-    pktdata4A = pktdata2[:Config.nsamp * Config.sfdpos]
-    ans1A, power1A = decode_payload(est_to_dec, pktdata4A, pkt_totcnt)
-    logger.info(f'I03_1: Before SFO decode Preamble: {len(ans1A)=}\n    {cp_str(ans1A)=}\n    {cp_str(power1A)=}')
-    pktdata4B = pktdata2[int(Config.nsamp * (Config.sfdpos + 2 + 0.25)):]
-    ans1B, power1B = decode_payload(est_to_dec, pktdata4B, pkt_totcnt)
-    logger.info(f'I03_2: Before SFO decode Payload : {len(ans1B)=}\n    {cp_str(ans1B)=}\n    {cp_str(power1B)=}')
+    # pktdata4A = pktdata2[:Config.nsamp * Config.sfdpos]
+    # ans1A, power1A = decode_payload(est_to_dec, pktdata4A, pkt_totcnt)
+    # logger.info(f'I03_1: Before SFO decode Preamble: {len(ans1A)=}\n    {cp_str(ans1A)=}\n    {cp_str(power1A)=}')
+    # pktdata4B = pktdata2[int(Config.nsamp * (Config.sfdpos + 2 + 0.25)):]
+    # ans1B, power1B = decode_payload(est_to_dec, pktdata4B, pkt_totcnt)
+    # logger.info(f'I03_2: Before SFO decode Payload : {len(ans1B)=}\n    {cp_str(ans1B)=}\n    {cp_str(power1B)=}')
 
     est_cfo_slope = est_cfo_f2 / Config.sig_freq * Config.bw * Config.fs / Config.nsamp
     sig_time = len(pktdata2) / Config.fs
@@ -399,7 +399,7 @@ def test_work_coarse(pkt_totcnt, pktdata_in):
     ans1B, power1B = decode_payload(est_to_dec, pktdata4B, pkt_totcnt)
     logger.info(f'I03_5: After SFO decode Payload : {len(ans1B)=}\n    {cp_str(ans1B)=}\n    {cp_str(power1B)=}')
 
-    return ans1B, pktdata4B
+    return ans1B, pktdata2C
 
 
 
@@ -1052,10 +1052,14 @@ if __name__ == "__main__":
             # tstart_lst = []
             # cfo_freq_est = []
             for pkt_idx, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=20)):
-                if pkt_idx <= 1: continue
+                if pkt_idx <= 0: continue
                 Config.progress_bar.set_description(os.path.splitext(os.path.basename(file_path))[0] + ':' + str(pkt_idx))
                 logger.info(f"W01_READ_PKT_START: {pkt_idx=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=}")
-                ans_list, payload_data = test_work_coarse(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
+                pkt_data_0 = cp.concatenate((cp.zeros(Config.nsamp // 2, dtype=cp.complex64), pkt_data, cp.zeros(Config.nsamp // 2, dtype=cp.complex64)))
+                _, pkt_data_A = test_work_coarse(pkt_idx, pkt_data_0 / cp.mean(cp.abs(pkt_data_0)))
+                pkt_data_B = cp.concatenate((cp.zeros(Config.nsamp // 2, dtype=cp.complex64), pkt_data_A, cp.zeros(Config.nsamp // 2, dtype=cp.complex64)))
+                ans_list, pkt_data_C = test_work_coarse(pkt_idx, pkt_data_B)
+                payload_data = pkt_data_C[int(Config.nsamp * (Config.sfdpos + 2 + 0.25)):]
                 if len(ans_list) != 23: # TODO !!!
                     logger.warning(f"E03_ANS_LEN: {pkt_idx=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=} {len(ans_list)=}")
                 else:
@@ -1067,7 +1071,7 @@ if __name__ == "__main__":
                     if not os.path.exists(outpath): os.makedirs(outpath)
                     for idx, decode_ans in enumerate(list(tocpu(ans_list))):
                         data = payload_data[Config.nsamp * idx: Config.nsamp * (idx + 1)]
-                        data.tofile(os.path.join(outpath, f"{idx}_{round(decode_ans)}_{pkt_idx}_{Config.sf}.mat"))
+                        data.tofile(os.path.join(outpath, f"{idx}_{round(decode_ans) % Config.n_classes}_{pkt_idx}_{Config.sf}.mat"))
 
 
 
