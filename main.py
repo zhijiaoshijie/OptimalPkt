@@ -7,7 +7,7 @@ from sklearn.cluster import KMeans
 from tqdm import tqdm
 
 logger = logging.getLogger('my_logger')
-level = logging.WARNING
+level = logging.DEBUG
 logger.setLevel(level)
 console_handler = logging.StreamHandler()
 console_handler.setLevel(level)  # Set the console handler level
@@ -50,7 +50,7 @@ def mychirp(t, f0, f1, t1):
     sig = cp.exp(1j * togpu(phase)).astype(cp.complex64)
     return sig
 
-
+# noinspection PyTypeChecker
 def cp_str(x, precision=2, suppress_small=False):
     return np.array2string(tocpu(x), precision=precision, formatter={'float_kind': lambda k: f"{k:.3f}"},
                            floatmode='fixed', suppress_small=suppress_small, max_line_width=np.inf)
@@ -67,12 +67,13 @@ class Config:
     sf = 11
     bw = 125e3
     fs = 1e6
-    sig_freq = 470e6
-    file_paths = ['/data/djl/datasets/sf11_240906_0.bin']
+    sig_freq = 490e6
+    file_paths = ['/data/djl/datasets/LoRaDatasetNew_240417_sf1112_sfo/LoRaDataNew/sf11_0.bin']#/data/djl/datasets/sf11_240906_0.bin']
+
     fft_upsamp = 1024
-    dataout_path = f'/data/djl/datasets/sf11_240906_out_{fft_upsamp}_test'
-    payload_len_expected = 23  # num of payload symbols
-    preamble_len = 8
+    dataout_path = f'/data/djl/datasets/sf11_240401_out_{fft_upsamp}_test'
+    payload_len_expected = 143  # num of payload symbols
+    preamble_len = 10
     code_len = 2
     progress_bar_disp = True
 
@@ -100,6 +101,7 @@ class Config:
         plan = fft.get_fft_plan(cp.zeros(nsamp * fft_upsamp, dtype=cp.complex64))
     else:
         plan = None
+    pkt_idx = 0
 
 
 if use_gpu:
@@ -179,8 +181,11 @@ def coarse_work_fast(pktdata_in):
             est_to_r -= 1  # [-1/2, 1/2)
             if pidx == 0: fft_val_abs *= 0  # shift left is nothing!
         est_cfo_f = est_cfo_r * Config.fs
-        est_to_s = (est_to_r * 8 + pidx) * Config.nsamp  # add detect packet pos
-        # logger.warning(f"WTT01: {est_to_s=} {pidx=} {est_to_r=} {Config.nsamp=}")
+        est_to_s = (est_to_r * 8 + pidx) * Config.nsamp  # add detect packet pos TODO
+        if abs(est_to_r) > 1/8:
+            logger.error(f"E07_LARGE_TIME_OFFSET: {Config.pkt_idx=} {fft_val_up=} {fft_val_down=} {est_cfo_r=} {est_to_r=} {est_cfo_f=} {est_to_s=} {pidx=}")
+        if abs(est_cfo_f) >= Config.fs / 8:
+            logger.warning(f"E07_LARGE_CFO: {Config.pkt_idx=} {fft_val_up=} {fft_val_down=} {est_cfo_r=} {est_to_r=} {est_cfo_f=} {est_to_s=} {pidx=}")
         fft_vals[pidx] = cp.array((est_cfo_f, est_to_s, fft_val_abs), dtype=cp.float32)
         # fig = go.Figure()
         # fig.add_trace(go.Scatter(y=fft_ups[idx].get(), mode='lines', name='Ours'))
@@ -198,16 +203,21 @@ def coarse_work_fast(pktdata_in):
     return fft_vals[bestidx][0].item(), fft_vals[bestidx][1].item()
 
 
-def test_work_coarse(pkt_totcnt, pktdata_in):
+def test_work_coarse(pktdata_in):
     est_cfo_f2, est_to_s2 = coarse_work_fast(pktdata_in)
-    if abs(est_cfo_f2) >= Config.fs / 8:
-        logger.warning(f"E02_LARGE_CFO: abs(est_cfo_r) too large: {pkt_totcnt=} {est_cfo_f2=} {est_to_s2=}")
     logger.info(f"I02_WORK_RESULT {est_cfo_f2=}, {est_to_s2=}")
 
     pktdata2 = add_freq(pktdata_in, - est_cfo_f2)
     est_to_int = round(est_to_s2)
     est_to_dec = est_to_s2 - est_to_int
     pktdata2 = cp.roll(pktdata2, - est_to_int)
+
+    pktdata4A = pktdata2[:Config.nsamp * Config.sfdpos]
+    ans1A, power1A = decode_payload(est_to_dec, pktdata4A)
+    logger.info(f'I03_1: Before SFO decode Preamble: {len(ans1A)=}\n    {cp_str(ans1A)=}\n    {cp_str(power1A)=}')
+    pktdata4B = pktdata2[int(Config.nsamp * (Config.sfdpos + 2 + 0.25)):]
+    ans1B, power1B = decode_payload(est_to_dec, pktdata4B)
+    logger.info(f'I03_2: Before SFO decode Payload : {len(ans1B)=}\n    {cp_str(ans1B)=}\n    {cp_str(power1B)=}')
 
     est_cfo_slope = est_cfo_f2 / Config.sig_freq * Config.bw * Config.fs / Config.nsamp
     sig_time = len(pktdata2) / Config.fs
@@ -217,16 +227,16 @@ def test_work_coarse(pkt_totcnt, pktdata_in):
     pktdata2C = pktdata2 * est_cfo_symbol
 
     pktdata4A = pktdata2C[:Config.nsamp * Config.sfdpos]
-    ans1A, power1A = decode_payload(est_to_dec, pktdata4A, pkt_totcnt)
+    ans1A, power1A = decode_payload(est_to_dec, pktdata4A)
     logger.info(f'I03_4: After SFO decode Preamble: {len(ans1A)=}\n    {cp_str(ans1A)=}\n    {cp_str(power1A)=}')
     pktdata4B = pktdata2C[int(Config.nsamp * (Config.sfdpos + 2 + 0.25)):]
-    ans1B, power1B = decode_payload(est_to_dec, pktdata4B, pkt_totcnt)
+    ans1B, power1B = decode_payload(est_to_dec, pktdata4B)
     logger.info(f'I03_5: After SFO decode Payload : {len(ans1B)=}\n    {cp_str(ans1B)=}\n    {cp_str(power1B)=}')
 
     return ans1B, pktdata2C
 
 
-def decode_payload(est_to_dec, pktdata4, pkt_totcnt):
+def decode_payload(est_to_dec, pktdata4):
     symb_cnt = len(pktdata4) // Config.nsamp
     ndatas = pktdata4[: symb_cnt * Config.nsamp].reshape(symb_cnt, Config.nsamp)
     ans1n, power1 = dechirp(ndatas, Config.downchirp)
@@ -234,7 +244,7 @@ def decode_payload(est_to_dec, pktdata4, pkt_totcnt):
     if not min(power1) > cp.mean(power1) / 2:
         drop_idx = next((idx for idx, num in enumerate(power1) if num < cp.mean(power1) / 2), -1)
         logger.info(
-            f'E01_POWER_DROP: {pkt_totcnt=} power1 drops: {drop_idx=} {len(ans1n)=}\n    {cp_str(ans1n)=}\n    {cp_str(power1)=}')
+            f'E01_POWER_DROP: {Config.pkt_idx=} power1 drops: {drop_idx=} {len(ans1n)=}\n    {cp_str(ans1n)=}\n    {cp_str(power1)=}')
         ans1n = ans1n[:drop_idx]
         power1 = power1[:drop_idx]
     return ans1n, power1
@@ -293,24 +303,23 @@ if __name__ == "__main__":
         logger.debug(f"D00_CLUSTER: lower: {cp_str(counts[:threshpos])}")
         logger.debug(f"D00_CLUSTER: higher: {cp_str(counts[threshpos:])}")
 
-        for pkt_idx, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=20)):
-            if pkt_idx <= 0: continue
-            Config.progress_bar.set_description(os.path.splitext(os.path.basename(file_path))[0] + ':' + str(pkt_idx))
-            logger.info(f"W02_READ_PKT_START: {pkt_idx=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=}")
+        for Config.pkt_idx, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=20)):
+            Config.progress_bar.set_description(os.path.splitext(os.path.basename(file_path))[0] + ':' + str(Config.pkt_idx))
+            logger.info(f"W02_READ_PKT_START: {Config.pkt_idx=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=}")
             pkt_data_0 = cp.concatenate((cp.zeros(Config.nsamp // 2, dtype=cp.complex64), pkt_data,
                                          cp.zeros(Config.nsamp // 2, dtype=cp.complex64)))
-            _, pkt_data_A = test_work_coarse(pkt_idx, pkt_data_0 / cp.mean(cp.abs(pkt_data_0)))
+            _, pkt_data_A = test_work_coarse(pkt_data_0 / cp.mean(cp.abs(pkt_data_0)))
             pkt_data_B = cp.concatenate((cp.zeros(Config.nsamp // 2, dtype=cp.complex64), pkt_data_A,
                                          cp.zeros(Config.nsamp // 2, dtype=cp.complex64)))
-            ans_list, pkt_data_C = test_work_coarse(pkt_idx, pkt_data_B)
+            ans_list, pkt_data_C = test_work_coarse(pkt_data_B)
             payload_data = pkt_data_C[int(Config.nsamp * (Config.sfdpos + 2 + 0.25)):]
             if len(ans_list) != Config.payload_len_expected:
                 logger.warning(
-                    f"E03_ANS_LEN: {pkt_idx=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=} {len(ans_list)=}")
+                    f"E03_ANS_LEN: {Config.pkt_idx=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=} {len(ans_list)=}")
             else:
-                outpath = os.path.join(Config.dataout_path, 'part' + str(pkt_idx // 1000), str(pkt_idx))
+                outpath = os.path.join(Config.dataout_path, 'part' + str(Config.pkt_idx // 1000), str(Config.pkt_idx))
                 if not os.path.exists(outpath): os.makedirs(outpath)
                 for idx, decode_ans in enumerate(list(tocpu(ans_list))):
                     data = payload_data[Config.nsamp * idx: Config.nsamp * (idx + 1)]
                     data.tofile(os.path.join(outpath,
-                                             f"{idx}_{round(decode_ans) % Config.n_classes}_{pkt_idx}_{Config.sf}.mat"))
+                                             f"{idx}_{round(decode_ans) % Config.n_classes}_{Config.pkt_idx}_{Config.sf}.mat"))
