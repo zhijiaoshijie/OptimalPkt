@@ -54,7 +54,7 @@ def mychirp(t, f0, f1, t1, t0=0, phase0=0):
 def mysymb(t, f0, f1, t1, t0, symb, phase0=0, phase1=0):
     beta = (f1 - f0) / (t1 - t0)
     f0R = f0 + (f1 - f0) * (symb / Config.n_classes)
-    tjump = t1 * (1 - symb / Config.n_classes)
+    tjump = t0 + (t1 - t0) * (1 - symb / Config.n_classes)
     phaseA = 2 * cp.pi * (f0R * (t - t0) + 0.5 * beta * (t - t0) ** 2) + phase0
     phaseA[t > tjump] = 0
     phaseB = 2 * cp.pi * ((f0R - (f1 - f0)) * (t - t0) + 0.5 * beta * (t - t0) ** 2) + phase1
@@ -340,66 +340,86 @@ def main():
 
 
 def gen_pkt(cfo, sfo, to, pkt_contents):
-    data_pkt = []
 
     # their oscilliator is correct (fs), our oscilliator is fs + sfo
+    # their time start from 0, our sampling start from to < 0
+    assert to < 0, "Time Offset must be < 0"
     tot_t = Config.nsamp * (Config.sfdend + len(pkt_contents))
     ts_ours = 1 / (Config.fs + sfo)
     tsymb_theirs = Config.nsamp / Config.fs
     t_all = cp.arange(to, to + tot_t * ts_ours, ts_ours)
 
+    data_pkt = cp.zeros(t_all.shape[0], dtype=cp.complex64)
+
     # preamble
     for symb_idx in range(Config.preamble_len):
-        data_pkt.append(mychirp(t_all[symb_idx * Config.nsamp : (symb_idx + 1) * Config.nsamp],
+        istart = symb_idx * Config.nsamp
+        data = mychirp(t_all,
                                 f0=- Config.bw / 2 + cfo,
                                 f1=Config.bw / 2 + cfo,
                                 t1=tsymb_theirs * (symb_idx + 1),
-                                t0 = tsymb_theirs * symb_idx))
+                                t0 = tsymb_theirs * symb_idx)
+        data[t_all <= istart / Config.fs] = 0
+        data[t_all > (istart + Config.nsamp) / Config.fs] = 0
+        data_pkt += data
     # two codes
     for symb_idx in range(Config.preamble_len, Config.preamble_len + 2):
         istart = symb_idx * Config.nsamp
-        data_pkt.append(mysymb(t_all[istart: istart + Config.nsamp],
+        data = mysymb(t_all,
                                 f0=- Config.bw / 2 + cfo,
                                 f1=Config.bw / 2 + cfo,
                                 t1=tsymb_theirs * (symb_idx + 1),
                                 t0 = tsymb_theirs * symb_idx,
-                                symb=pkt_contents[symb_idx - Config.preamble_len]))
+                                symb=pkt_contents[symb_idx - Config.preamble_len])
+        data[t_all <= istart / Config.fs] = 0
+        data[t_all > (istart + Config.nsamp) / Config.fs] = 0
+        data_pkt += data
 
     # SFD 1, 2
     for symb_idx in range(Config.preamble_len + 2, Config.preamble_len + 4):
-        data_pkt.append(mychirp(t_all[symb_idx * Config.nsamp : (symb_idx + 1) * Config.nsamp],
+        istart = symb_idx * Config.nsamp
+        data = mychirp(t_all,
                                 f0=Config.bw / 2 + cfo,
                                 f1=- Config.bw / 2 + cfo,
                                 t1=tsymb_theirs * (symb_idx + 1),
-                                t0 = tsymb_theirs * symb_idx))
+                                t0 = tsymb_theirs * symb_idx)
+        data[t_all <= istart / Config.fs] = 0
+        data[t_all > (istart + Config.nsamp) / Config.fs] = 0
+        data_pkt += data
 
     # SFD 2.25
     symb_idx = Config.preamble_len + 4
+    istart = symb_idx * Config.nsamp
     symb_idx_start = round((Config.preamble_len + 4.25) * Config.nsamp)
-    data_pkt.append(mychirp(t_all[symb_idx * Config.nsamp : symb_idx_start],
+    data = mychirp(t_all,
                             f0=Config.bw / 2 + cfo,
                             f1=Config.bw / 4 + cfo,
                             t1=tsymb_theirs * (symb_idx + 0.25),
-                            t0 = tsymb_theirs * symb_idx))
+                            t0 = tsymb_theirs * symb_idx)
+    data[t_all <= istart / Config.fs] = 0
+    data[t_all > (istart + Config.nsamp) / Config.fs] = 0
+    data_pkt += data
 
     for symb_code_idx in range(2, pkt_contents.shape[0]):
         istart = symb_code_idx * Config.nsamp + symb_idx_start
-        data_pkt.append(mysymb(t_all[istart: istart + Config.nsamp],
+        data = mysymb(t_all,
                                 f0=- Config.bw / 2 + cfo,
                                 f1=Config.bw / 2 + cfo,
                                 t1=tsymb_theirs * (symb_idx + 1),
                                 t0 = tsymb_theirs * symb_idx,
-                                symb=pkt_contents[symb_code_idx]))
-    return cp.concatenate(data_pkt)
+                                symb=pkt_contents[symb_code_idx])
+        data[t_all <= istart / Config.fs] = 0
+        data[t_all > (istart + Config.nsamp) / Config.fs] = 0
+        data_pkt += data
+
+    return data_pkt
 
 def test():
-    to = 2 ** Config.sf / Config.bw * 0.3
-    toB = to % (1 / Config.fs)
-    toA = to - toB
+    to = - 2 ** Config.sf / Config.bw * 0.3
     pkt_contents = np.concatenate((np.array((16, 24), dtype=int), np.arange(0, 10, 1, dtype=int)))
     cfo = 200
-    pkt = gen_pkt(cfo = cfo, sfo = cfo / Config.fs * Config.sig_freq, to = toB, pkt_contents = pkt_contents)
-    pkt = cp.concatenate((cp.zeros(int(toA * Config.fs), dtype=cp.complex64),
+    pkt = gen_pkt(cfo = cfo, sfo = cfo / Config.fs * Config.sig_freq, to = to, pkt_contents = pkt_contents)
+    pkt = cp.concatenate((cp.zeros(Config.nsamp, dtype=cp.complex64),
                           pkt,
                           cp.zeros(Config.nsamp, dtype=cp.complex64)))
     outpath = "."
