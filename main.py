@@ -7,7 +7,7 @@ from sklearn.cluster import KMeans
 from tqdm import tqdm
 
 logger = logging.getLogger('my_logger')
-level = logging.WARNING
+level = logging.DEBUG
 logger.setLevel(level)
 console_handler = logging.StreamHandler()
 console_handler.setLevel(level)  # Set the console handler level
@@ -44,9 +44,22 @@ def tocpu(x):
         return x
 
 
-def mychirp(t, f0, f1, t1):
-    beta = (f1 - f0) / t1
-    phase = 2 * cp.pi * (f0 * t + 0.5 * beta * t * t)
+def mychirp(t, f0, f1, t1, t0=0, phase0=0):
+    beta = (f1 - f0) / (t1 - t0)
+    phase = 2 * cp.pi * (f0 * (t - t0) + 0.5 * beta * (t - t0) ** 2) + phase0
+    sig = cp.exp(1j * togpu(phase)).astype(cp.complex64)
+    return sig
+
+
+def mysymb(t, f0, f1, t1, t0, symb, phase0=0, phase1=0):
+    beta = (f1 - f0) / (t1 - t0)
+    f0R = f0 + (f1 - f0) * (symb / Config.n_classes)
+    tjump = t1 * (1 - symb / Config.n_classes)
+    phaseA = 2 * cp.pi * (f0R * (t - t0) + 0.5 * beta * (t - t0) ** 2) + phase0
+    phaseA[t > tjump] = 0
+    phaseB = 2 * cp.pi * ((f0R - (f1 - f0)) * (t - t0) + 0.5 * beta * (t - t0) ** 2) + phase1
+    phaseB[t <= tjump] = 0
+    phase = phaseA + phaseB
     sig = cp.exp(1j * togpu(phase)).astype(cp.complex64)
     return sig
 
@@ -56,22 +69,20 @@ def cp_str(x, precision=2, suppress_small=False):
                            floatmode='fixed', suppress_small=suppress_small, max_line_width=np.inf)
 
 
-script_path = __file__
-mod_time = os.path.getmtime(script_path)
-readable_time = time.ctime(mod_time)
-logger.warning(f"Last modified time of the script: {readable_time}")
+logger.warning(f"Last modified time of the script: {time.ctime(os.path.getmtime(__file__))}")
 
 
 class Config:
     # Set parameters
-    sf = 11
+    sf = 12
     bw = 125e3
     fs = 1e6
     sig_freq = 470e6
-    file_paths = ['/data/djl/datasets/sf11_240906_0.bin']
-    fft_upsamp = 1024
-    dataout_path = f'/data/djl/datasets/sf11_240906_out_{fft_upsamp}_test'
-    payload_len_expected = 23  # num of payload symbols
+    file_paths = ['/data/djl/datasets/sf12_240909/sf12_240909.bin']
+    fft_upsamp = 128
+    logger.warning(f"W00_FFT_UPSAMP: {fft_upsamp=}")
+    dataout_path = f'/data/djl/datasets/sf12_240909_FFTFast{fft_upsamp}_dataout'
+    payload_len_expected = 18  # num of payload symbols
     preamble_len = 8
     code_len = 2
     progress_bar_disp = True
@@ -92,6 +103,7 @@ class Config:
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples
     nsamp = round(n_classes * fs / bw)
+    packets_per_part = int(1e9 / nsamp / 8 / payload_len_expected)
     sfdpos = preamble_len + code_len
     sfdend = sfdpos + 3
     t = cp.linspace(0, nsamp / fs, nsamp + 1)[:-1]
@@ -278,8 +290,7 @@ def read_pkt(file_path_in, threshold, min_length=20):
 
 
 # read packets from file
-if __name__ == "__main__":
-    angles = []
+def main():
 
     for file_path in Config.file_paths:
         pkt_cnt = 0
@@ -318,9 +329,85 @@ if __name__ == "__main__":
                 logger.warning(
                     f"E03_ANS_LEN: {Config.pkt_idx=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=} {len(ans_list)=}")
             else:
-                outpath = os.path.join(Config.dataout_path, 'part' + str(Config.pkt_idx // 1000), str(Config.pkt_idx))
+                outpath = os.path.join(Config.dataout_path, 'part' + str(Config.pkt_idx // Config.packets_per_part), str(Config.pkt_idx))
                 if not os.path.exists(outpath): os.makedirs(outpath)
                 for idx, decode_ans in enumerate(list(tocpu(ans_list))):
                     data = payload_data[Config.nsamp * idx: Config.nsamp * (idx + 1)]
                     data.tofile(os.path.join(outpath,
+
                                              f"{idx}_{round(decode_ans) % Config.n_classes}_{Config.pkt_idx}_{Config.sf}.mat"))
+
+
+
+def gen_pkt(cfo, sfo, to, pkt_contents):
+    data_pkt = []
+
+    # their oscilliator is correct (fs), our oscilliator is fs + sfo
+    tot_t = Config.nsamp * (Config.sfdend + len(pkt_contents))
+    ts_ours = 1 / (Config.fs + sfo)
+    tsymb_theirs = Config.nsamp / Config.fs
+    t_all = cp.arange(to, to + tot_t * ts_ours, ts_ours)
+
+    # preamble
+    for symb_idx in range(Config.preamble_len):
+        data_pkt.append(mychirp(t_all[symb_idx * Config.nsamp : (symb_idx + 1) * Config.nsamp],
+                                f0=- Config.bw / 2 + cfo,
+                                f1=Config.bw / 2 + cfo,
+                                t1=tsymb_theirs * (symb_idx + 1),
+                                t0 = tsymb_theirs * symb_idx))
+    # two codes
+    for symb_idx in range(Config.preamble_len, Config.preamble_len + 2):
+        istart = symb_idx * Config.nsamp
+        data_pkt.append(mysymb(t_all[istart: istart + Config.nsamp],
+                                f0=- Config.bw / 2 + cfo,
+                                f1=Config.bw / 2 + cfo,
+                                t1=tsymb_theirs * (symb_idx + 1),
+                                t0 = tsymb_theirs * symb_idx,
+                                symb=pkt_contents[symb_idx - Config.preamble_len]))
+
+    # SFD 1, 2
+    for symb_idx in range(Config.preamble_len + 2, Config.preamble_len + 4):
+        data_pkt.append(mychirp(t_all[symb_idx * Config.nsamp : (symb_idx + 1) * Config.nsamp],
+                                f0=Config.bw / 2 + cfo,
+                                f1=- Config.bw / 2 + cfo,
+                                t1=tsymb_theirs * (symb_idx + 1),
+                                t0 = tsymb_theirs * symb_idx))
+
+    # SFD 2.25
+    symb_idx = Config.preamble_len + 4
+    symb_idx_start = round((Config.preamble_len + 4.25) * Config.nsamp)
+    data_pkt.append(mychirp(t_all[symb_idx * Config.nsamp : symb_idx_start],
+                            f0=Config.bw / 2 + cfo,
+                            f1=Config.bw / 4 + cfo,
+                            t1=tsymb_theirs * (symb_idx + 0.25),
+                            t0 = tsymb_theirs * symb_idx))
+
+    for symb_code_idx in range(2, pkt_contents.shape[0]):
+        istart = symb_code_idx * Config.nsamp + symb_idx_start
+        data_pkt.append(mysymb(t_all[istart: istart + Config.nsamp],
+                                f0=- Config.bw / 2 + cfo,
+                                f1=Config.bw / 2 + cfo,
+                                t1=tsymb_theirs * (symb_idx + 1),
+                                t0 = tsymb_theirs * symb_idx,
+                                symb=pkt_contents[symb_code_idx]))
+    return cp.concatenate(data_pkt)
+
+def test():
+    to = 2 ** Config.sf / Config.bw * 0.3
+    toB = to % (1 / Config.fs)
+    toA = to - toB
+    pkt_contents = np.concatenate((np.array((16, 24), dtype=int), np.arange(0, 10, 1, dtype=int)))
+    cfo = 200
+    pkt = gen_pkt(cfo = cfo, sfo = cfo / Config.fs * Config.sig_freq, to = toB, pkt_contents = pkt_contents)
+    pkt = cp.concatenate((cp.zeros(int(toA * Config.fs), dtype=cp.complex64),
+                          pkt,
+                          cp.zeros(Config.nsamp, dtype=cp.complex64)))
+    outpath = "."
+    pkt.tofile(os.path.join(outpath, f"test.sigdat"))
+
+    ans_list, pkt_data_C = test_work_coarse(pkt)
+    print(ans_list)
+
+if __name__ == "__main__":
+    # main()
+    test()
