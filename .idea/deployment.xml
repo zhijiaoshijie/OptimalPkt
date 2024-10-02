@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" autoUpload="Always" serverName="dujialuo@danlu.aiot.so:2222 key" remoteFilesAllowedToDisappearOnAutoupload="false">
+  <component name="PublishConfigData" autoUpload="Always" serverName="dujialuo@danlu.aiot.so:2222 key" remoteFilesAllowedToDisappearOnAutoupload="false" confirmBeforeUploading="false">
+    <option name="confirmBeforeUploading" value="false" />
     <serverData>
       <paths name="dujialuo@danlu.aiot.so:2222 key">
         <serverdata>
           <mappings>
-            <mapping deploy="/data/djl/temp" local="$PROJECT_DIR$" web="/" />
+            <mapping deploy="/data/djl/temp/OptimalPkt" local="$PROJECT_DIR$" web="/" />
           </mappings>
         </serverdata>
       </paths>

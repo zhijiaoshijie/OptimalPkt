@@ -4,4 +4,12 @@
     <option name="sdkName" value="opkt" />
   </component>
   <component name="ProjectRootManager" version="2" project-jdk-name="opkt" project-jdk-type="Python SDK" />
+  <component name="accountSettings">
+    <option name="activeRegion" value="us-east-1" />
+    <option name="recentlyUsedRegions">
+      <list>
+        <option value="us-east-1" />
+      </list>
+    </option>
+  </component>
 </project>

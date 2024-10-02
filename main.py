@@ -7,6 +7,8 @@ import math
 import numpy as np
 from sklearn.cluster import KMeans
 from tqdm import tqdm
+import sys
+import plotly.express as px
 
 # for debug
 # import platform
@@ -100,7 +102,9 @@ class Config:
     else:
         cpath = '/data/djl/datasets/240928_woldro'
         for x in os.listdir(cpath): file_paths.append(os.path.join(cpath, x))
-        fft_upsamp = 1024
+        file_paths = file_paths[1:]
+        fft_upsamp = 16#024
+        logger.error("ERR_TEST_MODE FFT_UPSAMP =====")
         dataout_path = os.path.join('/data/djl/datasets/', f'sf{sf}_wol_{fft_upsamp}_dataout')
 
 
@@ -317,6 +321,7 @@ def read_large_file(file_path_in):
             try:
                 rawdata = cp.fromfile(file, dtype=cp.complex64, count=Config.nsamp)
                 Config.progress_bar.update(file.tell() - Config.progress_bar.n)
+                # print(Config.progress_bar.n)
             except EOFError:
                 logger.warning("E04_FILE_EOF: file complete with EOF")
                 break
@@ -334,7 +339,26 @@ def read_pkt(file_path_in, threshold, min_length):
             current_sequence.append(rawdata)
         else:
             if len(current_sequence) > min_length:
-                yield cp.concatenate(current_sequence)
+                data = cp.concatenate(current_sequence)
+                if cp.max(cp.abs(data)) - cp.min(cp.abs(data)) < threshold * 0.1:
+                    yield data
+                else:
+                    logger.error(f"\nERR-Max - Min = {cp.max(cp.abs(data)) - cp.min(cp.abs(data))} > 0.1Threshold {threshold=} {Config.progress_bar.n=} {Config.progress_bar.n/(Config.nsamp * 8)=}")
+                    fig = px.line(cp.abs(data).get()[30000:30000+Config.nsamp])
+                    fig.show()
+                    fig2 = px.scatter(cp.unwrap(cp.diff(cp.angle(data))).get()[30000:30000 + Config.nsamp])
+                    fig2.update_traces(marker=dict(size=2))
+                    fig2.show()
+
+                    with open('/data/djl/datasets/NeLoRa_Dataset/10/9/9_0_9_10.mat', 'rb') as file:
+                        rawdata = cp.fromfile(file, dtype=cp.complex64, count=Config.nsamp)
+                        fig3 = px.scatter(cp.unwrap(cp.diff(cp.angle(rawdata))).get())
+                        fig3.update_traces(marker=dict(size=2))
+                        fig3.show()
+
+
+                    sys.exit(0)
+
             current_sequence = []
 
 
@@ -356,6 +380,7 @@ def main():
         for idx, rawdata in enumerate(read_large_file(file_path)):
             nmaxs[idx] = cp.max(cp.abs(rawdata))
             if idx == power_eval_len - 1: break
+        nmaxs = nmaxs[:idx + 1] # debug
         kmeans = KMeans(n_clusters=2, random_state=0, n_init=10)
         kmeans.fit(tocpu(nmaxs.reshape(-1, 1)))
         thresh = cp.mean(kmeans.cluster_centers_)
@@ -364,6 +389,8 @@ def main():
         threshpos = np.searchsorted(tocpu(bins), thresh).item()
         logger.debug(f"D00_CLUSTER: lower: {cp_str(counts[:threshpos])}")
         logger.debug(f"D00_CLUSTER: higher: {cp_str(counts[threshpos:])}")
+        # fig = px.scatter(nmaxs.get()[190000:])
+        # fig.show()
 
 
         Config.progress_bar.reset()
@@ -398,7 +425,7 @@ def main():
             if len(ans_list) != Config.payload_len_expected:
                 logger.warning(
                     f"E03_ANS_LEN: {Config.pkt_idx=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=} {len(ans_list)=}")
-            elif not test_mode:
+            elif False:# not test_mode:
                 outpath = os.path.join(Config.dataout_path, 'part' + str(prtidx), str(out_pkt_idx))
                 if not os.path.exists(outpath): os.makedirs(outpath)
                 for idx, decode_ans in enumerate(list(tocpu(ans_list))):
@@ -501,9 +528,9 @@ def test():
     pkt_contents = np.concatenate((np.array((16, 24), dtype=int), np.arange(0, 3000, 100, dtype=int)))
     cfo = 200
     sfo = cfo * Config.fs / Config.sig_freq
-    print(sfo)
+    print('sfo',sfo)
     est_cfo_slope = cfo / Config.sig_freq * Config.bw * Config.fs / Config.nsamp
-    print(est_cfo_slope, sfo)
+    print(f'{est_cfo_slope=}, {sfo=} Hz, {to=} s')
     pkt = gen_pkt(cfo = cfo, sfo = sfo, to = to, pkt_contents = pkt_contents)
     # pkt = cp.concatenate((cp.zeros(Config.nsamp, dtype=cp.complex64),
     #                       pkt,
@@ -512,10 +539,10 @@ def test():
     pkt.tofile(os.path.join(outpath, f"test.sigdat"))
 
     ans_list, pkt_data_C = test_work_coarse(pkt)
-    print(ans_list)
+    print(cp_str(ans_list))
 
 if __name__ == "__main__":
     main()
-    #test()
+    # test()
 
 
