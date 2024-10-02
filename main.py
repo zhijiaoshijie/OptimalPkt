@@ -1,11 +1,18 @@
 import logging
 import os
+import shutil
 import time
 
 import math
 import numpy as np
 from sklearn.cluster import KMeans
 from tqdm import tqdm
+
+# for debug
+# import platform
+
+test_mode = False
+local_mode = False
 
 logger = logging.getLogger('my_logger')
 level = logging.WARNING
@@ -23,10 +30,12 @@ logger.addHandler(console_handler)
 logger.addHandler(file_handler)
 
 use_gpu = True
+if local_mode: use_gpu = False
 if use_gpu:
     import cupy as cp
     import cupyx.scipy.fft as fft
 else:
+    import pyfftw
     import numpy as cp
     import scipy.fft as fft
 
@@ -75,18 +84,33 @@ logger.warning(f"Last modified time of the script: {time.ctime(os.path.getmtime(
 
 class Config:
     # Set parameters
-    sf = 11
+    sf = 10
     bw = 125e3
     fs = 1e6
     sig_freq = 470e6
-    file_paths = ['/data/djl/datasets/sf11_240928_woldro.sigdat']
-    fft_upsamp = 128
-    logger.warning(f"W00_FFT_UPSAMP: {fft_upsamp=}")
-    dataout_path = f'/data/djl/datasets/sf11_wol_{fft_upsamp}_dataout'
-    payload_len_expected = 18  # num of payload symbols
+    file_paths = []
+
+    if local_mode:
+        bpath = 'D:\\desktop\\cut_woldro_3'
+        cpath = os.path.join(bpath, f'sf{sf}')
+        for x in os.listdir(cpath):
+            file_paths.append(os.path.join(cpath, x))
+        fft_upsamp = 1#024
+        dataout_path = os.path.join(bpath, f'test_sf{sf}_wol_{fft_upsamp}_dataout')
+    else:
+        cpath = '/data/djl/datasets/240928_woldro'
+        for x in os.listdir(cpath): file_paths.append(os.path.join(cpath, x))
+        fft_upsamp = 1024
+        dataout_path = os.path.join('/data/djl/datasets/', f'sf{sf}_wol_{fft_upsamp}_dataout')
+
+
+
+
+    logger.warning(f"W00_STARTUP_INFO: {sf=} {fft_upsamp=} {file_paths[0]=} {len(file_paths)=} {dataout_path=}")
+    payload_len_expected = 23  # num of payload symbols
     preamble_len = 8
     code_len = 2
-    progress_bar_disp = False
+    progress_bar_disp = not test_mode
     skip_pkts = 0
 
     # preprocess
@@ -95,6 +119,7 @@ class Config:
         logger.warning(f'W00_OUTDIR: make output directory {dataout_path}')
     else:
         logger.warning(f"E00_OUTDIR: {dataout_path} already exists")
+        shutil.rmtree(dataout_path)
     # base_dir = '/data/djl/datasets/Dataset_50Nodes'
     # file_paths = []
     # for file_name in os.listdir(base_dir):
@@ -104,7 +129,8 @@ class Config:
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples
     nsamp = round(n_classes * fs / bw)
-    packets_per_part = int(1e9 / nsamp / 8 / payload_len_expected)
+    part_max_size = 1e9
+    packets_per_part = int(part_max_size / nsamp / 8 / payload_len_expected)
     sfdpos = preamble_len + code_len
     sfdend = sfdpos + 3
     t = cp.linspace(0, nsamp / fs, nsamp + 1)[:-1]
@@ -114,8 +140,22 @@ class Config:
         plan = fft.get_fft_plan(cp.zeros(nsamp * fft_upsamp, dtype=cp.complex64))
     else:
         plan = None
+
+        fft_length = nsamp * fft_upsamp
+        input_array = pyfftw.empty_aligned(fft_length, dtype='complex64')
+        output_array = pyfftw.empty_aligned(fft_length, dtype='complex64')
+
+        # Create the FFTW plan
+        fft_plan = pyfftw.FFTW(input_array, output_array, direction='FFTW_FORWARD', flags=['FFTW_MEASURE'])
+
     pkt_idx = 0
 
+    prtidx = 0
+
+    fft_n = nsamp * fft_upsamp
+    detect_range_pkts = 3
+    fft_ups = cp.zeros((preamble_len + detect_range_pkts, fft_n), dtype=cp.complex64)
+    fft_downs = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.complex64)
 
 if use_gpu:
     cp.cuda.Device(0).use()
@@ -127,7 +167,13 @@ def myfft(chirp_data, n, plan):
     if use_gpu:
         return fft.fft(chirp_data, n=n, plan=plan)
     else:
-        return fft.fft(chirp_data, n=n)
+        np.copyto(Config.input_array[:len(chirp_data)], chirp_data)
+
+        # Execute the FFT plan (in-place execution on input_array)
+        Config.fft_plan()
+
+        # Append the result to the results list
+        return Config.output_array
 
 
 # noinspection SpellCheckingInspection
@@ -157,33 +203,34 @@ def add_freq(pktdata_in, est_cfo_freq):
 
 
 def coarse_work_fast(pktdata_in):
-    fft_n = Config.nsamp * Config.fft_upsamp
-    detect_range_pkts = 3
     phaseFlag = False
-    fft_ups = cp.zeros((Config.preamble_len + detect_range_pkts, fft_n), dtype=cp.complex64)
-    fft_downs = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.complex64)
-    for pidx in range(Config.preamble_len + detect_range_pkts):
+
+    for pidx in range(Config.preamble_len + Config.detect_range_pkts):
         sig1 = pktdata_in[Config.nsamp * pidx: Config.nsamp * (pidx + 1)] * Config.downchirp
-        fft_ups[pidx] = myfft(sig1, n=fft_n, plan=Config.plan)
-    for pidx in range(2 + detect_range_pkts):
+        Config.fft_ups[pidx] = myfft(sig1, n=Config.fft_n, plan=Config.plan)
+    for pidx in range(2 + Config.detect_range_pkts):
         sig1 = (pktdata_in[Config.nsamp * (pidx + Config.sfdpos): Config.nsamp * (pidx + Config.sfdpos + 1)]
                 * Config.upchirp)
-        fft_downs[pidx] = myfft(sig1, n=fft_n, plan=Config.plan)
+        Config.fft_downs[pidx] = myfft(sig1, n=Config.fft_n, plan=Config.plan)
     if not phaseFlag:
-        fft_ups = cp.abs(fft_ups) ** 2
-        fft_downs = cp.abs(fft_downs) ** 2
+        fft_ups2 = cp.abs(Config.fft_ups) ** 2
+        fft_downs2 = cp.abs(Config.fft_downs) ** 2
+    else:
+        fft_ups2 = Config.fft_ups
+        fft_downs2 = Config.fft_downs
 
-    fft_vals = cp.zeros((detect_range_pkts, 3), dtype=cp.float32)
-    for pidx in range(detect_range_pkts):
-        fft_val_up = cp.argmax(cp.abs(cp.sum(fft_ups[pidx: pidx + Config.preamble_len], axis=0)))
-        if fft_val_up > fft_n / 2: fft_val_up -= fft_n
-        fft_val_down = cp.argmax(cp.abs(cp.sum(fft_downs[pidx: pidx + 2], axis=0)))  # + fft_down_lst[pidx]))
-        if fft_val_down > fft_n / 2: fft_val_down -= fft_n
-        fft_val_abs = cp.max(cp.abs(cp.sum(fft_ups[pidx: pidx + Config.preamble_len], axis=0))) \
-                      + cp.max(cp.abs(cp.sum(fft_downs[pidx: pidx + 2], axis=0)))  # + fft_down_lst[pidx]))
-        # logger.info(f"{fft_val_up=} {fft_val_down=} {fft_n=}")
-        est_cfo_r = (fft_val_up + fft_val_down) / 2 / fft_n  # rate, [0, 1)
-        est_to_r = (fft_val_down - fft_val_up) / 2 / fft_n  # rate, [0, 1)
+
+    fft_vals = cp.zeros((Config.detect_range_pkts, 3), dtype=cp.float32)
+    for pidx in range(Config.detect_range_pkts):
+        fft_val_up = cp.argmax(cp.abs(cp.sum(fft_ups2[pidx: pidx + Config.preamble_len], axis=0)))
+        if fft_val_up > Config.fft_n / 2: fft_val_up -= Config.fft_n
+        fft_val_down = cp.argmax(cp.abs(cp.sum(fft_downs2[pidx: pidx + 2], axis=0)))  # + fft_down_lst[pidx]))
+        if fft_val_down > Config.fft_n / 2: fft_val_down -= Config.fft_n
+        fft_val_abs = cp.max(cp.abs(cp.sum(fft_ups2[pidx: pidx + Config.preamble_len], axis=0))) \
+                      + cp.max(cp.abs(cp.sum(fft_downs2[pidx: pidx + 2], axis=0)))  # + fft_down_lst[pidx]))
+        # logger.info(f"{fft_val_up=} {fft_val_down=} {Config.fft_n=}")
+        est_cfo_r = (fft_val_up + fft_val_down) / 2 / Config.fft_n  # rate, [0, 1)
+        est_to_r = (fft_val_down - fft_val_up) / 2 / Config.fft_n  # rate, [0, 1)
         if abs(est_cfo_r - 1 / 2) <= 1 / 4:  # abs(cfo) > 1/4
             est_cfo_r += 1 / 2
             est_to_r += 1 / 2
@@ -201,17 +248,18 @@ def coarse_work_fast(pktdata_in):
             logger.warning(f"E07_LARGE_CFO: {Config.pkt_idx=} {fft_val_up=} {fft_val_down=} {est_cfo_r=} {est_to_r=} {est_cfo_f=} {est_to_s=} {pidx=}")
         fft_vals[pidx] = cp.array((est_cfo_f, est_to_s, fft_val_abs), dtype=cp.float32)
         # fig = go.Figure()
-        # fig.add_trace(go.Scatter(y=fft_ups[idx].get(), mode='lines', name='Ours'))
-        # fig.add_trace(go.Scatter(y=fft_downs[idx].get(), mode='lines', name='Ours'))
+        # fig.add_trace(go.Scatter(y=fft_ups2[idx].get(), mode='lines', name='Ours'))
+        # fig.add_trace(go.Scatter(y=fft_downs2[idx].get(), mode='lines', name='Ours'))
         # fig.update_layout(title=f"{idx=} {fft_val_up=} {fft_val_down=}")
         # fig.show()
     # sys.exit(0)
     bestidx = cp.argmax(fft_vals[:, 2])
+    # print(fft_vals[:, 2])
     # if bestidx != 0:
     #     logger.warning(f"E05_BESTIDX_NOT_ZERO: {bestidx=}")
-    #     logger.warning(f"E05_BESTIDX_NOT_ZERO: fft_ups={cp_str(cp.argmax(cp.abs(fft_ups), axis=1)/fft_n)}")
-    #     logger.warning(f"E05_BESTIDX_NOT_ZERO: fft_dns={cp_str(cp.argmax(cp.abs(fft_downs), axis=1)/fft_n)}")
-    #     logger.warning(f"E05_BESTIDX_NOT_ZERO: fft_lls={cp_str(cp.argmax(cp.abs(fft_down_lst), axis=1)/fft_n)}")
+    #     logger.warning(f"E05_BESTIDX_NOT_ZERO: fft_ups2={cp_str(cp.argmax(cp.abs(fft_ups2), axis=1)/Config.fft_n)}")
+    #     logger.warning(f"E05_BESTIDX_NOT_ZERO: fft_dns={cp_str(cp.argmax(cp.abs(fft_downs2), axis=1)/Config.fft_n)}")
+    #     logger.warning(f"E05_BESTIDX_NOT_ZERO: fft_lls={cp_str(cp.argmax(cp.abs(fft_down_lst), axis=1)/Config.fft_n)}")
     # logger.info(cp.argmax(fft_vals[:, 2]))
     return fft_vals[bestidx][0].item(), fft_vals[bestidx][1].item()
 
@@ -268,7 +316,7 @@ def read_large_file(file_path_in):
         while True:
             try:
                 rawdata = cp.fromfile(file, dtype=cp.complex64, count=Config.nsamp)
-                Config.progress_bar.update(len(rawdata) * 8)
+                Config.progress_bar.update(file.tell() - Config.progress_bar.n)
             except EOFError:
                 logger.warning("E04_FILE_EOF: file complete with EOF")
                 break
@@ -278,7 +326,7 @@ def read_large_file(file_path_in):
             yield rawdata
 
 
-def read_pkt(file_path_in, threshold, min_length=20):
+def read_pkt(file_path_in, threshold, min_length):
     current_sequence = []
     for rawdata in read_large_file(file_path_in):
         number = cp.max(cp.abs(rawdata))
@@ -293,6 +341,8 @@ def read_pkt(file_path_in, threshold, min_length=20):
 # read packets from file
 def main():
 
+    oldtime = time.time()
+    Config.file_pkt_idx = 0
     for file_path in Config.file_paths:
         pkt_cnt = 0
         pktdata = []
@@ -315,9 +365,26 @@ def main():
         logger.debug(f"D00_CLUSTER: lower: {cp_str(counts[:threshpos])}")
         logger.debug(f"D00_CLUSTER: higher: {cp_str(counts[threshpos:])}")
 
+
+        Config.progress_bar.reset()
+
         for Config.pkt_idx, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=20)):
             if Config.pkt_idx <= Config.skip_pkts: continue
-            Config.progress_bar.set_description(os.path.splitext(os.path.basename(file_path))[0] + ':' + str(Config.pkt_idx))
+
+            # output indexes
+            out_pkt_idx = Config.file_pkt_idx + Config.pkt_idx
+            prtidx = 0
+            while True:
+                outprtpath = os.path.join(Config.dataout_path, 'part' + str(prtidx))
+                if os.path.exists(outprtpath):
+                    if len(os.listdir(outprtpath)) > Config.packets_per_part:
+                        prtidx += 1
+                    else:
+                        break
+                else:
+                    break
+
+            Config.progress_bar.set_description(os.path.splitext(os.path.basename(file_path))[0] + ':' + str(prtidx) + ':' + str(out_pkt_idx))
             logger.info(f"W02_READ_PKT_START: {Config.pkt_idx=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=}")
             pkt_data_0 = cp.concatenate((cp.zeros(Config.nsamp // 2, dtype=cp.complex64), pkt_data,
                                          cp.zeros(Config.nsamp // 2, dtype=cp.complex64)))
@@ -325,19 +392,27 @@ def main():
             pkt_data_B = cp.concatenate((cp.zeros(Config.nsamp // 2, dtype=cp.complex64), pkt_data_A,
                                          cp.zeros(Config.nsamp // 2, dtype=cp.complex64)))
             ans_list, pkt_data_C = test_work_coarse(pkt_data_B)
-            logger.warning(f'I03_5: ANS: {[x%4 for x in tocpu(ans_list)]}')
+            # logger.warning(f'I03_5: ANS: {[x%4 for x in tocpu(ans_list)]}')
+            if test_mode: logger.warning(f'I03_5: ANS: {cp_str(ans_list)}')
             payload_data = pkt_data_C[int(Config.nsamp * (Config.sfdpos + 2 + 0.25)):]
             if len(ans_list) != Config.payload_len_expected:
                 logger.warning(
                     f"E03_ANS_LEN: {Config.pkt_idx=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=} {len(ans_list)=}")
-            else:
-                outpath = os.path.join(Config.dataout_path, 'part' + str(Config.pkt_idx // Config.packets_per_part), str(Config.pkt_idx))
+            elif not test_mode:
+                outpath = os.path.join(Config.dataout_path, 'part' + str(prtidx), str(out_pkt_idx))
                 if not os.path.exists(outpath): os.makedirs(outpath)
                 for idx, decode_ans in enumerate(list(tocpu(ans_list))):
                     data = payload_data[Config.nsamp * idx: Config.nsamp * (idx + 1)]
-                    data.tofile(os.path.join(outpath,
-
-                                             f"{idx}_{round(decode_ans) % Config.n_classes}_{Config.pkt_idx}_{Config.sf}.mat"))
+                    fout_path = os.path.join(outpath, f"{idx}_{round(decode_ans) % Config.n_classes}_{out_pkt_idx}_{Config.sf}.mat")
+                    assert not os.path.exists(fout_path), fout_path
+                    data.tofile(fout_path)
+            if test_mode:
+                print(time.time() - oldtime)
+                oldtime = time.time()
+                if Config.pkt_idx > 10: break
+        assert Config.pkt_idx != 0
+        Config.file_pkt_idx += Config.pkt_idx
+        Config.progress_bar.reset()
 
 
 
@@ -442,3 +517,5 @@ def test():
 if __name__ == "__main__":
     main()
     #test()
+
+
