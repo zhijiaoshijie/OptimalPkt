@@ -2,6 +2,7 @@ import logging
 import os
 import shutil
 import time
+import glob
 
 import math
 import numpy as np
@@ -84,34 +85,33 @@ def cp_str(x, precision=2, suppress_small=False):
 logger.warning(f"Last modified time of the script: {time.ctime(os.path.getmtime(__file__))}")
 
 
+def get_newest_file(folder_path, file_pattern):
+    # Get the list of files in the folder
+    files = glob.glob(os.path.join(folder_path, file_pattern))
+    if not files:
+        return None  # No files in the folder
+
+
+    # Get the newest file by modification time
+    newest_file = max(files, key=os.path.getmtime)
+
+    return newest_file
+
 class Config:
     # Set parameters
-    sf = 10
+    sf = 11
     bw = 125e3
     fs = 1e6
     sig_freq = 470e6
-    file_paths = []
+    daemon_folder = '/data/djl/FileTransfer/ProcessData'
+    daemon_file_pattern = 'ProcessData_*.sigdat'
 
-    if local_mode:
-        bpath = 'D:\\desktop\\cut_woldro_3'
-        cpath = os.path.join(bpath, f'sf{sf}')
-        for x in os.listdir(cpath):
-            file_paths.append(os.path.join(cpath, x))
-        fft_upsamp = 1#024
-        dataout_path = os.path.join(bpath, f'test_sf{sf}_wol_{fft_upsamp}_dataout')
-    else:
-        cpath = '/data/djl/datasets/240928_woldro'
-        for x in os.listdir(cpath): file_paths.append(os.path.join(cpath, x))
-        file_paths = file_paths[1:]
-        fft_upsamp = 1024
-        # logger.error("ERR_TEST_MODE FFT_UPSAMP =====")
-        dataout_path = os.path.join('/data/djl/datasets/', f'sf{sf}_wol_{fft_upsamp}_dataout')
+    fft_upsamp = 1024
+    # logger.error("ERR_TEST_MODE FFT_UPSAMP =====")
+    dataout_path = os.path.join('/data/djl/datasets/', f'sf{sf}_wol_{fft_upsamp}_dataout')
 
-
-
-
-    logger.warning(f"W00_STARTUP_INFO: {sf=} {fft_upsamp=} {file_paths[0]=} {len(file_paths)=} {dataout_path=}")
-    payload_len_expected = 23  # num of payload symbols
+    logger.warning(f"W00_STARTUP_INFO: Daemon Mode {sf=} {fft_upsamp=} {dataout_path=}")
+    payload_len_expected = 18  # num of payload symbols
     preamble_len = 8
     code_len = 2
     progress_bar_disp = not test_mode
@@ -133,7 +133,7 @@ class Config:
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples
     nsamp = round(n_classes * fs / bw)
-    part_max_size = 1e9
+    part_max_size = 3e9
     packets_per_part = int(part_max_size / nsamp / 8 / payload_len_expected)
     sfdpos = preamble_len + code_len
     sfdend = sfdpos + 3
@@ -368,9 +368,11 @@ def main():
 
     oldtime = time.time()
     Config.file_pkt_idx = 0
-    for file_path in Config.file_paths:
-        pkt_cnt = 0
-        pktdata = []
+    while True:
+        file_path = get_newest_file(Config.daemon_folder, Config.daemon_file_pattern)
+        if not file_path:
+            time.sleep(1)
+            continue
         fsize = int(os.stat(file_path).st_size / (Config.nsamp * 4 * 2))
         logger.warning(f'W01_READ_START: reading file: {file_path} SF: {Config.sf} pkts in file: {fsize} {Config.skip_pkts=}')
         Config.progress_bar = tqdm(total=int(os.stat(file_path).st_size), unit='B', unit_scale=True, desc=file_path,
