@@ -2,12 +2,13 @@ import logging
 import os
 import time
 
+import math
 import numpy as np
 from sklearn.cluster import KMeans
 from tqdm import tqdm
 
 logger = logging.getLogger('my_logger')
-level = logging.DEBUG
+level = logging.WARNING
 logger.setLevel(level)
 console_handler = logging.StreamHandler()
 console_handler.setLevel(level)  # Set the console handler level
@@ -74,18 +75,18 @@ logger.warning(f"Last modified time of the script: {time.ctime(os.path.getmtime(
 
 class Config:
     # Set parameters
-    sf = 12
+    sf = 11
     bw = 125e3
     fs = 1e6
     sig_freq = 470e6
-    file_paths = ['/data/djl/datasets/sf12_240909/sf12_240909.bin']
+    file_paths = ['/data/djl/datasets/sf11_240928_woldro.sigdat']
     fft_upsamp = 128
     logger.warning(f"W00_FFT_UPSAMP: {fft_upsamp=}")
-    dataout_path = f'/data/djl/datasets/sf12_240909_FFTFast{fft_upsamp}_dataout'
+    dataout_path = f'/data/djl/datasets/sf11_wol_{fft_upsamp}_dataout'
     payload_len_expected = 18  # num of payload symbols
     preamble_len = 8
     code_len = 2
-    progress_bar_disp = True
+    progress_bar_disp = False
     skip_pkts = 0
 
     # preprocess
@@ -324,6 +325,7 @@ def main():
             pkt_data_B = cp.concatenate((cp.zeros(Config.nsamp // 2, dtype=cp.complex64), pkt_data_A,
                                          cp.zeros(Config.nsamp // 2, dtype=cp.complex64)))
             ans_list, pkt_data_C = test_work_coarse(pkt_data_B)
+            logger.warning(f'I03_5: ANS: {[x%4 for x in tocpu(ans_list)]}')
             payload_data = pkt_data_C[int(Config.nsamp * (Config.sfdpos + 2 + 0.25)):]
             if len(ans_list) != Config.payload_len_expected:
                 logger.warning(
@@ -390,18 +392,18 @@ def gen_pkt(cfo, sfo, to, pkt_contents):
     # SFD 2.25
     symb_idx = Config.preamble_len + 4
     istart = symb_idx * Config.nsamp
-    symb_idx_start = round((Config.preamble_len + 4.25) * Config.nsamp)
     data = mychirp(t_all,
                             f0=Config.bw / 2 + cfo,
                             f1=Config.bw / 4 + cfo,
                             t1=tsymb_theirs * (symb_idx + 0.25),
                             t0 = tsymb_theirs * symb_idx)
     data[t_all <= istart / Config.fs] = 0
-    data[t_all > (istart + Config.nsamp) / Config.fs] = 0
+    data[t_all > (istart + Config.nsamp * 0.25) / Config.fs] = 0
     data_pkt += data
 
     for symb_code_idx in range(2, pkt_contents.shape[0]):
-        istart = symb_code_idx * Config.nsamp + symb_idx_start
+        symb_idx = symb_code_idx - 2 + Config.preamble_len + 4.25
+        istart = symb_idx * Config.nsamp
         data = mysymb(t_all,
                                 f0=- Config.bw / 2 + cfo,
                                 f1=Config.bw / 2 + cfo,
@@ -411,17 +413,26 @@ def gen_pkt(cfo, sfo, to, pkt_contents):
         data[t_all <= istart / Config.fs] = 0
         data[t_all > (istart + Config.nsamp) / Config.fs] = 0
         data_pkt += data
+    snr = 10
+    amp = math.pow(0.1, snr / 20) * cp.mean(cp.abs(data_pkt))
+    noise = (amp / math.sqrt(2) * cp.random.randn(data_pkt.shape[0])
+             + 1j * amp / math.sqrt(2) * cp.random.randn(data_pkt.shape[0]))
+    data_pkt = data_pkt + noise.astype(cp.complex64)  # dataX: data with noise
 
     return data_pkt
 
 def test():
     to = - 2 ** Config.sf / Config.bw * 0.3
-    pkt_contents = np.concatenate((np.array((16, 24), dtype=int), np.arange(0, 10, 1, dtype=int)))
+    pkt_contents = np.concatenate((np.array((16, 24), dtype=int), np.arange(0, 3000, 100, dtype=int)))
     cfo = 200
-    pkt = gen_pkt(cfo = cfo, sfo = cfo / Config.fs * Config.sig_freq, to = to, pkt_contents = pkt_contents)
-    pkt = cp.concatenate((cp.zeros(Config.nsamp, dtype=cp.complex64),
-                          pkt,
-                          cp.zeros(Config.nsamp, dtype=cp.complex64)))
+    sfo = cfo * Config.fs / Config.sig_freq
+    print(sfo)
+    est_cfo_slope = cfo / Config.sig_freq * Config.bw * Config.fs / Config.nsamp
+    print(est_cfo_slope, sfo)
+    pkt = gen_pkt(cfo = cfo, sfo = sfo, to = to, pkt_contents = pkt_contents)
+    # pkt = cp.concatenate((cp.zeros(Config.nsamp, dtype=cp.complex64),
+    #                       pkt,
+    #                       cp.zeros(Config.nsamp, dtype=cp.complex64)))
     outpath = "."
     pkt.tofile(os.path.join(outpath, f"test.sigdat"))
 
@@ -429,5 +440,5 @@ def test():
     print(ans_list)
 
 if __name__ == "__main__":
-    # main()
-    test()
+    main()
+    #test()
