@@ -7,8 +7,8 @@ import math
 import numpy as np
 from sklearn.cluster import KMeans
 from tqdm import tqdm
-import sys
-import plotly.express as px
+# import sys
+# import plotly.express as px
 
 # for debug
 # import platform
@@ -17,7 +17,7 @@ test_mode = False
 local_mode = False
 
 logger = logging.getLogger('my_logger')
-level = logging.WARNING
+level = logging.DEBUG
 logger.setLevel(level)
 console_handler = logging.StreamHandler()
 console_handler.setLevel(level)  # Set the console handler level
@@ -103,8 +103,8 @@ class Config:
         cpath = '/data/djl/datasets/240928_woldro'
         for x in os.listdir(cpath): file_paths.append(os.path.join(cpath, x))
         file_paths = file_paths[1:]
-        fft_upsamp = 16#024
-        logger.error("ERR_TEST_MODE FFT_UPSAMP =====")
+        fft_upsamp = 1024
+        # logger.error("ERR_TEST_MODE FFT_UPSAMP =====")
         dataout_path = os.path.join('/data/djl/datasets/', f'sf{sf}_wol_{fft_upsamp}_dataout')
 
 
@@ -340,24 +340,25 @@ def read_pkt(file_path_in, threshold, min_length):
         else:
             if len(current_sequence) > min_length:
                 data = cp.concatenate(current_sequence)
-                if cp.max(cp.abs(data)) - cp.min(cp.abs(data)) < threshold * 0.1:
-                    yield data
-                else:
-                    logger.error(f"\nERR-Max - Min = {cp.max(cp.abs(data)) - cp.min(cp.abs(data))} > 0.1Threshold {threshold=} {Config.progress_bar.n=} {Config.progress_bar.n/(Config.nsamp * 8)=}")
-                    fig = px.line(cp.abs(data).get()[30000:30000+Config.nsamp])
-                    fig.show()
-                    fig2 = px.scatter(cp.unwrap(cp.diff(cp.angle(data))).get()[30000:30000 + Config.nsamp])
-                    fig2.update_traces(marker=dict(size=2))
-                    fig2.show()
-
-                    with open('/data/djl/datasets/NeLoRa_Dataset/10/9/9_0_9_10.mat', 'rb') as file:
-                        rawdata = cp.fromfile(file, dtype=cp.complex64, count=Config.nsamp)
-                        fig3 = px.scatter(cp.unwrap(cp.diff(cp.angle(rawdata))).get())
-                        fig3.update_traces(marker=dict(size=2))
-                        fig3.show()
-
-
-                    sys.exit(0)
+                # if cp.max(cp.abs(data)) - cp.min(cp.abs(data)) < threshold * 0.1:
+                yield data
+                #     yield data
+                # else:
+                #     logger.error(f"\nERR-Max - Min = {cp.max(cp.abs(data)) - cp.min(cp.abs(data))} > 0.1Threshold {threshold=} {Config.progress_bar.n=} {Config.progress_bar.n/(Config.nsamp * 8)=}")
+                #     fig = px.line(cp.abs(data).get()[30000:30000+Config.nsamp])
+                #     fig.show()
+                #     fig2 = px.scatter(cp.unwrap(cp.diff(cp.angle(data))).get()[30000:30000 + Config.nsamp])
+                #     fig2.update_traces(marker=dict(size=2))
+                #     fig2.show()
+                #
+                #     with open('/data/djl/datasets/NeLoRa_Dataset/10/9/9_0_9_10.mat', 'rb') as file:
+                #         rawdata = cp.fromfile(file, dtype=cp.complex64, count=Config.nsamp)
+                #         fig3 = px.scatter(cp.unwrap(cp.diff(cp.angle(rawdata))).get())
+                #         fig3.update_traces(marker=dict(size=2))
+                #         fig3.show()
+                #
+                #
+                #     sys.exit(0)
 
             current_sequence = []
 
@@ -425,7 +426,7 @@ def main():
             if len(ans_list) != Config.payload_len_expected:
                 logger.warning(
                     f"E03_ANS_LEN: {Config.pkt_idx=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=} {len(ans_list)=}")
-            elif False:# not test_mode:
+            elif not test_mode:
                 outpath = os.path.join(Config.dataout_path, 'part' + str(prtidx), str(out_pkt_idx))
                 if not os.path.exists(outpath): os.makedirs(outpath)
                 for idx, decode_ans in enumerate(list(tocpu(ans_list))):
