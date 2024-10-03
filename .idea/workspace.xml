@@ -4,7 +4,8 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="83e0d0b9-a9ad-463b-b7a2-7043c4cdf68b" name="Changes" comment="temp">
+    <list default="true" id="83e0d0b9-a9ad-463b-b7a2-7043c4cdf68b" name="Changes" comment="write">
+      <change beforePath="$PROJECT_DIR$/.idea/OptimalPkt.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/OptimalPkt.iml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
     </list>
@@ -92,7 +93,7 @@
       <updated>1727874117995</updated>
       <workItem from="1727874119747" duration="6944000" />
       <workItem from="1727887541826" duration="715000" />
-      <workItem from="1727936720535" duration="3938000" />
+      <workItem from="1727936720535" duration="10921000" />
     </task>
     <task id="LOCAL-00001" summary="1">
       <option name="closed" value="true" />
@@ -126,7 +127,31 @@
       <option name="project" value="LOCAL" />
       <updated>1727887602987</updated>
     </task>
-    <option name="localTasksCounter" value="5" />
+    <task id="LOCAL-00005" summary="write">
+      <option name="closed" value="true" />
+      <created>1727940844678</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1727940844678</updated>
+    </task>
+    <task id="LOCAL-00006" summary="write">
+      <option name="closed" value="true" />
+      <created>1727940930268</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1727940930268</updated>
+    </task>
+    <task id="LOCAL-00007" summary="write">
+      <option name="closed" value="true" />
+      <created>1727941061260</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1727941061260</updated>
+    </task>
+    <option name="localTasksCounter" value="8" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -148,9 +173,10 @@
     <MESSAGE value="debug! shorter than power_eval_len pkts" />
     <MESSAGE value="to running version" />
     <MESSAGE value="temp" />
-    <option name="LAST_COMMIT_MESSAGE" value="temp" />
+    <MESSAGE value="write" />
+    <option name="LAST_COMMIT_MESSAGE" value="write" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
-    <SUITE FILE_PATH="coverage/optimalpkt$main.coverage" NAME="main Coverage Results" MODIFIED="1727888151236" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="" />
+    <SUITE FILE_PATH="coverage/optimalpkt$main.coverage" NAME="main Coverage Results" MODIFIED="1727944011404" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="" />
   </component>
 </project>

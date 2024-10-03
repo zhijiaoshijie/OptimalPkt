@@ -1,8 +1,11 @@
 import shutil
+import sys
 import time
 import glob
 import zipfile
 from time import sleep
+from typing import KeysView
+
 import math
 import numpy as np
 from sklearn.cluster import KMeans
@@ -26,7 +29,7 @@ test_mode = False
 local_mode = False
 
 logger = logging.getLogger('my_logger')
-level = logging.DEBUG
+level = logging.WARNING
 logger.setLevel(level)
 console_handler = logging.StreamHandler()
 console_handler.setLevel(level)  # Set the console handler level
@@ -112,9 +115,13 @@ class Config:
     fs = 1e6
     sig_freq = 470e6
     daemon_folder = '/data/djl/FileTransfer/ProcessData'
+    shutil.rmtree(daemon_folder, ignore_errors=True)
+    os.makedirs(daemon_folder, exist_ok=True)
+    os.makedirs(daemon_folder + '_zipped', exist_ok=True)
     daemon_file_pattern = 'ProcessData_*.sigdat'
-    repo_url = 'https://cloud.tsinghua.edu.cn/u/d/c6a9962c13124a26b83e/'
-    share_url = 'https://cloud.tsinghua.edu.cn/d/dd3c7ebbeeec4652a898/'
+    repo_url = 'https://cloud.tsinghua.edu.cn/u/d/0842056df80740149292/'
+    share_url = 'https://cloud.tsinghua.edu.cn/d/ad718c8129b74cfb80d1/'
+    assert share_url.startswith('https://cloud.tsinghua.edu.cn/d/')
     cookies = {
         'sessionid': 'rlqnpuxlyigavsy8k6gpmc60j87o75i8',
         'sfcsrftoken': 'sfcsrftoken=kWOc2ZvTvzzdZTsGPp673ANsc2tPkSkDEOoHBjYKVnjIAz48vaIetckZTYQgWWns',
@@ -144,7 +151,7 @@ class Config:
     payload_len_expected = 18  # num of payload symbols
     preamble_len = 8
     code_len = 2
-    progress_bar_disp = not test_mode
+    progress_bar_disp = False# not test_mode
     skip_pkts = 0
 
     # preprocess
@@ -154,11 +161,16 @@ class Config:
     else:
         logger.warning(f"E00_OUTDIR: {dataout_path} already exists")
         shutil.rmtree(dataout_path)
+        os.makedirs(dataout_path)
     # base_dir = '/data/djl/datasets/Dataset_50Nodes'
     # file_paths = []
     # for file_name in os.listdir(base_dir):
     #     if file_name.startswith('sf7') and file_name.endswith('.bin'):
     #         file_paths.append(os.path.join(base_dir, file_name))
+
+    share_key = share_url[len('https://cloud.tsinghua.edu.cn/d/'):].replace('/', '')
+
+
     progress_bar = None
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples
@@ -405,34 +417,6 @@ def delete_folder(folder_path):
     shutil.rmtree(folder_path)
     print(f"Deleted folder {folder_path}")
 
-def get_share_key(url: str) -> str:
-    prefix = 'https://cloud.tsinghua.edu.cn/d/'
-    if not url.startswith(prefix):
-        raise ValueError('Share link of Tsinghua Cloud should start with {}'.format(prefix))
-    share_key = url[len(prefix):].replace('/', '')
-    logging.info('Share key: {}'.format(share_key))
-    return share_key
-
-
-def verify_password(sess, share_key: str) -> None:
-    # Require password if the share link is password-protected,
-    # and verify the password provided by the user.
-    r = sess.get(f"https://cloud.tsinghua.edu.cn/d/{share_key}/")
-    pattern = '<input type="hidden" name="csrfmiddlewaretoken" value="(.*)">'
-    csrfmiddlewaretoken = re.findall(pattern, r.text)
-    if csrfmiddlewaretoken:
-        pwd = input("Please enter the password: ")
-
-        csrfmiddlewaretoken = csrfmiddlewaretoken[0]
-        data = {
-            "csrfmiddlewaretoken": csrfmiddlewaretoken,
-            "token": share_key,
-            "password": pwd
-        }
-        r = sess.post(f"https://cloud.tsinghua.edu.cn/d/{share_key}/", data=data,
-                      headers={"Referer": f"https://cloud.tsinghua.edu.cn/d/{share_key}/"})
-        if "Please enter a correct password" in r.text:
-            raise ValueError("Wrong password.")
 
 def dfs_search_files(sess,
                      share_key: str,
@@ -458,21 +442,23 @@ def upload_zip_and_remove(zip_path):
                 continue
             response = response.content.decode('utf-8').split('\n')
             line_token = list(filter(lambda x: ('token' in x), response))
-            token = re.compile(r"token: [\"\'](?P<url>[-\w]+)[\"\']").search(line_token[0]).groupdict()['url']
+            token = re.compile(r"token: [\"\']([-\d\w]+)[\"\']").search(line_token[0])[1]
+            filelist = dfs_search_files(session, token)
+            for file in filelist:
+                fnamex = os.path.basename(file["file_path"])
+                assert not os.path.basename(zip_path) == fnamex, f"zip path {zip_path} already exists"
 
-            newurl = f'https://cloud.tsinghua.edu.cn/api/v2.1/upload-links/{token}/upload/'
+            share_key = Config.share_key
+            # verify_password(session, share_key)
+            newurl = f'https://cloud.tsinghua.edu.cn/api/v2.1/upload-links/{share_key}/upload/'
             response = requests.get(newurl, cookies=Config.cookies, headers=Config.headers)
-            if response.status_code != 200:
+            if response.status_code != 200 or "upload_link" not in response.json():
                 print('Step2 GetLink Failed',response.status_code, response.text)
                 sleep(1)
                 continue
             upload_link = response.json()["upload_link"]
-            share_key = get_share_key(Config.share_url)
-            verify_password(session, share_key)
-            filelist = dfs_search_files(session, share_key)
-            for file in filelist:
-                fnamex = os.path.basename(file["file_path"])
-                assert not os.path.basename(zip_path) == fnamex, f"zip path {zip_path} already exists"
+
+
 
             # Open the file in binary mode
             with open(zip_path, 'rb') as f:
@@ -498,17 +484,18 @@ def upload_zip_and_remove(zip_path):
 
         except urllib3.exceptions.SSLError as e:
             print(e)
+        except KeyboardInterrupt:
+            sys.exit(0)
 
-
-def delete_zip(zip_path):
-    """Deletes the zip file after uploading."""
-    os.remove(zip_path)
-    print(f"Deleted zip file {zip_path}")
 
 def process_folder(folder_path):
     """Main process to zip folder, delete folder, upload zip, and delete zip."""
-    zip_path = folder_path.rstrip(os.sep) + '.zip'
+    pathsec = folder_path.split(os.sep)
+    pathsec[-2] += '_zipped'
+    pathsec[-1] += '.zip'
+    zip_path = os.sep.join(pathsec)
     zip_folder(folder_path, zip_path)
+    logger.warning(f"Removing {folder_path}")
     shutil.rmtree(folder_path)
     upload_zip_and_remove(zip_path)
 
@@ -523,7 +510,7 @@ def main():
             time.sleep(1)
             continue
         fsize = int(os.stat(file_path).st_size / (Config.nsamp * 4 * 2))
-        logger.warning(f'W01_READ_START: reading file: {file_path} SF: {Config.sf} pkts in file: {fsize} {Config.skip_pkts=}')
+        logger.warning(f'W01_READ_START: reading file: {file_path} SF: {Config.sf} pkts in file: {os.stat(file_path).st_size} {fsize} {Config.skip_pkts=}')
         Config.progress_bar = tqdm(total=int(os.stat(file_path).st_size), unit='B', unit_scale=True, desc=file_path,
                                    disable=not Config.progress_bar_disp)
 
@@ -582,7 +569,7 @@ def main():
                         match = re.fullmatch(r'(\d+)', fname2)
                         assert match and os.path.isdir(os.path.join(Config.dataout_path, fname, fname2))
                         out_pkt_idx = max(out_pkt_idx, int(match.group(1)) + 1)
-                if len(os.listdir(os.path.join(Config.dataout_path, f'part{prtidx}'))) > Config.packets_per_part:
+                if os.path.exists(os.path.join(Config.dataout_path, f'part{prtidx}')) and len(os.listdir(os.path.join(Config.dataout_path, f'part{prtidx}'))) > Config.packets_per_part:
                     thread = threading.Thread(target=process_folder, args=(os.path.join(Config.dataout_path, f'part{prtidx}'),))
                     thread.start()
                     prtidx += 1
