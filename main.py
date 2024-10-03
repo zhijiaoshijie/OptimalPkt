@@ -3,11 +3,40 @@ import os
 import shutil
 import time
 import glob
+import re
+from os.path import isdir
+import zipfile
+import threading
+from time import sleep
+
+import requests
 
 import math
 import numpy as np
 from sklearn.cluster import KMeans
 from tqdm import tqdm
+
+import subprocess
+import json
+import re
+import sys
+import os
+from tqdm import tqdm
+import threading
+import requests
+from pprint import pprint
+import requests
+import urllib3
+import os
+import re
+import logging
+import fnmatch
+import requests
+import argparse
+import urllib.parse
+from tqdm import tqdm
+from requests_toolbelt.multipart.encoder import MultipartEncoder, MultipartEncoderMonitor
+
 # import sys
 # import plotly.express as px
 
@@ -105,10 +134,32 @@ class Config:
     sig_freq = 470e6
     daemon_folder = '/data/djl/FileTransfer/ProcessData'
     daemon_file_pattern = 'ProcessData_*.sigdat'
+    repo_url = 'https://cloud.tsinghua.edu.cn/u/d/c6a9962c13124a26b83e/'
+    share_url = 'https://cloud.tsinghua.edu.cn/d/dd3c7ebbeeec4652a898/'
+    cookies = {
+        'sessionid': 'rlqnpuxlyigavsy8k6gpmc60j87o75i8',
+        'sfcsrftoken': 'sfcsrftoken=kWOc2ZvTvzzdZTsGPp673ANsc2tPkSkDEOoHBjYKVnjIAz48vaIetckZTYQgWWns',
+        'serverid': '6',
+    }
+    headers = {
+        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'accept-language': 'en,zh;q=0.9,zh-CN;q=0.8',
+        'cache-control': 'max-age=0',
+        # 'cookie': 'sessionid=e8qgwv2rdtpflywmdrfjhsz8v4fomu5a; sfcsrftoken=t1KMw7CpW9eBMMzTRPGyGFn4dx830TsAXoH2sUqTsHNOQhUDiIwFvoHdvhDVEdzI; serverid=6',
+        '^sec-ch-ua': '^\\^Google',
+        'sec-ch-ua-mobile': '?0',
+        '^sec-ch-ua-platform': '^\\^Windows^^^',
+        'sec-fetch-dest': 'document',
+        'sec-fetch-mode': 'navigate',
+        'sec-fetch-site': 'none',
+        'sec-fetch-user': '?1',
+        'upgrade-insecure-requests': '1',
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+    }
 
     fft_upsamp = 1024
     # logger.error("ERR_TEST_MODE FFT_UPSAMP =====")
-    dataout_path = os.path.join('/data/djl/datasets/', f'sf{sf}_wol_{fft_upsamp}_dataout')
+    dataout_path = os.path.join('/data/djl/datasets/', f'sf{sf}_wol_usrp_{fft_upsamp}_dataout')
 
     logger.warning(f"W00_STARTUP_INFO: Daemon Mode {sf=} {fft_upsamp=} {dataout_path=}")
     payload_len_expected = 18  # num of payload symbols
@@ -152,9 +203,7 @@ class Config:
         # Create the FFTW plan
         fft_plan = pyfftw.FFTW(input_array, output_array, direction='FFTW_FORWARD', flags=['FFTW_MEASURE'])
 
-    pkt_idx = 0
-
-    prtidx = 0
+    pkt_idx_in_file = 0
 
     fft_n = nsamp * fft_upsamp
     detect_range_pkts = 3
@@ -247,9 +296,9 @@ def coarse_work_fast(pktdata_in):
         est_cfo_f = est_cfo_r * Config.fs
         est_to_s = (est_to_r * 8 + pidx) * Config.nsamp  # add detect packet pos TODO
         if abs(est_to_r) > 1/8:
-            logger.error(f"E07_LARGE_TIME_OFFSET: {Config.pkt_idx=} {fft_val_up=} {fft_val_down=} {est_cfo_r=} {est_to_r=} {est_cfo_f=} {est_to_s=} {pidx=}")
+            logger.error(f"E07_LARGE_TIME_OFFSET: {Config.pkt_idx_in_file=} {fft_val_up=} {fft_val_down=} {est_cfo_r=} {est_to_r=} {est_cfo_f=} {est_to_s=} {pidx=}")
         if abs(est_cfo_f) >= Config.fs / 8:
-            logger.warning(f"E07_LARGE_CFO: {Config.pkt_idx=} {fft_val_up=} {fft_val_down=} {est_cfo_r=} {est_to_r=} {est_cfo_f=} {est_to_s=} {pidx=}")
+            logger.warning(f"E07_LARGE_CFO: {Config.pkt_idx_in_file=} {fft_val_up=} {fft_val_down=} {est_cfo_r=} {est_to_r=} {est_cfo_f=} {est_to_s=} {pidx=}")
         fft_vals[pidx] = cp.array((est_cfo_f, est_to_s, fft_val_abs), dtype=cp.float32)
         # fig = go.Figure()
         # fig.add_trace(go.Scatter(y=fft_ups2[idx].get(), mode='lines', name='Ours'))
@@ -309,7 +358,7 @@ def decode_payload(est_to_dec, pktdata4):
     if not min(power1) > cp.mean(power1) / 2:
         drop_idx = next((idx for idx, num in enumerate(power1) if num < cp.mean(power1) / 2), -1)
         logger.info(
-            f'E01_POWER_DROP: {Config.pkt_idx=} power1 drops: {drop_idx=} {len(ans1n)=}\n    {cp_str(ans1n)=}\n    {cp_str(power1)=}')
+            f'E01_POWER_DROP: {Config.pkt_idx_in_file=} power1 drops: {drop_idx=} {len(ans1n)=}\n    {cp_str(ans1n)=}\n    {cp_str(power1)=}')
         ans1n = ans1n[:drop_idx]
         power1 = power1[:drop_idx]
     return ans1n, power1
@@ -362,6 +411,127 @@ def read_pkt(file_path_in, threshold, min_length):
 
             current_sequence = []
 
+def zip_folder(folder_path, zip_path):
+    """Zips the folder."""
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for root, dirs, files in os.walk(folder_path):
+            for file in files:
+                file_path = os.path.join(root, file)
+                arcname = os.path.relpath(file_path, folder_path)  # Relative path
+                zipf.write(file_path, arcname)
+    print(f"Zipped folder {folder_path} into {zip_path}")
+
+def delete_folder(folder_path):
+    """Deletes the folder after zipping."""
+    shutil.rmtree(folder_path)
+    print(f"Deleted folder {folder_path}")
+
+def get_share_key(url: str) -> str:
+    prefix = 'https://cloud.tsinghua.edu.cn/d/'
+    if not url.startswith(prefix):
+        raise ValueError('Share link of Tsinghua Cloud should start with {}'.format(prefix))
+    share_key = url[len(prefix):].replace('/', '')
+    logging.info('Share key: {}'.format(share_key))
+    return share_key
+
+
+def verify_password(sess, share_key: str) -> None:
+    # Require password if the share link is password-protected,
+    # and verify the password provided by the user.
+    r = sess.get(f"https://cloud.tsinghua.edu.cn/d/{share_key}/")
+    pattern = '<input type="hidden" name="csrfmiddlewaretoken" value="(.*)">'
+    csrfmiddlewaretoken = re.findall(pattern, r.text)
+    if csrfmiddlewaretoken:
+        pwd = input("Please enter the password: ")
+
+        csrfmiddlewaretoken = csrfmiddlewaretoken[0]
+        data = {
+            "csrfmiddlewaretoken": csrfmiddlewaretoken,
+            "token": share_key,
+            "password": pwd
+        }
+        r = sess.post(f"https://cloud.tsinghua.edu.cn/d/{share_key}/", data=data,
+                      headers={"Referer": f"https://cloud.tsinghua.edu.cn/d/{share_key}/"})
+        if "Please enter a correct password" in r.text:
+            raise ValueError("Wrong password.")
+
+def dfs_search_files(sess,
+                     share_key: str,
+                     path: str = "/") -> list:
+    filelist = []
+    encoded_path = urllib.parse.quote(path)
+    r = sess.get(f'https://cloud.tsinghua.edu.cn/api/v2.1/share-links/{share_key}/dirents/?path={encoded_path}')
+    objects = r.json()['dirent_list']
+    for obj in objects:
+        if obj["is_dir"]: filelist.extend(dfs_search_files(sess, share_key, obj['folder_path']))
+        else: filelist.append(obj)
+    return filelist
+
+def upload_zip_and_remove(zip_path):
+    while True:
+        try:
+            session = requests.Session()
+            session.trust_env = False
+            response = requests.get(Config.repo_url, cookies=Config.cookies, headers=Config.headers)
+            if response.status_code != 200:
+                print('Step1 GetToken Failed',response.status_code, response.text)
+                sleep(1)
+                continue
+            response = response.content.decode('utf-8').split('\n')
+            line_token = list(filter(lambda x: ('token' in x), response))
+            token = re.compile(r"token: [\"\'](?P<url>[-\w]+)[\"\']").search(line_token[0]).groupdict()['url']
+
+            newurl = f'https://cloud.tsinghua.edu.cn/api/v2.1/upload-links/{token}/upload/'
+            response = requests.get(newurl, cookies=Config.cookies, headers=Config.headers)
+            if response.status_code != 200:
+                print('Step2 GetLink Failed',response.status_code, response.text)
+                sleep(1)
+                continue
+            upload_link = response.json()["upload_link"]
+            share_key = get_share_key(Config.share_url)
+            verify_password(session, share_key)
+            filelist = dfs_search_files(session, share_key)
+            for file in filelist:
+                fnamex = os.path.basename(file["file_path"])
+                assert not os.path.basename(zip_path) == fnamex, f"zip path {zip_path} already exists"
+
+            # Open the file in binary mode
+            with open(zip_path, 'rb') as f:
+                encoder = MultipartEncoder(
+                    fields={
+                        'file': (zip_path, f),
+                        'parent_dir': ('', '/')  # Adjust the parent directory as needed
+                    }
+                )
+
+                # Make the POST request without progress monitoring
+                response = session.post(upload_link, data=encoder, cookies=Config.cookies,
+                                         headers={'Content-Type': encoder.content_type})
+
+                # Print the response
+            if response.status_code != 200:
+                print('Step3 Upload Failed', response.status_code, response.text)
+                sleep(1)
+                continue
+            else:
+                os.remove(zip_path)
+                return
+
+        except urllib3.exceptions.SSLError as e:
+            print(e)
+
+
+def delete_zip(zip_path):
+    """Deletes the zip file after uploading."""
+    os.remove(zip_path)
+    print(f"Deleted zip file {zip_path}")
+
+def process_folder(folder_path):
+    """Main process to zip folder, delete folder, upload zip, and delete zip."""
+    zip_path = folder_path.rstrip(os.sep) + '.zip'
+    zip_folder(folder_path, zip_path)
+    shutil.rmtree(folder_path)
+    upload_zip_and_remove(zip_path)
 
 # read packets from file
 def main():
@@ -398,24 +568,17 @@ def main():
 
         Config.progress_bar.reset()
 
-        for Config.pkt_idx, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=20)):
-            if Config.pkt_idx <= Config.skip_pkts: continue
+        for Config.pkt_idx_in_file, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=20)):
+            if Config.pkt_idx_in_file <= Config.skip_pkts: continue
 
             # output indexes
-            out_pkt_idx = Config.file_pkt_idx + Config.pkt_idx
-            prtidx = 0
-            while True:
-                outprtpath = os.path.join(Config.dataout_path, 'part' + str(prtidx))
-                if os.path.exists(outprtpath):
-                    if len(os.listdir(outprtpath)) > Config.packets_per_part:
-                        prtidx += 1
-                    else:
-                        break
-                else:
-                    break
+            out_pkt_idx = Config.file_pkt_idx + Config.pkt_idx_in_file
+
+
+
 
             Config.progress_bar.set_description(os.path.splitext(os.path.basename(file_path))[0] + ':' + str(prtidx) + ':' + str(out_pkt_idx))
-            logger.info(f"W02_READ_PKT_START: {Config.pkt_idx=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=}")
+            logger.info(f"W02_READ_PKT_START: {Config.pkt_idx_in_file=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=}")
             pkt_data_0 = cp.concatenate((cp.zeros(Config.nsamp // 2, dtype=cp.complex64), pkt_data,
                                          cp.zeros(Config.nsamp // 2, dtype=cp.complex64)))
             _, pkt_data_A = test_work_coarse(pkt_data_0 / cp.mean(cp.abs(pkt_data_0)))
@@ -427,8 +590,28 @@ def main():
             payload_data = pkt_data_C[int(Config.nsamp * (Config.sfdpos + 2 + 0.25)):]
             if len(ans_list) != Config.payload_len_expected:
                 logger.warning(
-                    f"E03_ANS_LEN: {Config.pkt_idx=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=} {len(ans_list)=}")
+                    f"E03_ANS_LEN: {Config.pkt_idx_in_file=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=} {len(ans_list)=}")
             elif not test_mode:
+
+                # find next position: dataout_path / part(\d+) / (\d+) / (\d+)_(\d+)_(\d+)_(\d+).mat
+                prtidx = 0
+                out_pkt_idx = 0
+                for fname in os.listdir(Config.dataout_path):
+                    match = re.fullmatch(r'part(\d+)', fname)
+                    if not match: continue
+                    prtidx = max(prtidx, int(match.group(1)))
+                    assert len(os.listdir(os.path.join(Config.dataout_path, f'part{prtidx}'))) > 0
+                    for fname2 in os.listdir(os.path.join(Config.dataout_path, fname)):
+                        # match = re.fullmatch(r'(\d+)_(\d+)_(\d+)_(\d+).mat', fname2)
+                        match = re.fullmatch(r'(\d+)', fname2)
+                        assert match and os.path.isdir(os.path.join(Config.dataout_path, fname, fname2))
+                        out_pkt_idx = max(out_pkt_idx, int(match.group(1)) + 1)
+                if len(os.listdir(os.path.join(Config.dataout_path, f'part{prtidx}'))) > Config.packets_per_part:
+                    thread = threading.Thread(target=process_folder, args=(os.path.join(Config.dataout_path, f'part{prtidx}'),))
+                    thread.start()
+                    prtidx += 1
+
+
                 outpath = os.path.join(Config.dataout_path, 'part' + str(prtidx), str(out_pkt_idx))
                 if not os.path.exists(outpath): os.makedirs(outpath)
                 for idx, decode_ans in enumerate(list(tocpu(ans_list))):
@@ -439,9 +622,9 @@ def main():
             if test_mode:
                 print(time.time() - oldtime)
                 oldtime = time.time()
-                if Config.pkt_idx > 10: break
-        assert Config.pkt_idx != 0
-        Config.file_pkt_idx += Config.pkt_idx
+                if Config.pkt_idx_in_file > 10: break
+        assert Config.pkt_idx_in_file != 0
+        Config.file_pkt_idx += Config.pkt_idx_in_file
         Config.progress_bar.reset()
 
 
