@@ -1,41 +1,20 @@
-import logging
-import os
 import shutil
 import time
 import glob
-import re
-from os.path import isdir
 import zipfile
-import threading
 from time import sleep
-
-import requests
-
 import math
 import numpy as np
 from sklearn.cluster import KMeans
-from tqdm import tqdm
-
-import subprocess
-import json
-import re
-import sys
-import os
-from tqdm import tqdm
 import threading
-import requests
-from pprint import pprint
-import requests
 import urllib3
 import os
 import re
 import logging
-import fnmatch
 import requests
-import argparse
 import urllib.parse
 from tqdm import tqdm
-from requests_toolbelt.multipart.encoder import MultipartEncoder, MultipartEncoderMonitor
+from requests_toolbelt.multipart.encoder import MultipartEncoder
 
 # import sys
 # import plotly.express as px
