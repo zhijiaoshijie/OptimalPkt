@@ -27,7 +27,7 @@ from requests_toolbelt.multipart.encoder import MultipartEncoder
 
 test_mode = False
 local_mode = False
-daemon_mode = False
+daemon_mode = True
 
 logger = logging.getLogger('my_logger')
 level = logging.WARNING
@@ -98,17 +98,17 @@ def cp_str(x, precision=2, suppress_small=False):
 logger.warning(f"Last modified time of the script: {time.ctime(os.path.getmtime(__file__))}")
 
 
-def get_newest_file(folder_path, file_pattern):
+def get_oldest_file(folder_path, file_pattern):
     # Get the list of files in the folder
     files = glob.glob(os.path.join(folder_path, file_pattern))
-    if not files:
+    if not files or len(files) <= 1:
         return None  # No files in the folder
 
 
-    # Get the newest file by modification time
-    newest_file = max(files, key=os.path.getmtime)
+    # Get the oldest file by modification time
+    oldest_file = min(files, key=os.path.getmtime)
 
-    return newest_file
+    return oldest_file
 
 class Config:
     # Set parameters
@@ -142,7 +142,7 @@ class Config:
         daemon_folder = '/data/djl/FileTransfer/ProcessData'
         shutil.rmtree(daemon_folder, ignore_errors=True)
         os.makedirs(daemon_folder, exist_ok=True)
-        os.makedirs(daemon_folder + '_zipped', exist_ok=True)
+        os.makedirs(dataout_path + '_zipped', exist_ok=True)
         daemon_file_pattern = 'ProcessData_*.sigdat'
         repo_url = 'https://cloud.tsinghua.edu.cn/u/d/0842056df80740149292/'
         share_url = 'https://cloud.tsinghua.edu.cn/d/ad718c8129b74cfb80d1/'
@@ -299,10 +299,10 @@ def coarse_work_fast(pktdata_in):
     bestidx = cp.argmax(fft_vals[:, 2])
     # print(fft_vals[:, 2])
     # if bestidx != 0:
-    #     logger.warning(f"E05_BESTIDX_NOT_ZERO: {bestidx=}")
-    #     logger.warning(f"E05_BESTIDX_NOT_ZERO: fft_ups2={cp_str(cp.argmax(cp.abs(fft_ups2), axis=1)/Config.fft_n)}")
-    #     logger.warning(f"E05_BESTIDX_NOT_ZERO: fft_dns={cp_str(cp.argmax(cp.abs(fft_downs2), axis=1)/Config.fft_n)}")
-    #     logger.warning(f"E05_BESTIDX_NOT_ZERO: fft_lls={cp_str(cp.argmax(cp.abs(fft_down_lst), axis=1)/Config.fft_n)}")
+    #     logger.warning(f"E08_BESTIDX_NOT_ZERO: {bestidx=}")
+    #     logger.warning(f"E08_BESTIDX_NOT_ZERO: fft_ups2={cp_str(cp.argmax(cp.abs(fft_ups2), axis=1)/Config.fft_n)}")
+    #     logger.warning(f"E08_BESTIDX_NOT_ZERO: fft_dns={cp_str(cp.argmax(cp.abs(fft_downs2), axis=1)/Config.fft_n)}")
+    #     logger.warning(f"E08_BESTIDX_NOT_ZERO: fft_lls={cp_str(cp.argmax(cp.abs(fft_down_lst), axis=1)/Config.fft_n)}")
     # logger.info(cp.argmax(fft_vals[:, 2]))
     return fft_vals[bestidx][0].item(), fft_vals[bestidx][1].item()
 
@@ -402,6 +402,7 @@ def read_pkt(file_path_in, threshold, min_length):
             current_sequence = []
 
 def zip_folder(folder_path, zip_path):
+    logger.warning(f"Zipping folder {folder_path} into {zip_path}")
     """Zips the folder."""
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
         for root, dirs, files in os.walk(folder_path):
@@ -409,12 +410,12 @@ def zip_folder(folder_path, zip_path):
                 file_path = os.path.join(root, file)
                 arcname = os.path.relpath(file_path, folder_path)  # Relative path
                 zipf.write(file_path, arcname)
-    print(f"Zipped folder {folder_path} into {zip_path}")
+    logger.warning(f"Zipped folder {folder_path} into {zip_path}")
 
 def delete_folder(folder_path):
     """Deletes the folder after zipping."""
     shutil.rmtree(folder_path)
-    print(f"Deleted folder {folder_path}")
+    logger.warning(f"Deleted folder {folder_path}")
 
 
 def dfs_search_files(sess,
@@ -430,13 +431,14 @@ def dfs_search_files(sess,
     return filelist
 
 def upload_zip_and_remove(zip_path):
-    while True:
+    for _ in range(1):#while True: #!!!
         try:
+            sleep(1)
             session = requests.Session()
             session.trust_env = False
             response = requests.get(Config.repo_url, cookies=Config.cookies, headers=Config.headers)
             if response.status_code != 200:
-                print('Step1 GetToken Failed',response.status_code, response.text)
+                logger.error(f'Step1 GetToken Failed {response.status_code}, {response.text}')
                 sleep(1)
                 continue
             response = response.content.decode('utf-8').split('\n')
@@ -452,7 +454,7 @@ def upload_zip_and_remove(zip_path):
             newurl = f'https://cloud.tsinghua.edu.cn/api/v2.1/upload-links/{share_key}/upload/'
             response = requests.get(newurl, cookies=Config.cookies, headers=Config.headers)
             if response.status_code != 200 or "upload_link" not in response.json():
-                print('Step2 GetLink Failed',response.status_code, response.text)
+                logger.error(f'Step2 GetLink Failed {response.status_code}, {response.text}')
                 sleep(1)
                 continue
             upload_link = response.json()["upload_link"]
@@ -474,15 +476,16 @@ def upload_zip_and_remove(zip_path):
 
                 # Print the response
             if response.status_code != 200:
-                print('Step3 Upload Failed', response.status_code, response.text)
+                logger.error(f'Step3 Upload Failed {response.status_code}, {response.text}')
                 sleep(1)
                 continue
             else:
+                logger.warning(f'Upload Success {zip_path}')
                 os.remove(zip_path)
                 return
 
         except urllib3.exceptions.SSLError as e:
-            print(e)
+            logger.error(e)
         except KeyboardInterrupt:
             sys.exit(0)
 
@@ -494,13 +497,13 @@ def process_folder(folder_path):
     pathsec[-1] += '.zip'
     zip_path = os.sep.join(pathsec)
     zip_folder(folder_path, zip_path)
+    upload_zip_and_remove(zip_path)
     logger.warning(f"Removing {folder_path}")
     shutil.rmtree(folder_path)
-    upload_zip_and_remove(zip_path)
 
 def daemon():
     while True:
-        file_path = get_newest_file(Config.daemon_folder, Config.daemon_file_pattern)
+        file_path = get_oldest_file(Config.daemon_folder, Config.daemon_file_pattern)
         if not file_path:
             time.sleep(1)
             continue
@@ -572,8 +575,9 @@ def main(file_path):
                     out_pkt_idx = max(out_pkt_idx, int(match.group(1)) + 1)
             if os.path.exists(os.path.join(Config.dataout_path, f'part{prtidx}')) and len(os.listdir(os.path.join(Config.dataout_path, f'part{prtidx}'))) > Config.packets_per_part:
                 if daemon_mode:
-                    thread = threading.Thread(target=process_folder, args=(os.path.join(Config.dataout_path, f'part{prtidx}'),))
-                    thread.start()
+                    process_folder(os.path.join(Config.dataout_path, f'part{prtidx}')) #!!!
+                    # thread = threading.Thread(target=process_folder, args=(os.path.join(Config.dataout_path, f'part{prtidx}'),))
+                    # thread.start()
                 prtidx += 1
 
             Config.progress_bar.set_description(
@@ -589,6 +593,9 @@ def main(file_path):
             print(time.time() - oldtime)
             oldtime = time.time()
             if Config.pkt_idx_in_file > 10: break
+    logger.warning("File Generator Complete")
+    if daemon_mode:
+        os.remove(file_path)
     Config.progress_bar.close()
 
 
