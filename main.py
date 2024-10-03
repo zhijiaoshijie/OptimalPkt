@@ -27,6 +27,7 @@ from requests_toolbelt.multipart.encoder import MultipartEncoder
 
 test_mode = False
 local_mode = False
+daemon_mode = False
 
 logger = logging.getLogger('my_logger')
 level = logging.WARNING
@@ -48,6 +49,7 @@ if local_mode: use_gpu = False
 if use_gpu:
     import cupy as cp
     import cupyx.scipy.fft as fft
+    cp.cuda.Device(0).use()
 else:
     import pyfftw
     import numpy as cp
@@ -114,47 +116,20 @@ class Config:
     bw = 125e3
     fs = 1e6
     sig_freq = 470e6
-    daemon_folder = '/data/djl/FileTransfer/ProcessData'
-    shutil.rmtree(daemon_folder, ignore_errors=True)
-    os.makedirs(daemon_folder, exist_ok=True)
-    os.makedirs(daemon_folder + '_zipped', exist_ok=True)
-    daemon_file_pattern = 'ProcessData_*.sigdat'
-    repo_url = 'https://cloud.tsinghua.edu.cn/u/d/0842056df80740149292/'
-    share_url = 'https://cloud.tsinghua.edu.cn/d/ad718c8129b74cfb80d1/'
-    assert share_url.startswith('https://cloud.tsinghua.edu.cn/d/')
-    cookies = {
-        'sessionid': 'rlqnpuxlyigavsy8k6gpmc60j87o75i8',
-        'sfcsrftoken': 'sfcsrftoken=kWOc2ZvTvzzdZTsGPp673ANsc2tPkSkDEOoHBjYKVnjIAz48vaIetckZTYQgWWns',
-        'serverid': '6',
-    }
-    headers = {
-        'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-        'accept-language': 'en,zh;q=0.9,zh-CN;q=0.8',
-        'cache-control': 'max-age=0',
-        # 'cookie': 'sessionid=e8qgwv2rdtpflywmdrfjhsz8v4fomu5a; sfcsrftoken=t1KMw7CpW9eBMMzTRPGyGFn4dx830TsAXoH2sUqTsHNOQhUDiIwFvoHdvhDVEdzI; serverid=6',
-        '^sec-ch-ua': '^\\^Google',
-        'sec-ch-ua-mobile': '?0',
-        '^sec-ch-ua-platform': '^\\^Windows^^^',
-        'sec-fetch-dest': 'document',
-        'sec-fetch-mode': 'navigate',
-        'sec-fetch-site': 'none',
-        'sec-fetch-user': '?1',
-        'upgrade-insecure-requests': '1',
-        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-    }
-
     fft_upsamp = 1024
     # logger.error("ERR_TEST_MODE FFT_UPSAMP =====")
-    dataout_path = os.path.join('/data/djl/datasets/', f'sf{sf}_wol_usrp_{fft_upsamp}_dataout')
-
-    logger.warning(f"W00_STARTUP_INFO: Daemon Mode {sf=} {fft_upsamp=} {dataout_path=}")
     payload_len_expected = 18  # num of payload symbols
     preamble_len = 8
     code_len = 2
     progress_bar_disp = False# not test_mode
     skip_pkts = 0
 
-    # preprocess
+    if not daemon_mode:
+        file_paths = []
+        cpath = '/data/djl/datasets/240928_woldro'
+        for x in os.listdir(cpath): file_paths.append(os.path.join(cpath, x))
+        
+    dataout_path = os.path.join('/data/djl/datasets/', f'sf{sf}_wol_usrp_{fft_upsamp}_dataout')
     if not os.path.exists(dataout_path):
         os.makedirs(dataout_path)
         logger.warning(f'W00_OUTDIR: make output directory {dataout_path}')
@@ -162,15 +137,41 @@ class Config:
         logger.warning(f"E00_OUTDIR: {dataout_path} already exists")
         shutil.rmtree(dataout_path)
         os.makedirs(dataout_path)
-    # base_dir = '/data/djl/datasets/Dataset_50Nodes'
-    # file_paths = []
-    # for file_name in os.listdir(base_dir):
-    #     if file_name.startswith('sf7') and file_name.endswith('.bin'):
-    #         file_paths.append(os.path.join(base_dir, file_name))
+        
+    if daemon_mode:
+        daemon_folder = '/data/djl/FileTransfer/ProcessData'
+        shutil.rmtree(daemon_folder, ignore_errors=True)
+        os.makedirs(daemon_folder, exist_ok=True)
+        os.makedirs(daemon_folder + '_zipped', exist_ok=True)
+        daemon_file_pattern = 'ProcessData_*.sigdat'
+        repo_url = 'https://cloud.tsinghua.edu.cn/u/d/0842056df80740149292/'
+        share_url = 'https://cloud.tsinghua.edu.cn/d/ad718c8129b74cfb80d1/'
+        assert share_url.startswith('https://cloud.tsinghua.edu.cn/d/')
+        cookies = {
+            'sessionid': 'rlqnpuxlyigavsy8k6gpmc60j87o75i8',
+            'sfcsrftoken': 'sfcsrftoken=kWOc2ZvTvzzdZTsGPp673ANsc2tPkSkDEOoHBjYKVnjIAz48vaIetckZTYQgWWns',
+            'serverid': '6',
+        }
+        headers = {
+            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'accept-language': 'en,zh;q=0.9,zh-CN;q=0.8',
+            'cache-control': 'max-age=0',
+            # 'cookie': 'sessionid=e8qgwv2rdtpflywmdrfjhsz8v4fomu5a; sfcsrftoken=t1KMw7CpW9eBMMzTRPGyGFn4dx830TsAXoH2sUqTsHNOQhUDiIwFvoHdvhDVEdzI; serverid=6',
+            '^sec-ch-ua': '^\\^Google',
+            'sec-ch-ua-mobile': '?0',
+            '^sec-ch-ua-platform': '^\\^Windows^^^',
+            'sec-fetch-dest': 'document',
+            'sec-fetch-mode': 'navigate',
+            'sec-fetch-site': 'none',
+            'sec-fetch-user': '?1',
+            'upgrade-insecure-requests': '1',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        }
+        logger.warning(f"W00_STARTUP_INFO: Daemon Mode {sf=} {fft_upsamp=} {dataout_path=}")
+        share_key = share_url[len('https://cloud.tsinghua.edu.cn/d/'):].replace('/', '')
 
-    share_key = share_url[len('https://cloud.tsinghua.edu.cn/d/'):].replace('/', '')
-
-
+    # preprocess
+    
     progress_bar = None
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples
@@ -182,28 +183,26 @@ class Config:
     t = cp.linspace(0, nsamp / fs, nsamp + 1)[:-1]
     upchirp = mychirp(t, f0=-bw / 2, f1=bw / 2, t1=2 ** sf / bw)
     downchirp = mychirp(t, f0=bw / 2, f1=-bw / 2, t1=2 ** sf / bw)
+
+    fft_n = nsamp * fft_upsamp
     if use_gpu:
-        plan = fft.get_fft_plan(cp.zeros(nsamp * fft_upsamp, dtype=cp.complex64))
+        plan = fft.get_fft_plan(cp.zeros(fft_n, dtype=cp.complex64))
     else:
         plan = None
 
-        fft_length = nsamp * fft_upsamp
-        input_array = pyfftw.empty_aligned(fft_length, dtype='complex64')
-        output_array = pyfftw.empty_aligned(fft_length, dtype='complex64')
+        fft_n = nsamp * fft_upsamp
+        input_array = pyfftw.empty_aligned(fft_n, dtype='complex64')
+        output_array = pyfftw.empty_aligned(fft_n, dtype='complex64')
 
         # Create the FFTW plan
         fft_plan = pyfftw.FFTW(input_array, output_array, direction='FFTW_FORWARD', flags=['FFTW_MEASURE'])
 
     pkt_idx_in_file = 0
-
-    fft_n = nsamp * fft_upsamp
     detect_range_pkts = 3
     fft_ups = cp.zeros((preamble_len + detect_range_pkts, fft_n), dtype=cp.complex64)
     fft_downs = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.complex64)
 
-if use_gpu:
-    cp.cuda.Device(0).use()
-opts = Config()
+
 Config = Config()
 
 
@@ -499,97 +498,98 @@ def process_folder(folder_path):
     shutil.rmtree(folder_path)
     upload_zip_and_remove(zip_path)
 
-# read packets from file
-def main():
-
-    oldtime = time.time()
-    Config.file_pkt_idx = 0
+def daemon():
     while True:
         file_path = get_newest_file(Config.daemon_folder, Config.daemon_file_pattern)
         if not file_path:
             time.sleep(1)
             continue
-        fsize = int(os.stat(file_path).st_size / (Config.nsamp * 4 * 2))
-        logger.warning(f'W01_READ_START: reading file: {file_path} SF: {Config.sf} pkts in file: {os.stat(file_path).st_size} {fsize} {Config.skip_pkts=}')
-        Config.progress_bar = tqdm(total=int(os.stat(file_path).st_size), unit='B', unit_scale=True, desc=file_path,
-                                   disable=not Config.progress_bar_disp)
+        else:
+            main(file_path)
 
-        power_eval_len = 5000
-        idx = -1
-        nmaxs = cp.zeros(power_eval_len, dtype=float)
-        for idx, rawdata in enumerate(read_large_file(file_path)):
-            nmaxs[idx] = cp.max(cp.abs(rawdata))
-            if idx == power_eval_len - 1: break
-        nmaxs = nmaxs[:idx + 1] # debug
-        kmeans = KMeans(n_clusters=2, random_state=0, n_init=10)
-        kmeans.fit(tocpu(nmaxs.reshape(-1, 1)))
-        thresh = cp.mean(kmeans.cluster_centers_)
-        counts, bins = cp.histogram(nmaxs, bins=100)
-        logger.debug(f"D00_CLUSTER: cluster: {kmeans.cluster_centers_[0]} {kmeans.cluster_centers_[1]} {thresh=}")
-        threshpos = np.searchsorted(tocpu(bins), thresh).item()
-        logger.debug(f"D00_CLUSTER: lower: {cp_str(counts[:threshpos])}")
-        logger.debug(f"D00_CLUSTER: higher: {cp_str(counts[threshpos:])}")
-        # fig = px.scatter(nmaxs.get()[190000:])
-        # fig.show()
+# read packets from file
+def main(file_path):
+
+    oldtime = time.time()
+    fsize = int(os.stat(file_path).st_size / (Config.nsamp * 4 * 2))
+    logger.warning(f'W01_READ_START: reading file: {file_path} SF: {Config.sf} pkts in file: {os.stat(file_path).st_size} {fsize} {Config.skip_pkts=}')
+    Config.progress_bar = tqdm(total=int(os.stat(file_path).st_size), unit='B', unit_scale=True, desc=file_path,
+                               disable=not Config.progress_bar_disp)
+
+    power_eval_len = 5000
+    idx = -1
+    nmaxs = cp.zeros(power_eval_len, dtype=float)
+    for idx, rawdata in enumerate(read_large_file(file_path)):
+        nmaxs[idx] = cp.max(cp.abs(rawdata))
+        if idx == power_eval_len - 1: break
+    nmaxs = nmaxs[:idx + 1] # debug
+    kmeans = KMeans(n_clusters=2, random_state=0, n_init=10)
+    kmeans.fit(tocpu(nmaxs.reshape(-1, 1)))
+    thresh = cp.mean(kmeans.cluster_centers_)
+    counts, bins = cp.histogram(nmaxs, bins=100)
+    logger.debug(f"D00_CLUSTER: cluster: {kmeans.cluster_centers_[0]} {kmeans.cluster_centers_[1]} {thresh=}")
+    threshpos = np.searchsorted(tocpu(bins), thresh).item()
+    logger.debug(f"D00_CLUSTER: lower: {cp_str(counts[:threshpos])}")
+    logger.debug(f"D00_CLUSTER: higher: {cp_str(counts[threshpos:])}")
+    # fig = px.scatter(nmaxs.get()[190000:])
+    # fig.show()
 
 
-        Config.progress_bar.reset()
+    Config.progress_bar.reset()
 
-        for Config.pkt_idx_in_file, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=20)):
-            if Config.pkt_idx_in_file <= Config.skip_pkts: continue
+    for Config.pkt_idx_in_file, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=20)):
+        if Config.pkt_idx_in_file <= Config.skip_pkts: continue
 
-            # output indexes
-            out_pkt_idx = Config.file_pkt_idx + Config.pkt_idx_in_file
+        # output indexes
 
-            logger.info(f"W02_READ_PKT_START: {Config.pkt_idx_in_file=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=}")
-            pkt_data_0 = cp.concatenate((cp.zeros(Config.nsamp // 2, dtype=cp.complex64), pkt_data,
-                                         cp.zeros(Config.nsamp // 2, dtype=cp.complex64)))
-            _, pkt_data_A = test_work_coarse(pkt_data_0 / cp.mean(cp.abs(pkt_data_0)))
-            pkt_data_B = cp.concatenate((cp.zeros(Config.nsamp // 2, dtype=cp.complex64), pkt_data_A,
-                                         cp.zeros(Config.nsamp // 2, dtype=cp.complex64)))
-            ans_list, pkt_data_C = test_work_coarse(pkt_data_B)
-            # logger.warning(f'I03_5: ANS: {[x%4 for x in tocpu(ans_list)]}')
-            if test_mode: logger.warning(f'I03_5: ANS: {cp_str(ans_list)}')
-            payload_data = pkt_data_C[int(Config.nsamp * (Config.sfdpos + 2 + 0.25)):]
-            if len(ans_list) != Config.payload_len_expected:
-                logger.warning(
-                    f"E03_ANS_LEN: {Config.pkt_idx_in_file=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=} {len(ans_list)=}")
-            elif not test_mode:
+        logger.info(f"W02_READ_PKT_START: {Config.pkt_idx_in_file=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=}")
+        pkt_data_0 = cp.concatenate((cp.zeros(Config.nsamp // 2, dtype=cp.complex64), pkt_data,
+                                     cp.zeros(Config.nsamp // 2, dtype=cp.complex64)))
+        _, pkt_data_A = test_work_coarse(pkt_data_0 / cp.mean(cp.abs(pkt_data_0)))
+        pkt_data_B = cp.concatenate((cp.zeros(Config.nsamp // 2, dtype=cp.complex64), pkt_data_A,
+                                     cp.zeros(Config.nsamp // 2, dtype=cp.complex64)))
+        ans_list, pkt_data_C = test_work_coarse(pkt_data_B)
+        # logger.warning(f'I03_5: ANS: {[x%4 for x in tocpu(ans_list)]}')
+        if test_mode: logger.warning(f'I03_5: ANS: {cp_str(ans_list)}')
+        payload_data = pkt_data_C[int(Config.nsamp * (Config.sfdpos + 2 + 0.25)):]
+        if len(ans_list) != Config.payload_len_expected:
+            logger.warning(
+                f"E03_ANS_LEN: {Config.pkt_idx_in_file=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=} {len(ans_list)=}")
+        elif not test_mode:
 
-                # find next position: dataout_path / part(\d+) / (\d+) / (\d+)_(\d+)_(\d+)_(\d+).mat
-                prtidx = 0
-                out_pkt_idx = 0
-                for fname in os.listdir(Config.dataout_path):
-                    match = re.fullmatch(r'part(\d+)', fname)
-                    if not match: continue
-                    prtidx = max(prtidx, int(match.group(1)))
-                    assert len(os.listdir(os.path.join(Config.dataout_path, f'part{prtidx}'))) > 0
-                    for fname2 in os.listdir(os.path.join(Config.dataout_path, fname)):
-                        # match = re.fullmatch(r'(\d+)_(\d+)_(\d+)_(\d+).mat', fname2)
-                        match = re.fullmatch(r'(\d+)', fname2)
-                        assert match and os.path.isdir(os.path.join(Config.dataout_path, fname, fname2))
-                        out_pkt_idx = max(out_pkt_idx, int(match.group(1)) + 1)
-                if os.path.exists(os.path.join(Config.dataout_path, f'part{prtidx}')) and len(os.listdir(os.path.join(Config.dataout_path, f'part{prtidx}'))) > Config.packets_per_part:
+            # find next position: dataout_path / part(\d+) / (\d+) / (\d+)_(\d+)_(\d+)_(\d+).mat
+            prtidx = 0
+            out_pkt_idx = 0
+            for fname in os.listdir(Config.dataout_path):
+                match = re.fullmatch(r'part(\d+)', fname)
+                if not match: continue
+                prtidx = max(prtidx, int(match.group(1)))
+                assert len(os.listdir(os.path.join(Config.dataout_path, f'part{prtidx}'))) > 0
+                for fname2 in os.listdir(os.path.join(Config.dataout_path, fname)):
+                    # match = re.fullmatch(r'(\d+)_(\d+)_(\d+)_(\d+).mat', fname2)
+                    match = re.fullmatch(r'(\d+)', fname2)
+                    assert match and os.path.isdir(os.path.join(Config.dataout_path, fname, fname2))
+                    out_pkt_idx = max(out_pkt_idx, int(match.group(1)) + 1)
+            if os.path.exists(os.path.join(Config.dataout_path, f'part{prtidx}')) and len(os.listdir(os.path.join(Config.dataout_path, f'part{prtidx}'))) > Config.packets_per_part:
+                if daemon_mode:
                     thread = threading.Thread(target=process_folder, args=(os.path.join(Config.dataout_path, f'part{prtidx}'),))
                     thread.start()
-                    prtidx += 1
+                prtidx += 1
 
-                Config.progress_bar.set_description(
-                    os.path.splitext(os.path.basename(file_path))[0] + ':' + str(prtidx) + ':' + str(out_pkt_idx))
-                outpath = os.path.join(Config.dataout_path, 'part' + str(prtidx), str(out_pkt_idx))
-                if not os.path.exists(outpath): os.makedirs(outpath)
-                for idx, decode_ans in enumerate(list(tocpu(ans_list))):
-                    data = payload_data[Config.nsamp * idx: Config.nsamp * (idx + 1)]
-                    fout_path = os.path.join(outpath, f"{idx}_{round(decode_ans) % Config.n_classes}_{out_pkt_idx}_{Config.sf}.mat")
-                    assert not os.path.exists(fout_path), fout_path
-                    data.tofile(fout_path)
-            if test_mode:
-                print(time.time() - oldtime)
-                oldtime = time.time()
-                if Config.pkt_idx_in_file > 10: break
-        assert Config.pkt_idx_in_file != 0
-        Config.file_pkt_idx += Config.pkt_idx_in_file
-        Config.progress_bar.reset()
+            Config.progress_bar.set_description(
+                os.path.splitext(os.path.basename(file_path))[0] + ':' + str(prtidx) + ':' + str(out_pkt_idx))
+            outpath = os.path.join(Config.dataout_path, 'part' + str(prtidx), str(out_pkt_idx))
+            if not os.path.exists(outpath): os.makedirs(outpath)
+            for idx, decode_ans in enumerate(list(tocpu(ans_list))):
+                data = payload_data[Config.nsamp * idx: Config.nsamp * (idx + 1)]
+                fout_path = os.path.join(outpath, f"{idx}_{round(decode_ans) % Config.n_classes}_{out_pkt_idx}_{Config.sf}.mat")
+                assert not os.path.exists(fout_path), fout_path
+                data.tofile(fout_path)
+        if test_mode:
+            print(time.time() - oldtime)
+            oldtime = time.time()
+            if Config.pkt_idx_in_file > 10: break
+    Config.progress_bar.close()
 
 
 
@@ -692,7 +692,12 @@ def test():
     print(cp_str(ans_list))
 
 if __name__ == "__main__":
-    main()
-    # test()
+    if daemon_mode:
+        daemon()
+    elif test_mode:
+        test()
+    else:
+        for file_path in Config.file_paths:
+            main(file_path)
 
 
