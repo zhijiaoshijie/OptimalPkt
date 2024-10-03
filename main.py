@@ -528,6 +528,7 @@ def main():
                                    disable=not Config.progress_bar_disp)
 
         power_eval_len = 5000
+        idx = -1
         nmaxs = cp.zeros(power_eval_len, dtype=float)
         for idx, rawdata in enumerate(read_large_file(file_path)):
             nmaxs[idx] = cp.max(cp.abs(rawdata))
@@ -553,10 +554,6 @@ def main():
             # output indexes
             out_pkt_idx = Config.file_pkt_idx + Config.pkt_idx_in_file
 
-
-
-
-            Config.progress_bar.set_description(os.path.splitext(os.path.basename(file_path))[0] + ':' + str(prtidx) + ':' + str(out_pkt_idx))
             logger.info(f"W02_READ_PKT_START: {Config.pkt_idx_in_file=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=}")
             pkt_data_0 = cp.concatenate((cp.zeros(Config.nsamp // 2, dtype=cp.complex64), pkt_data,
                                          cp.zeros(Config.nsamp // 2, dtype=cp.complex64)))
@@ -590,7 +587,8 @@ def main():
                     thread.start()
                     prtidx += 1
 
-
+                Config.progress_bar.set_description(
+                    os.path.splitext(os.path.basename(file_path))[0] + ':' + str(prtidx) + ':' + str(out_pkt_idx))
                 outpath = os.path.join(Config.dataout_path, 'part' + str(prtidx), str(out_pkt_idx))
                 if not os.path.exists(outpath): os.makedirs(outpath)
                 for idx, decode_ans in enumerate(list(tocpu(ans_list))):
