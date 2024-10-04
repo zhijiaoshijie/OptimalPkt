@@ -4,12 +4,11 @@ import time
 import glob
 import zipfile
 from time import sleep
-from typing import KeysView
+import concurrent.futures
 
 import math
 import numpy as np
 from sklearn.cluster import KMeans
-import threading
 import urllib3
 import os
 import re
@@ -401,15 +400,44 @@ def read_pkt(file_path_in, threshold, min_length):
 
             current_sequence = []
 
+
 def zip_folder(folder_path, zip_path):
     logger.warning(f"Zipping folder {folder_path} into {zip_path}")
-    """Zips the folder."""
-    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        for root, dirs, files in os.walk(folder_path):
-            for file in files:
-                file_path = os.path.join(root, file)
-                arcname = os.path.relpath(file_path, folder_path)  # Relative path
-                zipf.write(file_path, arcname)
+
+    file_list = []
+
+    # Walk through the folder and get the files to compress
+    for root, dirs, files in os.walk(folder_path):
+        for file in files:
+            file_path = os.path.join(root, file)
+            arcname = os.path.relpath(file_path, folder_path)  # Relative path for inside the zip
+            file_list.append((file_path, arcname))  # Only need file_path and arcname now
+
+    # Prepare files concurrently, but handle writing in the main thread
+    compressed_files = []
+
+    def compress_file(file_info):
+        file_path, arcname = file_info
+        with open(file_path, 'rb') as f:
+            file_data = f.read()
+        return arcname, file_data  # Return compressed data (just reading in this case)
+
+    # Use multithreading to prepare the files for compression
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        futures = {executor.submit(compress_file, file_info): file_info for file_info in file_list}
+
+        # Block until all threads are done and collect compressed files
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                compressed_files.append(future.result())  # Get the compressed data
+            except Exception as e:
+                logger.error(f"Error compressing {futures[future]}: {e}")
+
+    # Write the files into the zip archive (in a single thread)
+    with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_STORED) as zf:
+        for arcname, file_data in compressed_files:
+            zf.writestr(arcname, file_data)
+
     logger.warning(f"Zipped folder {folder_path} into {zip_path}")
 
 def delete_folder(folder_path):
@@ -443,7 +471,7 @@ def upload_zip_and_remove(zip_path):
                 continue
             response = response.content.decode('utf-8').split('\n')
             line_token = list(filter(lambda x: ('token' in x), response))
-            token = re.compile(r"token: [\"\']([-\d\w]+)[\"\']").search(line_token[0])[1]
+            token = re.compile(r"token: [\"\']([-\w]+)[\"\']").search(line_token[0])[1]
             filelist = dfs_search_files(session, token)
             for file in filelist:
                 fnamex = os.path.basename(file["file_path"])
