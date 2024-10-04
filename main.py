@@ -17,16 +17,18 @@ import requests
 import urllib.parse
 from tqdm import tqdm
 from requests_toolbelt.multipart.encoder import MultipartEncoder
-
+import argparse
 # import sys
 # import plotly.express as px
 
 # for debug
 # import platform
 
-test_mode = False
-local_mode = False
-daemon_mode = True
+parser = argparse.ArgumentParser()
+parser.add_argument("-t", "--test_mode", action="store_true")
+parser.add_argument("-l", "--local_mode", action="store_true")
+parser.add_argument("-d", "--daemon_mode", action="store_true")
+args = parser.parse_args()
 
 logger = logging.getLogger('my_logger')
 level = logging.WARNING
@@ -44,7 +46,7 @@ logger.addHandler(console_handler)
 logger.addHandler(file_handler)
 
 use_gpu = True
-if local_mode: use_gpu = False
+if args.local_mode: use_gpu = False
 if use_gpu:
     import cupy as cp
     import cupyx.scipy.fft as fft
@@ -116,14 +118,14 @@ class Config:
     fs = 1e6
     sig_freq = 470e6
     fft_upsamp = 1024
-    # logger.error("ERR_TEST_MODE FFT_UPSAMP =====")
+    # logger.error("ERR_args.test_mode FFT_UPSAMP =====")
     payload_len_expected = 18  # num of payload symbols
     preamble_len = 8
     code_len = 2
-    progress_bar_disp = False# not test_mode
+    progress_bar_disp = False# not args.test_mode
     skip_pkts = 0
 
-    if not daemon_mode:
+    if not args.daemon_mode:
         file_paths = []
         cpath = '/data/djl/datasets/240928_woldro'
         for x in os.listdir(cpath): file_paths.append(os.path.join(cpath, x))
@@ -137,7 +139,7 @@ class Config:
         shutil.rmtree(dataout_path)
         os.makedirs(dataout_path)
         
-    if daemon_mode:
+    if args.daemon_mode:
         daemon_folder = '/data/djl/FileTransfer/ProcessData'
         shutil.rmtree(daemon_folder, ignore_errors=True)
         os.makedirs(daemon_folder, exist_ok=True)
@@ -581,12 +583,12 @@ def main(file_path):
                                      cp.zeros(Config.nsamp // 2, dtype=cp.complex64)))
         ans_list, pkt_data_C = test_work_coarse(pkt_data_B)
         # logger.warning(f'I03_5: ANS: {[x%4 for x in tocpu(ans_list)]}')
-        if test_mode: logger.warning(f'I03_5: ANS: {cp_str(ans_list)}')
+        if args.test_mode: logger.warning(f'I03_5: ANS: {cp_str(ans_list)}')
         payload_data = pkt_data_C[int(Config.nsamp * (Config.sfdpos + 2 + 0.25)):]
         if len(ans_list) != Config.payload_len_expected:
             logger.warning(
                 f"E03_ANS_LEN: {Config.pkt_idx_in_file=} {len(pkt_data)=} {len(pkt_data)/Config.nsamp=} {len(ans_list)=}")
-        elif not test_mode:
+        elif not args.test_mode:
 
             # find next position: dataout_path / part(\d+) / (\d+) / (\d+)_(\d+)_(\d+)_(\d+).mat
             prtidx = 0
@@ -602,7 +604,7 @@ def main(file_path):
                     assert match and os.path.isdir(os.path.join(Config.dataout_path, fname, fname2))
                     out_pkt_idx = max(out_pkt_idx, int(match.group(1)) + 1)
             if os.path.exists(os.path.join(Config.dataout_path, f'part{prtidx}')) and len(os.listdir(os.path.join(Config.dataout_path, f'part{prtidx}'))) > Config.packets_per_part:
-                if daemon_mode:
+                if args.daemon_mode:
                     process_folder(os.path.join(Config.dataout_path, f'part{prtidx}')) #!!!
                     # thread = threading.Thread(target=process_folder, args=(os.path.join(Config.dataout_path, f'part{prtidx}'),))
                     # thread.start()
@@ -617,12 +619,12 @@ def main(file_path):
                 fout_path = os.path.join(outpath, f"{idx}_{round(decode_ans) % Config.n_classes}_{out_pkt_idx}_{Config.sf}.mat")
                 assert not os.path.exists(fout_path), fout_path
                 data.tofile(fout_path)
-        if test_mode:
+        if args.test_mode:
             print(time.time() - oldtime)
             oldtime = time.time()
             if Config.pkt_idx_in_file > 10: break
     logger.warning("File Generator Complete")
-    if daemon_mode:
+    if args.daemon_mode:
         os.remove(file_path)
     Config.progress_bar.close()
 
@@ -668,7 +670,7 @@ def gen_pkt(cfo, sfo, to, pkt_contents):
     for symb_idx in range(Config.preamble_len + 2, Config.preamble_len + 4):
         istart = symb_idx * Config.nsamp
         data = mychirp(t_all,
-                                f0=Config.bw / 2 + cfo,
+                                f0=Config   .bw / 2 + cfo,
                                 f1=- Config.bw / 2 + cfo,
                                 t1=tsymb_theirs * (symb_idx + 1),
                                 t0 = tsymb_theirs * symb_idx)
@@ -727,9 +729,9 @@ def test():
     print(cp_str(ans_list))
 
 if __name__ == "__main__":
-    if daemon_mode:
+    if args.daemon_mode:
         daemon()
-    elif test_mode:
+    elif args.test_mode:
         test()
     else:
         for file_path in Config.file_paths:
