@@ -141,7 +141,7 @@ class Config:
         
     if args.daemon_mode:
         daemon_folder = '/data/djl/FileTransfer/ProcessData'
-        shutil.rmtree(daemon_folder, ignore_errors=True)
+        # shutil.rmtree(daemon_folder, ignore_errors=True)
         os.makedirs(daemon_folder, exist_ok=True)
         os.makedirs(dataout_path + '_zipped', exist_ok=True)
         daemon_file_pattern = 'ProcessData_*.sigdat'
@@ -324,7 +324,7 @@ def test_work_coarse(pktdata_in):
     # ans1B, power1B = decode_payload(est_to_dec, pktdata4B)
     # logger.info(f'I03_2: Before SFO decode Payload : {len(ans1B)=}\n    {cp_str(ans1B)=}\n    {cp_str(power1B)=}')
 
-    est_cfo_slope = est_cfo_f2 / Config.sig_freq * Config.bw * Config.fs / Config.nsamp
+    est_cfo_slope = est_cfo_f2 / Config.sig_freq * Config.bw /( Config.fs / Config.nsamp)
     sig_time = len(pktdata2) / Config.fs
     logger.info(f'I03_3: SFO {est_cfo_f2=} Hz, {est_cfo_slope=} Hz/s, {sig_time=} s')
     t = cp.linspace(0, sig_time, len(pktdata2) + 1)[:-1]
@@ -570,6 +570,25 @@ def main(file_path):
 
     Config.progress_bar.reset()
 
+    prtidx = 0
+    while True:
+        session = requests.Session()
+        session.trust_env = False
+        response = requests.get(Config.repo_url, cookies=Config.cookies, headers=Config.headers)
+        if response.status_code != 200:
+            logger.error(f'Step1 GetToken Failed {response.status_code}, {response.text}')
+            sleep(1)
+        else:
+            response = response.content.decode('utf-8').split('\n')
+            line_token = list(filter(lambda x: ('token' in x), response))
+            token = re.compile(r"token: [\"\']([-\w]+)[\"\']").search(line_token[0])[1]
+            filelist = dfs_search_files(session, token)
+            for file in filelist:
+                fnamex = os.path.basename(file["file_path"])
+                assert re.fullmatch(r'part(\d+).zip', fnamex), f"filename in upload cloud link not recognized {fnamex}"
+                prtidx = max(prtidx, int(re.fullmatch(r'part(\d+).zip', fnamex)[1]) + 1)
+                break
+
     for Config.pkt_idx_in_file, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=20)):
         if Config.pkt_idx_in_file <= Config.skip_pkts: continue
 
@@ -591,7 +610,6 @@ def main(file_path):
         elif not args.test_mode:
 
             # find next position: dataout_path / part(\d+) / (\d+) / (\d+)_(\d+)_(\d+)_(\d+).mat
-            prtidx = 0
             out_pkt_idx = 0
             for fname in os.listdir(Config.dataout_path):
                 match = re.fullmatch(r'part(\d+)', fname)
@@ -618,6 +636,8 @@ def main(file_path):
                 data = payload_data[Config.nsamp * idx: Config.nsamp * (idx + 1)]
                 fout_path = os.path.join(outpath, f"{idx}_{round(decode_ans) % Config.n_classes}_{out_pkt_idx}_{Config.sf}.mat")
                 assert not os.path.exists(fout_path), fout_path
+                stat = os.statvfs(outpath)
+                assert stat.f_bavail * stat.f_frsize > data.nbytes
                 data.tofile(fout_path)
         if args.test_mode:
             print(time.time() - oldtime)
@@ -711,22 +731,23 @@ def gen_pkt(cfo, sfo, to, pkt_contents):
     return data_pkt
 
 def test():
-    to = - 2 ** Config.sf / Config.bw * 0.3
-    pkt_contents = np.concatenate((np.array((16, 24), dtype=int), np.arange(0, 3000, 100, dtype=int)))
-    cfo = 200
-    sfo = cfo * Config.fs / Config.sig_freq
-    print('sfo',sfo)
-    est_cfo_slope = cfo / Config.sig_freq * Config.bw * Config.fs / Config.nsamp
-    print(f'{est_cfo_slope=}, {sfo=} Hz, {to=} s')
-    pkt = gen_pkt(cfo = cfo, sfo = sfo, to = to, pkt_contents = pkt_contents)
-    # pkt = cp.concatenate((cp.zeros(Config.nsamp, dtype=cp.complex64),
-    #                       pkt,
-    #                       cp.zeros(Config.nsamp, dtype=cp.complex64)))
-    outpath = "."
-    pkt.tofile(os.path.join(outpath, f"test.sigdat"))
+    for xto in range(30, 31):
+        to = - 2 ** Config.sf / Config.bw * xto / 100
+        pkt_contents = np.concatenate((np.array((16, 24), dtype=int), np.arange(0, 3000, 100, dtype=int)))
+        cfo = 2000
+        sfo = cfo * Config.fs / Config.sig_freq
+        # print('sfo',sfo)
+        est_cfo_slope = cfo / Config.sig_freq * Config.bw
+        # print(f'{est_cfo_slope=} Hz/symb, {sfo=} Hz, {to=} s {2**Config.sf/Config.bw=} s')
+        pkt = gen_pkt(cfo = cfo, sfo = sfo, to = to, pkt_contents = pkt_contents)
+        # pkt = cp.concatenate((cp.zeros(Config.nsamp, dtype=cp.complex64),
+        #                       pkt,
+        #                       cp.zeros(Config.nsamp, dtype=cp.complex64)))
+        outpath = "."
+        pkt.tofile(os.path.join(outpath, f"test.sigdat"))
 
-    ans_list, pkt_data_C = test_work_coarse(pkt)
-    print(cp_str(ans_list))
+        ans_list, pkt_data_C = test_work_coarse(pkt)
+        print(cp_str(ans_list))
 
 if __name__ == "__main__":
     if args.daemon_mode:
@@ -734,7 +755,7 @@ if __name__ == "__main__":
     elif args.test_mode:
         test()
     else:
-        for file_path in Config.file_paths:
-            main(file_path)
+        for file_path_main in Config.file_paths:
+            main(file_path_main)
 
 
