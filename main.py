@@ -455,8 +455,11 @@ def dfs_search_files(sess,
     encoded_path = urllib.parse.quote(path)
     r = sess.get(f'https://cloud.tsinghua.edu.cn/api/v2.1/share-links/{share_key}/dirents/?path={encoded_path}')
     objects = r.json()['dirent_list']
+    # logger.warning([obj['file_name'] for obj in objects])
     for obj in objects:
-        if obj["is_dir"]: filelist.extend(dfs_search_files(sess, share_key, obj['folder_path']))
+        if obj["is_dir"]:
+            # logger.warning(obj["is_dir"] + obj["folder_path"])
+            filelist.extend(dfs_search_files(sess, share_key, obj['folder_path']))
         else: filelist.append(obj)
     return filelist
 
@@ -529,7 +532,11 @@ def process_folder(folder_path):
     zip_folder(folder_path, zip_path)
     upload_zip_and_remove(zip_path)
     logger.warning(f"Removing {folder_path}")
-    shutil.rmtree(folder_path)
+    try:
+        shutil.rmtree(folder_path)
+    except Exception as e:
+        logger.error(e)
+
 
 def daemon():
     while True:
@@ -583,11 +590,12 @@ def main(file_path):
             line_token = list(filter(lambda x: ('token' in x), response))
             token = re.compile(r"token: [\"\']([-\w]+)[\"\']").search(line_token[0])[1]
             filelist = dfs_search_files(session, token)
+            # logger.warning([obj['file_name'] for obj in filelist])
             for file in filelist:
                 fnamex = os.path.basename(file["file_path"])
                 assert re.fullmatch(r'part(\d+).zip', fnamex), f"filename in upload cloud link not recognized {fnamex}"
                 prtidx = max(prtidx, int(re.fullmatch(r'part(\d+).zip', fnamex)[1]) + 1)
-                break
+            break
 
     for Config.pkt_idx_in_file, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=20)):
         if Config.pkt_idx_in_file <= Config.skip_pkts: continue
@@ -744,10 +752,40 @@ def test():
         #                       pkt,
         #                       cp.zeros(Config.nsamp, dtype=cp.complex64)))
         outpath = "."
-        pkt.tofile(os.path.join(outpath, f"test.sigdat"))
+        pkt.tofile(os.path.join(outpath, f"test.sigdat")) # !!!
 
-        ans_list, pkt_data_C = test_work_coarse(pkt)
-        print(cp_str(ans_list))
+        est_cfo_f2, est_to_s2 = coarse_work_fast(pkt)
+        logger.warning(f"I02_WORK_RESULT {est_cfo_f2=}, {est_to_s2=}")
+
+        pktdata2 = add_freq(pkt, - est_cfo_f2)
+        est_to_int = round(est_to_s2)
+        est_to_dec = est_to_s2 - est_to_int
+        pktdata2 = cp.roll(pktdata2, - est_to_int)
+
+        # pktdata4A = pktdata2[:Config.nsamp * Config.sfdpos]
+        # ans1A, power1A = decode_payload(est_to_dec, pktdata4A)
+        # logger.info(f'I03_1: Before SFO decode Preamble: {len(ans1A)=}\n    {cp_str(ans1A)=}\n    {cp_str(power1A)=}')
+        # pktdata4B = pktdata2[int(Config.nsamp * (Config.sfdpos + 2 + 0.25)):]
+        # ans1B, power1B = decode_payload(est_to_dec, pktdata4B)
+        # logger.info(f'I03_2: Before SFO decode Payload : {len(ans1B)=}\n    {cp_str(ans1B)=}\n    {cp_str(power1B)=}')
+        est_cfo_f2 = 1500 # !!!
+        est_cfo_slope = est_cfo_f2 / Config.sig_freq * Config.bw /( Config.fs / Config.nsamp)
+        sig_time = len(pktdata2) / Config.fs
+        logger.warning(f'I03_3: SFO {est_cfo_f2=} Hz, {est_cfo_slope=} Hz/s, {sig_time=} s')
+        t = cp.linspace(0, sig_time, len(pktdata2) + 1)[:-1]
+        est_cfo_symbol = mychirp(t, f0=0, f1=- est_cfo_slope * sig_time, t1=sig_time)
+        pktdata2C = pktdata2 * est_cfo_symbol
+
+        pktdata4A = pktdata2C[:Config.nsamp * Config.sfdpos]
+        ans1A, power1A = decode_payload(est_to_dec, pktdata4A)
+        logger.warning(f'I03_4: After SFO decode Preamble: {len(ans1A)=}\n    {cp_str(ans1A)=}\n    {cp_str(power1A)=}')
+        pktdata4B = pktdata2C[int(Config.nsamp * (Config.sfdpos + 2 + 0.25)):]
+        ans1B, power1B = decode_payload(est_to_dec, pktdata4B)
+        logger.warning(f'I03_5: After SFO decode Payload : {len(ans1B)=}\n    {cp_str(ans1B)=}\n    {cp_str(power1B)=}')
+
+
+
+        print(cp_str(ans1B))
 
 if __name__ == "__main__":
     if args.daemon_mode:
