@@ -553,6 +553,10 @@ def main(file_path):
     oldtime = time.time()
     fsize = int(os.stat(file_path).st_size / (Config.nsamp * 4 * 2))
     logger.warning(f'W01_READ_START: reading file: {file_path} SF: {Config.sf} pkts in file: {os.stat(file_path).st_size} {fsize} {Config.skip_pkts=}')
+    if fsize < 10:
+        logger.error(
+            f'E09_READ_ERR: reading file: {file_path} size {os.stat(file_path).st_size} too small {fsize} < 10')
+        return
     Config.progress_bar = tqdm(total=int(os.stat(file_path).st_size), unit='B', unit_scale=True, desc=file_path,
                                disable=not Config.progress_bar_disp)
 
