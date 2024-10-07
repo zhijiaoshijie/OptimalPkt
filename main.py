@@ -866,7 +866,7 @@ def test():
                                  line=dict(color='red')))
 
         # Show the plot
-        print(slope, intercept, slope * (-Config.sfdend + 0.75) + intercept)
+        # print(slope, intercept, slope * (-Config.sfdend + 0.75) + intercept)
         slopes.append(slope)
         intercepts.append(intercept)
     fig.show()
@@ -877,7 +877,8 @@ def test():
     fig.show()
     coefficients = np.polyfit(cfos, intercepts, 1)  # degree 1 for linear
     slope, intercept = coefficients
-    y_fit = slope * intercepts + intercept
+    y_fit = slope * cfos + intercept
+    fig = go.figure()
     fig.add_trace(go.Scatter(x=cfos, y=intercepts, mode='markers', name='Data'))
     fig.add_trace(go.Scatter(x=cfos, y=y_fit, mode='lines', name=f'Linear fit',
                              line=dict(color='red')))
