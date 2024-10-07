@@ -788,12 +788,12 @@ def test():
     downchirp, dataE1, dataE2 = gen_constants(Config.sf)
 
 
-    to = 0#- 2 ** Config.sf / Config.bw * xto / 100
+    to = - 2 ** Config.sf / Config.bw * 1 / 100
     fig = go.Figure()
     slopes = []
     intercepts = []
-    cfos = np.arange(0, 2000, 200)
-    for cfo in range(0, 2000, 200):
+    cfos = np.arange(0, 2000, 20)
+    for cfo in cfos:
         pkt_contents = np.concatenate((np.array((16, 24), dtype=int), np.arange(0, 3000, 100, dtype=int)))
         # cfo = 2000
         sfo = cfo * Config.fs / Config.sig_freq
@@ -875,13 +875,15 @@ def test():
     fig.add_trace(go.Scatter(x=cfos, y=cfos * slope2, mode='lines', name=f'Linear fit',
                              line=dict(color='red')))
     fig.show()
-    slope3 = np.linalg.lstsq(cfos[:, np.newaxis], intercepts, rcond=None)[0][0]
-    fig = px.line(x = cfos, y = intercepts)
-    fig.add_trace(go.Scatter(x=cfos, y=cfos * slope3, mode='lines', name=f'Linear fit',
+    coefficients = np.polyfit(cfos, intercepts, 1)  # degree 1 for linear
+    slope, intercept = coefficients
+    y_fit = slope * intercepts + intercept
+    fig.add_trace(go.Scatter(x=cfos, y=intercepts, mode='markers', name='Data'))
+    fig.add_trace(go.Scatter(x=cfos, y=y_fit, mode='lines', name=f'Linear fit',
                              line=dict(color='red')))
-    fig.show()
 
-    print(slope2, slope3)
+    fig.show()
+    print(slope2, slope, intercept)
 
     # print(cp_str(ans1B))
 
