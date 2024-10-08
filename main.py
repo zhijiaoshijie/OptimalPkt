@@ -5,7 +5,7 @@ import glob
 import zipfile
 from time import sleep
 import concurrent.futures
-
+import pickle
 import math
 import numpy as np
 from sklearn.cluster import KMeans
@@ -96,7 +96,7 @@ def cp_str(x, precision=2, suppress_small=False):
                            floatmode='fixed', suppress_small=suppress_small, max_line_width=np.inf)
 
 
-logger.warning(f"Last modified time of the script: {time.ctime(os.path.getmtime(__file__))}")
+logger.error(f"Last modified time of the script: {time.ctime(os.path.getmtime(__file__))}")
 
 
 def get_oldest_file(folder_path, file_pattern):
@@ -662,6 +662,34 @@ def main(file_path):
 
 
 
+def gen_pkt_contents(cfo, sfo, to, pkt_contents):
+    assert to <= 0, "Time Offset must be <= 0"
+    tot_t = Config.nsamp * len(pkt_contents)
+    ts_ours = 1 / (Config.fs + sfo)
+    tsymb_theirs = Config.nsamp / Config.fs
+    t_all = cp.arange(to, to + tot_t * ts_ours, ts_ours)
+
+    data_pkt = cp.zeros(t_all.shape[0], dtype=cp.complex64)
+
+    for symb_code_idx in range(pkt_contents.shape[0]):
+        symb_idx = symb_code_idx
+        istart = symb_idx * Config.nsamp
+        data = mysymb(t_all,
+                      f0=- Config.bw / 2 + cfo,
+                      f1=Config.bw / 2 + cfo,
+                      t1=tsymb_theirs * (symb_idx + 1),
+                      t0=tsymb_theirs * symb_idx,
+                      symb=pkt_contents[symb_code_idx])
+        data[t_all <= istart / Config.fs] = 0
+        data[t_all > (istart + Config.nsamp) / Config.fs] = 0
+        data_pkt += data
+    snr = 10
+    amp = math.pow(0.1, snr / 20) * cp.mean(cp.abs(data_pkt))
+    noise = (amp / math.sqrt(2) * cp.random.randn(data_pkt.shape[0])
+             + 1j * amp / math.sqrt(2) * cp.random.randn(data_pkt.shape[0]))
+    data_pkt = data_pkt + noise.astype(cp.complex64)
+    return data_pkt
+
 def gen_pkt(cfo, sfo, to, pkt_contents):
 
     # their oscilliator is correct (fs), our oscilliator is fs + sfo
@@ -734,11 +762,11 @@ def gen_pkt(cfo, sfo, to, pkt_contents):
         data[t_all <= istart / Config.fs] = 0
         data[t_all > (istart + Config.nsamp) / Config.fs] = 0
         data_pkt += data
-    snr = 10
-    amp = math.pow(0.1, snr / 20) * cp.mean(cp.abs(data_pkt))
-    noise = (amp / math.sqrt(2) * cp.random.randn(data_pkt.shape[0])
-             + 1j * amp / math.sqrt(2) * cp.random.randn(data_pkt.shape[0]))
-    data_pkt = data_pkt + noise.astype(cp.complex64)  # dataX: data with noise
+    # snr = 10
+    # amp = math.pow(0.1, snr / 20) * cp.mean(cp.abs(data_pkt))
+    # noise = (amp / math.sqrt(2) * cp.random.randn(data_pkt.shape[0])
+    #          + 1j * amp / math.sqrt(2) * cp.random.randn(data_pkt.shape[0]))
+    # data_pkt = data_pkt + noise.astype(cp.complex64)  # dataX: data with noise
 
     return data_pkt
 
@@ -786,107 +814,149 @@ def decode_payload_ours_angle(est_to_dec, pktdata4, dataE1, dataE2):
 
 def test():
     downchirp, dataE1, dataE2 = gen_constants(Config.sf)
+    # pkt_contents = np.concatenate((np.array((16, 24), dtype=int), np.arange(20, 3000, 10, dtype=int)[:53]))
+    # pkt_contents = np.concatenate((np.array((16, 24), dtype=int), np.random.randint(1000, 2000, size=50)))
+    pkt_contents = np.random.randint(1000, 2000, size=50)
+    Config.payload_len_expected = len(pkt_contents)
+    cfo = 2000
+    sfo = cfo * Config.fs / Config.sig_freq
+    to = - 1 / Config.fs * 0.2 # -0.2 samples
+    pkt = gen_pkt_contents(cfo=cfo, sfo=sfo, to=to, pkt_contents=pkt_contents)
+    pkt_cancelled_cfo = add_freq(pkt, - cfo)
 
-
-    to = - 2 ** Config.sf / Config.bw * 1 / 100
+    ans1B, angle1B = decode_payload_ours_angle(0, pkt_cancelled_cfo, dataE1, dataE2)
+    logger.warning(f'I03_5: After SFO decode Payload : {len(ans1B)=}\n    {cp_str(ans1B)=}\n    {cp_str(angle1B)=}')
+    x = np.arange(len(angle1B))
+    y = angle1B.get()
+    mask = ~np.isnan(y)
+    x_valid = x[mask]
+    y_valid = y[mask]
+    coefficients = np.polyfit(x_valid, y_valid, 1)  # degree 1 for linear
+    slope, intercept = coefficients
+    x2 = np.arange(len(angle1B))
+    y_fit = slope * x2 + intercept
     fig = go.Figure()
-    slopes = []
-    intercepts = []
-    cfos = np.arange(0, 2000, 20)
-    for cfo in cfos:
-        pkt_contents = np.concatenate((np.array((16, 24), dtype=int), np.arange(0, 3000, 100, dtype=int)))
-        # cfo = 2000
-        sfo = cfo * Config.fs / Config.sig_freq
-        # print('sfo',sfo)
-        est_cfo_slope = cfo / Config.sig_freq * Config.bw
-        # print(f'{est_cfo_slope=} Hz/symb, {sfo=} Hz, {to=} s {2**Config.sf/Config.bw=} s')
-        pkt = gen_pkt(cfo = cfo, sfo = sfo, to = to, pkt_contents = pkt_contents)
-        # pkt = cp.concatenate((cp.zeros(Config.nsamp, dtype=cp.complex64),
-        #                       pkt,
-        #                       cp.zeros(Config.nsamp, dtype=cp.complex64)))
-        outpath = "."
-        pkt.tofile(os.path.join(outpath, f"test.sigdat")) # !!!
-
-        est_cfo_f2, est_to_s2 = coarse_work_fast(pkt)
-        logger.warning(f"I02_WORK_RESULT {est_cfo_f2=}, {est_to_s2=}")
-
-        pktdata2 = add_freq(pkt, - est_cfo_f2)
-        est_to_int = round(est_to_s2)
-        est_to_dec = est_to_s2 - est_to_int
-        pktdata2 = cp.roll(pktdata2, - est_to_int)
-
-        # pktdata4A = pktdata2[:Config.nsamp * Config.sfdpos]
-        # ans1A, power1A = decode_payload(est_to_dec, pktdata4A)
-        # logger.info(f'I03_1: Before SFO decode Preamble: {len(ans1A)=}\n    {cp_str(ans1A)=}\n    {cp_str(power1A)=}')
-        # pktdata4B = pktdata2[int(Config.nsamp * (Config.sfdpos + 2 + 0.25)):]
-        # ans1B, power1B = decode_payload(est_to_dec, pktdata4B)
-        # logger.info(f'I03_2: Before SFO decode Payload : {len(ans1B)=}\n    {cp_str(ans1B)=}\n    {cp_str(power1B)=}')
-        est_cfo_f2 = cfo # !!!
-        est_cfo_slope = est_cfo_f2 / Config.sig_freq * Config.bw /( Config.fs / Config.nsamp)
-        sig_time = len(pktdata2) / Config.fs
-        logger.warning(f'I03_3: SFO {est_cfo_f2=} Hz, {est_cfo_slope=} Hz/s, {sig_time=} s')
-        t = cp.linspace(0, sig_time, len(pktdata2) + 1)[:-1]
-        est_cfo_symbol = mychirp(t, f0=0, f1=- est_cfo_slope * sig_time, t1=sig_time)
-        pktdata2C = pktdata2 * est_cfo_symbol
-
-        pktdata4A = pktdata2C[:Config.nsamp * Config.sfdpos]
-        ans1A, power1A = decode_payload(est_to_dec, pktdata4A)
-        logger.warning(f'I03_4: After SFO decode Preamble: {len(ans1A)=}\n    {cp_str(ans1A)=}\n    {cp_str(power1A)=}')
-        pktdata4B = pktdata2C[int(Config.nsamp * (Config.sfdpos + 2 + 0.25)):]
-        ans1B, angle1B = decode_payload_ours_angle(est_to_dec, pktdata4B, dataE1, dataE2)
-        logger.warning(f'I03_5: After SFO decode Payload : {len(ans1B)=}\n    {cp_str(ans1B)=}\n    {cp_str(angle1B)=}')
+    fig.add_trace(go.Scatter(x=x, y=y, mode='markers', name='Data'))
+    fig.add_trace(go.Scatter(x=x2, y=y_fit, mode='lines', name=f'Linear fit',
+                             line=dict(color='red')))
+    fig.show()
 
 
-        # fig = px.line(angle1B.get()[1:])
 
-        x = np.arange(len(angle1B))
-        y = angle1B.get()
 
-        mask = ~np.isnan(y)
+def testold():
+    downchirp, dataE1, dataE2 = gen_constants(Config.sf)
 
-        # Filter the data based on the mask
-        x_valid = x[mask]
-        y_valid = y[mask]
+    b1 = []
+    b2 = []
+    b3 = []
+    for xto in range(100):
+        to = - 2 ** Config.sf / Config.bw * xto / 100
+        fig = go.Figure()
+        slopes = []
+        intercepts = []
+        cfos = np.arange(0, 2000, 20)
+        for cfo in cfos:
+            pkt_contents = np.concatenate((np.array((16, 24), dtype=int), np.arange(0, 3000, 10, dtype=int)))
+            # cfo = 2000
+            sfo = cfo * Config.fs / Config.sig_freq
+            # print('sfo',sfo)
+            est_cfo_slope = cfo / Config.sig_freq * Config.bw
+            # print(f'{est_cfo_slope=} Hz/symb, {sfo=} Hz, {to=} s {2**Config.sf/Config.bw=} s')
+            pkt = gen_pkt(cfo = cfo, sfo = sfo, to = to, pkt_contents = pkt_contents)
+            # pkt = cp.concatenate((cp.zeros(Config.nsamp, dtype=cp.complex64),
+            #                       pkt,
+            #                       cp.zeros(Config.nsamp, dtype=cp.complex64)))
+            outpath = "."
+            pkt.tofile(os.path.join(outpath, f"test.sigdat")) # !!!
 
-        # Linear fit using numpy.polyfit on the filtered data
-        coefficients = np.polyfit(x_valid, y_valid, 1)  # degree 1 for linear
+            est_cfo_f2, est_to_s2 = coarse_work_fast(pkt)
+            logger.warning(f"I02_WORK_RESULT {est_cfo_f2=}, {est_to_s2=}")
+
+            # pktdata2 = add_freq(pkt, - est_cfo_f2) # !!!!!
+            est_to_int = round(est_to_s2)
+            est_to_dec = est_to_s2 - est_to_int
+            # pktdata2 = cp.roll(pktdata2, - est_to_int)
+            pktdata2 = cp.roll(pkt, - est_to_int)
+
+            # pktdata4A = pktdata2[:Config.nsamp * Config.sfdpos]
+            # ans1A, power1A = decode_payload(est_to_dec, pktdata4A)
+            # logger.info(f'I03_1: Before SFO decode Preamble: {len(ans1A)=}\n    {cp_str(ans1A)=}\n    {cp_str(power1A)=}')
+            # pktdata4B = pktdata2[int(Config.nsamp * (Config.sfdpos + 2 + 0.25)):]
+            # ans1B, power1B = decode_payload(est_to_dec, pktdata4B)
+            # logger.info(f'I03_2: Before SFO decode Payload : {len(ans1B)=}\n    {cp_str(ans1B)=}\n    {cp_str(power1B)=}')
+            est_cfo_f2 = cfo # !!!
+            est_cfo_slope = est_cfo_f2 / Config.sig_freq * Config.bw /( Config.fs / Config.nsamp)
+            sig_time = len(pktdata2) / Config.fs
+            logger.warning(f'I03_3: SFO {est_cfo_f2=} Hz, {est_cfo_slope=} Hz/s, {sig_time=} s')
+            t = cp.linspace(0, sig_time, len(pktdata2) + 1)[:-1]
+            est_cfo_symbol = mychirp(t, f0=0, f1=- est_cfo_slope * sig_time, t1=sig_time)
+            pktdata2C = pktdata2 * est_cfo_symbol
+
+            pktdata4A = pktdata2C[:Config.nsamp * Config.sfdpos]
+            ans1A, power1A = decode_payload(est_to_dec, pktdata4A)
+            logger.warning(f'I03_4: After SFO decode Preamble: {len(ans1A)=}\n    {cp_str(ans1A)=}\n    {cp_str(power1A)=}')
+            pktdata4B = pktdata2C[int(Config.nsamp * (Config.sfdpos + 2 + 0.25)):]
+            ans1B, angle1B = decode_payload_ours_angle(est_to_dec, pktdata4B, dataE1, dataE2)
+            logger.warning(f'I03_5: After SFO decode Payload : {len(ans1B)=}\n    {cp_str(ans1B)=}\n    {cp_str(angle1B)=}')
+
+
+            # fig = px.line(angle1B.get()[1:])
+
+            x = np.arange(len(angle1B))
+            y = angle1B.get()
+
+            mask = ~np.isnan(y)
+
+            # Filter the data based on the mask
+            x_valid = x[mask]
+            y_valid = y[mask]
+
+            # Linear fit using numpy.polyfit on the filtered data
+            coefficients = np.polyfit(x_valid, y_valid, 1)  # degree 1 for linear
+            slope, intercept = coefficients
+
+            # Generate fitted y values for the valid x values
+            x2 = np.arange(-Config.sfdend, len(angle1B))
+            y_fit = slope * x2 + intercept
+
+            fig.add_trace(go.Scatter(x=x, y=y, mode='markers', name='Data'))
+            fig.add_trace(go.Scatter(x=x2, y=y_fit, mode='lines', name=f'Linear fit',
+                                     line=dict(color='red')))
+            # print(slope, intercept, slope * (-Config.sfdend + 0.75) + intercept)
+            slopes.append(slope)
+            intercepts.append(intercept)
+        fig.show()
+        sys.exit(1)
+        fig = px.line(x = cfos, y = slopes)
+        slope2 = np.linalg.lstsq(cfos[:, np.newaxis], slopes, rcond=None)[0][0]
+        fig.add_trace(go.Scatter(x=cfos, y=cfos * slope2, mode='lines', name=f'Linear fit',
+                                 line=dict(color='red')))
+        fig.show()
+        coefficients = np.polyfit(cfos, intercepts, 1)  # degree 1 for linear
         slope, intercept = coefficients
-
-        # Generate fitted y values for the valid x values
-        x2 = np.arange(-Config.sfdend, len(angle1B))
-        y_fit = slope * x2 + intercept
-
-        # Create a plotly figure
-
-        # Add the scatter plot for the data points
-        fig.add_trace(go.Scatter(x=x, y=y, mode='markers', name='Data'))
-
-        # Add the line plot for the linear fit (only for valid points)
-        fig.add_trace(go.Scatter(x=x2, y=y_fit, mode='lines', name=f'Linear fit',
+        y_fit = slope * cfos + intercept
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=cfos, y=intercepts, mode='markers', name='Data'))
+        fig.add_trace(go.Scatter(x=cfos, y=y_fit, mode='lines', name=f'Linear fit',
                                  line=dict(color='red')))
 
-        # Show the plot
-        # print(slope, intercept, slope * (-Config.sfdend + 0.75) + intercept)
-        slopes.append(slope)
-        intercepts.append(intercept)
+        fig.show()
+        print(slope2, slope, intercept)
+        b1.append(slope2)
+        b2.append(slope)
+        b3.append(intercept)
+        with open("t.pkl", "wb") as f:
+            pickle.dump((b1, b2, b3), f)
+    fig = px.line(b1)
     fig.show()
-    fig = px.line(x = cfos, y = slopes)
-    slope2 = np.linalg.lstsq(cfos[:, np.newaxis], slopes, rcond=None)[0][0]
-    fig.add_trace(go.Scatter(x=cfos, y=cfos * slope2, mode='lines', name=f'Linear fit',
-                             line=dict(color='red')))
+    fig = px.line(b2)
     fig.show()
-    coefficients = np.polyfit(cfos, intercepts, 1)  # degree 1 for linear
-    slope, intercept = coefficients
-    y_fit = slope * cfos + intercept
-    fig = go.figure()
-    fig.add_trace(go.Scatter(x=cfos, y=intercepts, mode='markers', name='Data'))
-    fig.add_trace(go.Scatter(x=cfos, y=y_fit, mode='lines', name=f'Linear fit',
-                             line=dict(color='red')))
+    fig = px.line(b3)
+    fig.show()
 
-    fig.show()
-    print(slope2, slope, intercept)
 
-    # print(cp_str(ans1B))
+        # print(cp_str(ans1B))
 
 if __name__ == "__main__":
     if args.daemon_mode:
