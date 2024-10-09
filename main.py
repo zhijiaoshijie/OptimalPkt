@@ -78,7 +78,8 @@ def mychirp(t, f0, f1, t1, t0=0, phase0=0):
 def mychirp2(t, f0, f1, t1, t0=0, phase0=0):
     beta = (f1 - f0) / (t1 - t0)
     phase = 2 * cp.pi * (f0 * (t - t0) + 0.5 * beta * (t - t0) ** 2) + phase0
-    return cp.array(cp.exp(1j * cp.array(phase)), dtype=cp.complex64)
+    sig = cp.exp(1j * togpu(phase)).astype(cp.complex64)
+    return sig
 
 
 def mysymb(t, f0, f1, t1, t0, symb, phase0=0, phase1=0):
@@ -242,7 +243,7 @@ def dechirp(ndata, refchirp):
 
 def add_freq(pktdata_in, est_cfo_freq):
     cfosymb = 2 * cp.pi * est_cfo_freq * cp.linspace(0, (len(pktdata_in) - 1) / Config.fs, num=len(pktdata_in))
-    pktdata2a = pktdata_in * cfosymb
+    pktdata2a = pktdata_in + cfosymb
     return pktdata2a
 
 
@@ -710,13 +711,13 @@ def gen_constants(sf):
 
     downchirp2 = mychirp2(t, f0=bw / 2, f1=-bw / 2, t1=2 ** sf / bw)
     # two DFT matrices
-    dataE1R = cp.zeros((num_classes, num_samples), dtype=np.float32)
-    dataE2R = cp.zeros((num_classes, num_samples), dtype=np.float32)
+    dataE1R = cp.zeros((num_classes, num_samples), dtype=np.complex64)
+    dataE2R = cp.zeros((num_classes, num_samples), dtype=np.complex64)
     for symbol_index in range(num_classes):
         time_shift = int(symbol_index / num_classes * num_samples)
         time_split = num_samples - time_shift
-        dataE1R[symbol_index][:time_split] = downchirp[time_shift:]
-        if symbol_index != 0: dataE2R[symbol_index][time_split:] = downchirp[:time_shift]
+        dataE1R[symbol_index][:time_split] = downchirp2[time_shift:]
+        if symbol_index != 0: dataE2R[symbol_index][time_split:] = downchirp2[:time_shift]
 
 
     return downchirp, dataE1, dataE2, dataE1R, dataE2R
@@ -726,7 +727,7 @@ def decode_ours(dataX, dataE1, dataE2, dataE1R, dataE2R):
     dataX = cp.array(dataX).T
     data1 = cp.matmul(dataE1R, cp.exp(1j * dataX))
     data2 = cp.matmul(dataE2R, cp.exp(1j * dataX))
-    vals = cp.abs(data1) + cp.abs(data2)
+    vals = cp.abs(data1) ** 2 + cp.abs(data2) ** 2
     est = cp.argmax(vals).item()
     # data2[data2 == 0] = 1
     fig = go.Figure()
@@ -734,10 +735,10 @@ def decode_ours(dataX, dataE1, dataE2, dataE1R, dataE2R):
     fig = px.scatter(vals.get())
     fig.show()
     p1 = dataE1[est][dataE1[est] != 0].get()
-    pX = dataX[est][dataE1[est] != 0].get()
-    fig.add_trace(go.Scatter(p1, mode="markers", name='DataE1'))
-    fig.add_trace(go.Scatter(pX, mode="markers", name='DataX'))
-    fig.add_trace(go.Scatter(p1 + pX, mode="markers", name='Add'))
+    pX = dataX[dataE1[est] != 0].get()
+    fig.add_trace(go.Scatter(y=p1, mode="markers", name='DataE1'))
+    fig.add_trace(go.Scatter(y=pX, mode="markers", name='DataX'))
+    fig.add_trace(go.Scatter(y=p1 + pX, mode="markers", name='Add'))
     fig.update_layout(title=f"est {est}")
     fig.show()
     angles = cp.mean(p1 + pX)  # / data2[est])
