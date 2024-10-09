@@ -200,8 +200,8 @@ class Config:
 
     pkt_idx_in_file = 0
     detect_range_pkts = 3
-    fft_ups = cp.zeros((preamble_len + detect_range_pkts, fft_n), dtype=cp.complex64)
-    fft_downs = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.complex64)
+    # fft_ups = cp.zeros((preamble_len + detect_range_pkts, fft_n), dtype=cp.complex64)
+    # fft_downs = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.complex64)
 
 
 Config = Config()
@@ -851,8 +851,8 @@ def test():
     # pkt_contents = np.concatenate((np.array((16, 24), dtype=int), np.random.randint(1000, 2000, size=50)))
     # pkt_contents = np.random.randint(1000, 2000, size=50)
     # pkt_contents = np.arange(0, 2 ** Config.sf, 100)
-    # pkt_contents = np.arange(20)
-    pkt_contents = np.ones(3) * 1000
+    pkt_contents = np.arange(0, 2048, 200)
+    # pkt_contents = np.ones(3) * 1000
     Config.payload_len_expected = len(pkt_contents)
     cfo = 0
     sfo = cfo * Config.fs / Config.sig_freq
@@ -876,6 +876,8 @@ def test():
     fig.add_trace(go.Scatter(x=x, y=y, mode='markers', name='Data'))
     fig.add_trace(go.Scatter(x=x2, y=y_fit, mode='lines', name=f'Linear fit',
                              line=dict(color='red')))
+    fig.update_layout(title="angle of pkt")
+    print(slope, intercept)
     fig.show()
 
 
