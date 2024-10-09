@@ -683,11 +683,11 @@ def gen_pkt_contents(cfo, sfo, to, pkt_contents):
         data[t_all <= istart / Config.fs] = 0
         data[t_all > (istart + Config.nsamp) / Config.fs] = 0
         data_pkt += data
-    snr = 10
-    amp = math.pow(0.1, snr / 20) * cp.mean(cp.abs(data_pkt))
-    noise = (amp / math.sqrt(2) * cp.random.randn(data_pkt.shape[0])
-             + 1j * amp / math.sqrt(2) * cp.random.randn(data_pkt.shape[0]))
-    data_pkt = data_pkt + noise.astype(cp.complex64)
+    # snr = 10
+    # amp = math.pow(0.1, snr / 20) * cp.mean(cp.abs(data_pkt))
+    # noise = (amp / math.sqrt(2) * cp.random.randn(data_pkt.shape[0])
+    #          + 1j * amp / math.sqrt(2) * cp.random.randn(data_pkt.shape[0]))
+    # data_pkt = data_pkt + noise.astype(cp.complex64)
     return data_pkt
 
 def gen_pkt(cfo, sfo, to, pkt_contents):
@@ -803,29 +803,66 @@ def decode_ours(dataX, dataE1, dataE2):
     angles = cp.angle(data1[est] / data2[est])
     return est, angles
 
+def decode_ours_new(dataX, downchirp):
+    dataX *= downchirp
+    angles = cp.zeros(Config.n_classes, dtype=cp.float32)
+    vals = cp.zeros(Config.n_classes, dtype=cp.float32)
+    # fig = px.line(cp.unwrap(cp.angle(cp.diff(dataX))).get())
+    # fig.show()
+    for code in range(Config.n_classes):
+        kk = int(Config.fs / Config.bw)
+        dataX1 = dataX[:-code * kk]
+        dataX2 = dataX[-code * kk:]
+        freq = code * Config.bw / Config.n_classes
+        # if code == 0: freq = - Config.bw # !!!
+        t = cp.linspace(0, (Config.nsamp + 1) / Config.fs, Config.nsamp + 1)[:-1]
+        fsig = cp.exp(-t * 2j * cp.pi * freq)
+        fsig2 = cp.exp(-t * 2j * cp.pi * (freq + Config.bw))
+        if code > 0:
+            p1 = cp.sum( dataX1 * fsig[:-code * kk])
+            angles[code] = cp.angle(p1)
+        else:
+            p1 = 0
+        p2 = cp.sum( dataX2 * fsig[-code * kk:])
+        vals[code] = cp.abs(p1) ** 2 + cp.abs(p2) ** 2
+    # fig = px.line(vals.get())
+    # fig.update_layout(title="power graph")
+    # fig.show()
+    est = cp.argmax(vals).item()
+    return est, angles[est]
+
+
+
 def decode_payload_ours_angle(est_to_dec, pktdata4, dataE1, dataE2):
+    # fig = px.line(cp.unwrap(cp.angle(cp.diff(pktdata4[:Config.nsamp]))).get())
+    # fig.update_layout(title = "input")
+    # fig.show()
     symb_cnt = len(pktdata4) // Config.nsamp
     ndatas = pktdata4[: symb_cnt * Config.nsamp].reshape(symb_cnt, Config.nsamp)
     ans1n = cp.zeros(Config.payload_len_expected, dtype = int)
     angles = cp.zeros(Config.payload_len_expected, dtype = float)
     for i in range(Config.payload_len_expected):
-        ans1n[i], angles[i] = decode_ours(ndatas[i], dataE1, dataE2)
+        ans1n[i], angles[i] = decode_ours_new(ndatas[i], Config.downchirp)
     return ans1n, angles
 
 def test():
     downchirp, dataE1, dataE2 = gen_constants(Config.sf)
     # pkt_contents = np.concatenate((np.array((16, 24), dtype=int), np.arange(20, 3000, 10, dtype=int)[:53]))
     # pkt_contents = np.concatenate((np.array((16, 24), dtype=int), np.random.randint(1000, 2000, size=50)))
-    pkt_contents = np.random.randint(1000, 2000, size=50)
+    # pkt_contents = np.random.randint(1000, 2000, size=50)
+    # pkt_contents = np.arange(0, 2 ** Config.sf, 100)
+    # pkt_contents = np.arange(20)
+    pkt_contents = np.ones(3) * 1000
     Config.payload_len_expected = len(pkt_contents)
-    cfo = 2000
+    cfo = 0
     sfo = cfo * Config.fs / Config.sig_freq
-    to = - 1 / Config.fs * 0.2 # -0.2 samples
+    to = - 1 / Config.fs * 0 # -0.2 samples
     pkt = gen_pkt_contents(cfo=cfo, sfo=sfo, to=to, pkt_contents=pkt_contents)
     pkt_cancelled_cfo = add_freq(pkt, - cfo)
 
     ans1B, angle1B = decode_payload_ours_angle(0, pkt_cancelled_cfo, dataE1, dataE2)
     logger.warning(f'I03_5: After SFO decode Payload : {len(ans1B)=}\n    {cp_str(ans1B)=}\n    {cp_str(angle1B)=}')
+    print(ans1B)
     x = np.arange(len(angle1B))
     y = angle1B.get()
     mask = ~np.isnan(y)
