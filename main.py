@@ -730,15 +730,17 @@ def decode_ours(dataX, dataE1, dataE2, dataE1R, dataE2R):
     vals = cp.abs(data1) ** 2 + cp.abs(data2) ** 2
     est = cp.argmax(vals).item()
     # data2[data2 == 0] = 1
-    fig = go.Figure()
     print(est, dataE1[est], dataE2[est])
-    fig = px.scatter(vals.get())
-    fig.show()
-    p1 = dataE1[est][dataE1[est] != 0].get()
-    pX = dataX[dataE1[est] != 0].get()
-    fig.add_trace(go.Scatter(y=p1, mode="markers", name='DataE1'))
-    fig.add_trace(go.Scatter(y=pX, mode="markers", name='DataX'))
-    fig.add_trace(go.Scatter(y=p1 + pX, mode="markers", name='Add'))
+    # fig = px.scatter(vals.get())
+    # fig.show()
+    fig = go.Figure()
+    p1 = dataE1[est].get()
+    pX = dataX.get()
+    # p1 = dataE1[est][dataE1[est] != 0].get()
+    # pX = dataX[dataE1[est] != 0].get()
+    fig.add_trace(go.Scatter(y=p1, mode="lines", name='DataE1'))
+    fig.add_trace(go.Scatter(y=pX, mode="lines", name='DataX'))
+    fig.add_trace(go.Scatter(y=p1 + pX, mode="lines", name='Add'))
     fig.update_layout(title=f"est {est}")
     fig.show()
     angles = cp.mean(p1 + pX)  # / data2[est])
@@ -756,7 +758,7 @@ def decode_payload_ours_angle(est_to_dec, pktdata4, dataE1, dataE2, dataE1R, dat
 
 def test():
     downchirp, dataE1, dataE2, dataE1R, dataE2R = gen_constants(Config.sf)
-    pkt_contents = np.ones(50) * 2000 #-0.02759244971916456 -0.0758261449196762
+    pkt_contents = np.ones(50) * 10 #-0.02759244971916456 -0.0758261449196762
     Config.payload_len_expected = len(pkt_contents)
     cfo = 2000
     sfo = cfo * Config.fs / Config.sig_freq
