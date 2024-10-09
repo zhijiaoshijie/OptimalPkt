@@ -73,7 +73,12 @@ def tocpu(x):
 def mychirp(t, f0, f1, t1, t0=0, phase0=0):
     beta = (f1 - f0) / (t1 - t0)
     phase = 2 * cp.pi * (f0 * (t - t0) + 0.5 * beta * (t - t0) ** 2) + phase0
-    return phase
+    return cp.array(phase, dtype=cp.float32)
+
+def mychirp2(t, f0, f1, t1, t0=0, phase0=0):
+    beta = (f1 - f0) / (t1 - t0)
+    phase = 2 * cp.pi * (f0 * (t - t0) + 0.5 * beta * (t - t0) ** 2) + phase0
+    return cp.array(cp.exp(1j * cp.array(phase)), dtype=cp.complex64)
 
 
 def mysymb(t, f0, f1, t1, t0, symb, phase0=0, phase1=0):
@@ -180,8 +185,6 @@ class Config:
     sfdpos = preamble_len + code_len
     sfdend = sfdpos + 3
     t = cp.linspace(0, nsamp / fs, nsamp + 1)[:-1]
-    upchirp = mychirp(t, f0=-bw / 2, f1=bw / 2, t1=2 ** sf / bw)
-    downchirp = mychirp(t, f0=bw / 2, f1=-bw / 2, t1=2 ** sf / bw)
 
     fft_n = nsamp * fft_upsamp
     if use_gpu:
@@ -695,7 +698,7 @@ def gen_constants(sf):
     # generate downchirp
     t = np.linspace(0, num_samples / fs, num_samples + 1)[:-1]
 
-    downchirp = Config.downchirp
+    downchirp = mychirp(t, f0=bw / 2, f1=-bw / 2, t1=2 ** sf / bw)
     # two DFT matrices
     dataE1 = cp.zeros((num_classes, num_samples), dtype=np.float32)
     dataE2 = cp.zeros((num_classes, num_samples), dtype=np.float32)
@@ -705,31 +708,54 @@ def gen_constants(sf):
         dataE1[symbol_index][:time_split] = downchirp[time_shift:]
         if symbol_index != 0: dataE2[symbol_index][time_split:] = downchirp[:time_shift]
 
-    return downchirp, dataE1, dataE2
+    downchirp2 = mychirp2(t, f0=bw / 2, f1=-bw / 2, t1=2 ** sf / bw)
+    # two DFT matrices
+    dataE1R = cp.zeros((num_classes, num_samples), dtype=np.float32)
+    dataE2R = cp.zeros((num_classes, num_samples), dtype=np.float32)
+    for symbol_index in range(num_classes):
+        time_shift = int(symbol_index / num_classes * num_samples)
+        time_split = num_samples - time_shift
+        dataE1R[symbol_index][:time_split] = downchirp[time_shift:]
+        if symbol_index != 0: dataE2R[symbol_index][time_split:] = downchirp[:time_shift]
 
 
-def decode_ours(dataX, dataE1, dataE2):
+    return downchirp, dataE1, dataE2, dataE1R, dataE2R
+
+
+def decode_ours(dataX, dataE1, dataE2, dataE1R, dataE2R):
     dataX = cp.array(dataX).T
-    data1 = cp.matmul(dataE1, dataX)
-    data2 = cp.matmul(dataE2, dataX)
-    vals = cp.abs(data1) ** 2 + cp.abs(data2) ** 2
+    data1 = cp.matmul(dataE1R, cp.exp(1j * dataX))
+    data2 = cp.matmul(dataE2R, cp.exp(1j * dataX))
+    vals = cp.abs(data1) + cp.abs(data2)
     est = cp.argmax(vals).item()
     # data2[data2 == 0] = 1
-    angles = cp.angle(data1[est])# / data2[est])
+    fig = go.Figure()
+    print(est, dataE1[est], dataE2[est])
+    fig = px.scatter(vals.get())
+    fig.show()
+    p1 = dataE1[est][dataE1[est] != 0].get()
+    pX = dataX[est][dataE1[est] != 0].get()
+    fig.add_trace(go.Scatter(p1, mode="markers", name='DataE1'))
+    fig.add_trace(go.Scatter(pX, mode="markers", name='DataX'))
+    fig.add_trace(go.Scatter(p1 + pX, mode="markers", name='Add'))
+    fig.update_layout(title=f"est {est}")
+    fig.show()
+    angles = cp.mean(p1 + pX)  # / data2[est])
     return est, angles
 
-def decode_payload_ours_angle(est_to_dec, pktdata4, dataE1, dataE2):
+def decode_payload_ours_angle(est_to_dec, pktdata4, dataE1, dataE2, dataE1R, dataE2R):
     symb_cnt = len(pktdata4) // Config.nsamp
     ndatas = pktdata4[: symb_cnt * Config.nsamp].reshape(symb_cnt, Config.nsamp)
     ans1n = cp.zeros(Config.payload_len_expected, dtype = int)
     angles = cp.zeros(Config.payload_len_expected, dtype = float)
     for i in range(Config.payload_len_expected):
-        ans1n[i], angles[i] = decode_ours(ndatas[i], dataE1, dataE2)
+        ans1n[i], angles[i] = decode_ours(ndatas[i], dataE1, dataE2, dataE1R, dataE2R)
+        break
     return ans1n, angles
 
 def test():
-    downchirp, dataE1, dataE2 = gen_constants(Config.sf)
-    pkt_contents = np.ones(50) * 0 #-0.02759244971916456 -0.0758261449196762
+    downchirp, dataE1, dataE2, dataE1R, dataE2R = gen_constants(Config.sf)
+    pkt_contents = np.ones(50) * 2000 #-0.02759244971916456 -0.0758261449196762
     Config.payload_len_expected = len(pkt_contents)
     cfo = 2000
     sfo = cfo * Config.fs / Config.sig_freq
@@ -737,7 +763,7 @@ def test():
     pkt = gen_pkt_contents(cfo=cfo, sfo=sfo, to=to, pkt_contents=pkt_contents)
     pkt_cancelled_cfo = add_freq(pkt, - cfo)
 
-    ans1B, angle1B = decode_payload_ours_angle(0, pkt_cancelled_cfo, dataE1, dataE2)
+    ans1B, angle1B = decode_payload_ours_angle(0, pkt_cancelled_cfo, dataE1, dataE2, dataE1R, dataE2R)
     fig = px.scatter(angle1B.get())
     fig.show()
     angle1B = np.unwrap(angle1B.get())
@@ -761,44 +787,6 @@ def test():
     k = Config.bw / (2 ** Config.sf / Config.bw)
     print(delta_t, k)
 
-
-def test_nophase():
-    downchirp, dataE1, dataE2 = gen_constants(Config.sf)
-    # pkt_contents = np.concatenate((np.array((16, 24), dtype=int), np.arange(20, 3000, 10, dtype=int)[:53]))
-    # pkt_contents = np.concatenate((np.array((16, 24), dtype=int), np.random.randint(1000, 2000, size=50)))
-    # pkt_contents = np.random.randint(1000, 2000, size=50) # -0.027419869643227974 -0.08391953664667479
-    pkt_contents = np.ones(50) * 1000 #-0.027378574384360765 -0.09230899260324615
-    pkt_contents = np.ones(50) * 0 #-0.02759244971916456 -0.0758261449196762
-    Config.payload_len_expected = len(pkt_contents)
-    cfo = 2000
-    sfo = cfo * Config.fs / Config.sig_freq
-    to = - 1 / Config.fs * 0.5   # -0.2 samples
-    pkt = gen_pkt_contents(cfo=cfo, sfo=sfo, to=to, pkt_contents=pkt_contents)
-    pkt_cancelled_cfo = add_freq(pkt, - cfo)
-
-    ans1B, angle1B = decode_payload_ours_angle(0, pkt_cancelled_cfo, dataE1, dataE2)
-    fig = px.scatter(angle1B.get())
-    fig.show()
-    angle1B = np.unwrap(angle1B.get())
-    logger.warning(f'I03_5: After SFO decode Payload : {len(ans1B)=}\n    {cp_str(ans1B)=}\n    {cp_str(angle1B)=}')
-    x = np.arange(len(angle1B))
-    y = angle1B
-    mask = ~np.isnan(y)
-    x_valid = x[mask]
-    y_valid = y[mask]
-    coefficients = np.polyfit(x_valid, y_valid, 1)  # degree 1 for linear
-    slope, intercept = coefficients
-    x2 = np.arange(len(angle1B))
-    y_fit = slope * x2 + intercept
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=x, y=y, mode='markers', name='Data'))
-    fig.add_trace(go.Scatter(x=x2, y=y_fit, mode='lines', name=f'Linear fit',
-                             line=dict(color='red')))
-    fig.show()
-    print(slope, intercept)
-    delta_t = 2 ** Config.sf / Config.bw * (cfo / Config.sig_freq)
-    k = Config.bw / (2 ** Config.sf / Config.bw)
-    print(delta_t, k)
 
 if __name__ == "__main__":
     test()
