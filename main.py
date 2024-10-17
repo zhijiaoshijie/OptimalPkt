@@ -21,47 +21,44 @@ Config = Config()
 def test():
     cfo = 0
     sfo = cfo * Config.fs / Config.sig_freq
-    to = -1 / Config.fs * 0
+    to = -1 / Config.fs * 100
     assert to <= 0, "Time Offset must be <= 0"
+    
+    # their symbol: standard time
+    # our sampling: offset time
+    tsamp = cp.arange(Config.nsamp, dtype=cp.float32) * 1 / (Config.fs + sfo) + to
 
-    t_all = cp.arange(Config.nsamp, dtype=cp.float32) * 1 / (Config.fs + sfo) + to
-
-    # symb_idx = 1000
-    istart = 0 #Config.nsamp
-
-    f0 = -Config.bw / 2 + cfo
-    f1 = Config.bw / 2 + cfo
-    t1 = Config.nsamp / Config.fs
-    t0 = 0
-    t = t_all[:Config.nsamp]
-    phase0 = phase1 = 0
-
+    # they sent a standard symbol
     for symb_idx in range(200, 2048, 200):
-        beta = (f1 - f0) / (t1 - t0)
-        f0R = f0 + (f1 - f0) * (symb_idx / Config.n_classes)
-        tjump = t0 + (t1 - t0) * (1 - symb_idx / Config.n_classes)
+        phase0 = phase1 = 0
 
-        phaseA = 2 * cp.pi * (f0R * (t - t0) + 0.5 * beta * (t - t0) ** 2) + phase0
-        phaseA[t >= tjump] = 0
-        phaseB = 2 * cp.pi * ((f0R - (f1 - f0)) * (t - t0) + 0.5 * beta * (t - t0) ** 2) + phase1
-        phaseB[t < tjump] = 0
+        beta = Config.bw / (2 ** Config.sf / Config.bw)
+        f0R = -Config.bw / 2  + cfo + Config.bw * (symb_idx / Config.n_classes)
+        tjump = 2 ** Config.sf / Config.bw * (1 - symb_idx / Config.n_classes)
+
+        phaseA = 2 * cp.pi * (f0R * tsamp + 0.5 * beta * tsamp ** 2) + phase0
+        phaseA[tsamp >= tjump] = 0
+        phaseB = 2 * cp.pi * ((f0R - Config.bw) * tsamp + 0.5 * beta * tsamp ** 2) + phase1
+        phaseB[tsamp < tjump] = 0
         data = phaseA + phaseB
 
-        data[t_all < istart / Config.fs] = 0
-        data[t_all >= (istart + Config.nsamp) / Config.fs] = 0
+        # out of symb
+        data[tsamp < 0] = 0
+        data[tsamp >= 2 ** Config.sf / Config.bw] = 0
 
-        phase3 = 0
-        t = cp.arange(Config.nsamp, dtype=cp.float32) * 1 / Config.fs
-        fig = go.Figure()
-        # for t0 in (0, ): # t[1] * 10):
-        t0 = 0
-        # t = cp.linspace(0, (Config.nsamp + 1) / Config.fs, Config.nsamp + 1)[:-1]
-        f0 = Config.bw / 2
-        f1 = -Config.bw / 2
-        beta = (f1 - f0) / (2 ** Config.sf / Config.bw)
-        downchirp = 2 * cp.pi * (f0 * (t - t0) + 0.5 * beta * (t - t0) ** 2) + phase3
+        # data is generated on asynced tsamp, it has cfo and sfo and to
 
+        # generate standard downchirp
+        tsamp2 = cp.arange(Config.nsamp, dtype=cp.float32) * 1 / Config.fs
+        beta = Config.bw / (2 ** Config.sf / Config.bw)
+        downchirp = 2 * cp.pi * (Config.bw / 2 * tsamp2 - 0.5 * beta * tsamp2 ** 2)
+
+        # dechirp
         dataX = data + downchirp
+        fig=go.Figure()
+        fig.add_trace(go.Scatter(y=dataX.get(), mode='lines', name='fit', line=dict(color='blue')))
+        fig.show()
+        break
 
         code = symb_idx
         kk = int(Config.fs / Config.bw)
@@ -69,8 +66,8 @@ def test():
         dataX2 = dataX[-code * kk:]
 
         freq = code * Config.bw / Config.n_classes
-        fsig = t * 2 * cp.pi * freq
-        fsig2 = t * 2 * cp.pi * (freq - Config.bw)
+        fsig = tsamp2 * 2 * cp.pi * freq
+        fsig2 = tsamp2 * 2 * cp.pi * (freq - Config.bw)
 
         # fig.add_trace(go.Scatter(y=dataX.get(), mode='lines', name='fit', line=dict(color='blue')))
         # fig.add_trace(go.Scatter(y=fsig.get(), mode='lines', name='fit', line=dict(color='red')))
