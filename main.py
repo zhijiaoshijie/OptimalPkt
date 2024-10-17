@@ -83,8 +83,6 @@ def mychirp(t, f0, f1, t1, t0=0, phase0=0):
 
 
 def mysymb(t, f0, f1, t1, t0, symb, phase0=0, phase1=0):
-    t = t[:Config.nsamp] # !!!!!
-
     beta = (f1 - f0) / (t1 - t0)
     f0R = f0 + (f1 - f0) * (symb / Config.n_classes)
     tjump = t0 + (t1 - t0) * (1 - symb / Config.n_classes)
@@ -93,47 +91,8 @@ def mysymb(t, f0, f1, t1, t0, symb, phase0=0, phase1=0):
     phaseB = 2 * cp.pi * ((f0R - (f1 - f0)) * (t - t0) + 0.5 * beta * (t - t0) ** 2) + phase1
     phaseB[t <= tjump] = 0
     phase = phaseA + phaseB
-
-    dataX = phase
-    downchirp = mychirp_phase(t, f0=Config.bw / 2, f1=-Config.bw / 2, t1=2 ** Config.sf / Config.bw)
-    dataX += downchirp
-    angles = cp.zeros(Config.n_classes, dtype=cp.float32)
-    vals = cp.zeros(Config.n_classes, dtype=cp.float32)
-    code = symb
-    kk = int(Config.fs / Config.bw)
-    dataX1 = dataX[:-code * kk]
-    dataX2 = dataX[-code * kk:]
-    freq = code * Config.bw / Config.n_classes
-    # if code == 0: freq = - Config.bw # !!!
-    t = cp.linspace(0, (Config.nsamp + 1) / Config.fs, Config.nsamp + 1)[:-1]
-    fsig = t * 2 * cp.pi * freq
-    fsig2 = t * 2 * cp.pi * (freq - Config.bw)
-    print(dataX.shape, fsig.shape)
-    fig = px.line(dataX.get())
-    fig.add_trace(go.Scatter(y=fsig.get(), mode='lines', name=f'fit',
-                             line=dict(color='red')))
-    fig.add_trace(go.Scatter(y=fsig2.get(), mode='lines', name=f'fit2',
-                             line=dict(color='red')))
-    fig.show()
-
-    fig = px.line((dataX1 - fsig[:-code * kk]).get())
-    fig.show()
-    fig = px.line((dataX2 - fsig2[-code * kk:]).get())
-    fig.show()
-    # if code > 0:
-    #     p1 = cp.sum( dataX1 * fsig[:-code * kk])
-    #     angles[code] = cp.angle(p1)
-    # else:
-    #     p1 = 0
-    # p2 = cp.sum( dataX2 * fsig[-code * kk:])
-    # vals[code] = cp.abs(p1) ** 2 + cp.abs(p2) ** 2
-    # fig = px.line(vals.get())
-    # fig.update_layout(title="power graph")
-    # fig.show()
-    # est = cp.argmax(vals).item()
-    # return est, angles[est]
-    sys.exit(0)
-    # return sig
+    sig = cp.exp(1j * togpu(phase)).astype(cp.complex64)
+    return sig
 
 # noinspection PyTypeChecker
 def cp_str(x, precision=2, suppress_small=False):
@@ -896,8 +855,8 @@ def test():
     # pkt_contents = np.concatenate((np.array((16, 24), dtype=int), np.random.randint(1000, 2000, size=50)))
     # pkt_contents = np.random.randint(1000, 2000, size=50)
     # pkt_contents = np.arange(0, 2 ** Config.sf, 100)
-    pkt_contents = np.arange(200, 2048, 200)
-    # pkt_contents = np.ones(3) * 1000
+    # pkt_contents = np.arange(200, 2048, 200)
+    pkt_contents = np.ones(20) * 1000
     Config.payload_len_expected = len(pkt_contents)
     cfo = 0
     sfo = cfo * Config.fs / Config.sig_freq
