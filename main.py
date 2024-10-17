@@ -26,7 +26,7 @@ def test():
 
     t_all = cp.arange(Config.nsamp, dtype=cp.float32) * 1 / (Config.fs + sfo) + to
 
-    symb_idx = 1000
+    # symb_idx = 1000
     istart = 0 #Config.nsamp
 
     f0 = -Config.bw / 2 + cfo
@@ -36,23 +36,25 @@ def test():
     t = t_all[:Config.nsamp]
     phase0 = phase1 = 0
 
-    beta = (f1 - f0) / (t1 - t0)
-    f0R = f0 + (f1 - f0) * (symb_idx / Config.n_classes)
-    tjump = t0 + (t1 - t0) * (1 - symb_idx / Config.n_classes)
+    for symb_idx in range(200, 2048, 200):
+        beta = (f1 - f0) / (t1 - t0)
+        f0R = f0 + (f1 - f0) * (symb_idx / Config.n_classes)
+        tjump = t0 + (t1 - t0) * (1 - symb_idx / Config.n_classes)
 
-    phaseA = 2 * cp.pi * (f0R * (t - t0) + 0.5 * beta * (t - t0) ** 2) + phase0
-    phaseA[t >= tjump] = 0
-    phaseB = 2 * cp.pi * ((f0R - (f1 - f0)) * (t - t0) + 0.5 * beta * (t - t0) ** 2) + phase1
-    phaseB[t < tjump] = 0
-    data = phaseA + phaseB
+        phaseA = 2 * cp.pi * (f0R * (t - t0) + 0.5 * beta * (t - t0) ** 2) + phase0
+        phaseA[t >= tjump] = 0
+        phaseB = 2 * cp.pi * ((f0R - (f1 - f0)) * (t - t0) + 0.5 * beta * (t - t0) ** 2) + phase1
+        phaseB[t < tjump] = 0
+        data = phaseA + phaseB
 
-    data[t_all < istart / Config.fs] = 0
-    data[t_all >= (istart + Config.nsamp) / Config.fs] = 0
+        data[t_all < istart / Config.fs] = 0
+        data[t_all >= (istart + Config.nsamp) / Config.fs] = 0
 
-    phase3 = 0
-    t = cp.arange(Config.nsamp, dtype=cp.float32) * 1 / Config.fs
-    fig = go.Figure()
-    for t0 in (0, t[1] * 10):
+        phase3 = 0
+        t = cp.arange(Config.nsamp, dtype=cp.float32) * 1 / Config.fs
+        fig = go.Figure()
+        # for t0 in (0, ): # t[1] * 10):
+        t0 = 0
         # t = cp.linspace(0, (Config.nsamp + 1) / Config.fs, Config.nsamp + 1)[:-1]
         f0 = Config.bw / 2
         f1 = -Config.bw / 2
@@ -70,14 +72,14 @@ def test():
         fsig = t * 2 * cp.pi * freq
         fsig2 = t * 2 * cp.pi * (freq - Config.bw)
 
-        fig.add_trace(go.Scatter(y=dataX.get(), mode='lines', name='fit', line=dict(color='blue')))
-        fig.add_trace(go.Scatter(y=fsig.get(), mode='lines', name='fit', line=dict(color='red')))
-        fig.add_trace(go.Scatter(y=fsig2.get(), mode='lines', name='fit2', line=dict(color='red')))
+        # fig.add_trace(go.Scatter(y=dataX.get(), mode='lines', name='fit', line=dict(color='blue')))
+        # fig.add_trace(go.Scatter(y=fsig.get(), mode='lines', name='fit', line=dict(color='red')))
+        # fig.add_trace(go.Scatter(y=fsig2.get(), mode='lines', name='fit2', line=dict(color='red')))
         d1 = dataX1 - fsig[:-code * kk]
         d2 = dataX2 - fsig2[-code * kk:]
-        print(f"d1avg: {cp.mean(d1)} d2avg: {cp.mean(d2)}")
-    fig.update_layout(title="dataX, fsig, fsig2")
-    fig.show()
+        print(f"d1avg: {cp.mean(d1)} d2avg: {cp.mean(d2)} symb:{symb_idx}")
+    # fig.update_layout(title="dataX, fsig, fsig2")
+    # fig.show()
 
 
 
