@@ -21,8 +21,8 @@ Config = Config()
 def test():
     cfo = 0
     sfo = cfo * Config.fs / Config.sig_freq
-    to = -1 / Config.fs * 100
-    assert to <= 0, "Time Offset must be <= 0"
+    to = -1 / Config.fs * 10 # to < 0: we started recving early
+    # assert to <= 0, "Time Offset must be <= 0"
     
     # their symbol: standard time
     # our sampling: offset time
@@ -42,9 +42,10 @@ def test():
         phaseB[tsamp < tjump] = 0
         data = phaseA + phaseB
 
-        # out of symb
-        data[tsamp < 0] = 0
-        data[tsamp >= 2 ** Config.sf / Config.bw] = 0
+        # sig power, out of symb = -
+        power = cp.ones(Config.nsamp)
+        power[tsamp < 0] = 0
+        power[tsamp >= 2 ** Config.sf / Config.bw] = 0
 
         # data is generated on asynced tsamp, it has cfo and sfo and to
 
@@ -55,10 +56,14 @@ def test():
 
         # dechirp
         dataX = data + downchirp
-        fig=go.Figure()
-        fig.add_trace(go.Scatter(y=dataX.get(), mode='lines', name='fit', line=dict(color='blue')))
-        fig.show()
-        break
+
+        # fig=go.Figure()
+        # fig.add_trace(go.Scatter(y=dataX.get(), mode='lines', name='fit', line=dict(color='blue')))
+        # fig.show()
+        # break
+
+        # fit with codes
+        # for code in range(Config.n_classes):
 
         code = symb_idx
         kk = int(Config.fs / Config.bw)
