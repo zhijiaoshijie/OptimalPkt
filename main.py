@@ -33,10 +33,10 @@ def test():
     
     # their symbol: standard time
     # our sampling: offset time
-    tsamp = cp.arange(Config.nsamp, dtype=cp.float32) * 1 / (Config.fs + sfo) + to
 
     # they sent a standard symbol
-    for symb_idx in range(200, 2048, 200):
+    for symb_idx in range(0, 2048, 200):
+        tsamp = cp.arange(Config.nsamp, dtype=cp.float32) * 1 / (Config.fs + sfo) + to
         phase0 = phase1 = 0
 
         beta = Config.bw / (2 ** Config.sf / Config.bw)
@@ -48,6 +48,7 @@ def test():
         phaseB = 2 * cp.pi * ((f0R - Config.bw) * tsamp + 0.5 * beta * tsamp ** 2) + phase1
         phaseB[tsamp < tjump] = 0
         data = phaseA + phaseB
+        data -= data[0]
 
         # sig power, out of symb = -
         power = cp.ones(Config.nsamp)
@@ -71,7 +72,7 @@ def test():
 
         # fit with codes
         # coarse search
-        resolution = 10000
+        resolution = 100000
         dataX2C = cp.zeros(resolution, dtype=cp.float32)
         freq_range = cp.linspace(-Config.bw, Config.bw, resolution)
 
@@ -99,6 +100,7 @@ def test():
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=tsamp2.get(), y=dataX.get(), mode='lines', name='dataX'))
         fig.add_trace(go.Scatter(x=tsamp2.get(), y=sig_freqmax.get(), mode='lines', name='sig_freqmax', line=dict(dash='dot')))
+        print(dataX[-1], sig_freqmax[-1], dataX[-1] - sig_freqmax[-1], cp.max(dataX - sig_freqmax), cp.argmax(dataX - sig_freqmax))
         fig.show()
         break
 
