@@ -35,7 +35,7 @@ def test():
     # our sampling: offset time
 
     # they sent a standard symbol
-    for symb_idx in range(0, 2048, 200):
+    for symb_idx in range(200, 2048, 200):
         tsamp = cp.arange(Config.nsamp, dtype=cp.float32) * 1 / (Config.fs + sfo) + to
         phase0 = phase1 = 0
 
@@ -72,35 +72,46 @@ def test():
 
         # fit with codes
         # coarse search
-        resolution = 100000
+        resolution = 10000
         dataX2C = cp.zeros(resolution, dtype=cp.float32)
         freq_range = cp.linspace(-Config.bw, Config.bw, resolution)
 
-        def func(freq):
+        def func(freq, isAngle = False):
             freqsymb = 2 * cp.pi * (cp.array(freq) * tsamp2)
             dataX2 = dataX - freqsymb
-            return cp.abs(cp.sum(cp.exp(1j * dataX2.astype(complex)) * power))
+            if isAngle:
+                return cp.angle(cp.sum(cp.exp(1j * dataX2.astype(complex)) * power))
+            else:
+                return cp.abs(cp.sum(cp.exp(1j * dataX2.astype(complex)) * power))
 
 
         for fid, freq in enumerate(freq_range):
             dataX2C[fid] = func(freq)
         start_freq = freq_range[cp.argmax(dataX2C)].get()
 
-        def neg_func(freq):
-            return -func(freq).get()  # Convert to numpy for scipy compatibility
-        result = opt.minimize(neg_func, start_freq, method='L-BFGS-B')
-        max_freq = result.x[0]
-        # print("Maximum frequency:", max_freq)
-        # print("Function value at maximum frequency:", -result.fun)
-
-        # fig = px.line(x = freq_range.get(), y = dataX2C.get())
-        # fig.add_shape( type="line", y0=dataX2C.get().min(), x0=max_freq, y1=dataX2C.get().max(), x1=max_freq, line=dict(color="Red", width=2) )
-        # fig.show()
-        sig_freqmax = 2 * cp.pi * (cp.array(max_freq) * tsamp2)
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=tsamp2.get(), y=dataX.get(), mode='lines', name='dataX'))
-        fig.add_trace(go.Scatter(x=tsamp2.get(), y=sig_freqmax.get(), mode='lines', name='sig_freqmax', line=dict(dash='dot')))
-        print(dataX[-1], sig_freqmax[-1], dataX[-1] - sig_freqmax[-1], cp.max(dataX - sig_freqmax), cp.argmax(dataX - sig_freqmax))
+        for deltaf in (0, -Config.bw):
+            def neg_func(freq):
+                return -func(freq).get()  # Convert to numpy for scipy compatibility
+            result = opt.minimize(neg_func, start_freq + deltaf, method='L-BFGS-B')
+            max_freq = result.x[0]
+            # print("Maximum frequency:", max_freq)
+            # print("Function value at maximum frequency:", -result.fun)
+
+            # fig = px.line(x = freq_range.get(), y = dataX2C.get())
+            # fig.add_shape( type="line", y0=dataX2C.get().min(), x0=max_freq, y1=dataX2C.get().max(), x1=max_freq, line=dict(color="Red", width=2) )
+            # fig.show()
+            max_phi = func(freq, True)
+            sig_freqmax = 2 * cp.pi * (cp.array(max_freq) * tsamp2) + max_phi
+            fig.add_trace(go.Scatter(x=tsamp2.get(), y=sig_freqmax.get(), mode='lines', name='sig_freqmax', line=dict(dash='dot')))
+            print(max_freq, max_phi)
+            print(dataX[tsamp < tjump][-1], sig_freqmax[tsamp < tjump][-1], dataX[tsamp < tjump][-1] - sig_freqmax[tsamp < tjump][-1], cp.max(cp.abs(dataX[tsamp < tjump] - sig_freqmax[tsamp < tjump])), cp.argmax(cp.abs(dataX[tsamp < tjump] - sig_freqmax[tsamp < tjump])))
+            print(dataX[tsamp >= tjump][-1], sig_freqmax[tsamp >= tjump][-1], dataX[tsamp >= tjump][-1] - sig_freqmax[tsamp >= tjump][-1], cp.max(cp.abs(dataX[tsamp >= tjump] - sig_freqmax[tsamp >= tjump])), cp.argmax(cp.abs(dataX[tsamp >= tjump] - sig_freqmax[tsamp >= tjump])))
+        fig.update_layout(
+            xaxis=dict(range=[0, 1e-6]),
+            yaxis=dict(range=[-1, 1])
+        )
         fig.show()
         break
 
