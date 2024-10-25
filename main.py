@@ -76,25 +76,33 @@ def test():
         dataX2C = cp.zeros(resolution, dtype=cp.float32)
         freq_range = cp.linspace(-Config.bw, Config.bw, resolution)
 
-        def func(freq, isAngle = False):
-            freqsymb = 2 * cp.pi * (cp.array(freq) * tsamp2)
-            dataX2 = dataX - freqsymb
-            if isAngle:
-                return cp.angle(cp.sum(cp.exp(1j * dataX2.astype(complex)) * power))
+        def func(freq, leftpart, isAngle = False):
+            freqsymb = 2 * cp.pi * (tsamp2 * cp.array(freq))
+            # if not leftpart: freqsymb += 6.5
+            dataX2 = cp.exp(1j * (dataX - freqsymb))
+            dataX2[tsamp < 0] = 0
+            dataX2[tsamp >= 2 ** Config.sf / Config.bw] = 0
+            if leftpart:
+                dataX2[tsamp >= tjump] = 0
             else:
-                return cp.abs(cp.sum(cp.exp(1j * dataX2.astype(complex)) * power))
+                dataX2[tsamp < tjump] = 0
+
+            if isAngle:
+                return cp.angle(cp.sum(cp.exp(1j * dataX2.astype(complex))  ))
+            else:
+                return cp.abs(cp.sum(cp.exp(1j * dataX2.astype(complex))  ))
 
 
         for fid, freq in enumerate(freq_range):
-            dataX2C[fid] = func(freq)
+            dataX2C[fid] = func(freq, True)
         start_freq = freq_range[cp.argmax(dataX2C)].get()
 
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=tsamp2.get(), y=dataX.get(), mode='lines', name='dataX'))
+        # fig.add_trace(go.Scatter(x=tsamp2.get(), y=dataX.get(), mode='lines', name='dataX'))
         for deltaf in (0, -Config.bw):
-            def neg_func(freq):
-                return -func(freq).get()  # Convert to numpy for scipy compatibility
-            result = opt.minimize(neg_func, start_freq + deltaf, method='L-BFGS-B')
+            def neg_func(freq, leftpart):
+                return -func(freq, leftpart).get()  # Convert to numpy for scipy compatibility
+            result = opt.minimize(neg_func, start_freq + deltaf, args=(deltaf==0, ), method='L-BFGS-B')
             max_freq = result.x[0]
             # print("Maximum frequency:", max_freq)
             # print("Function value at maximum frequency:", -result.fun)
@@ -102,16 +110,23 @@ def test():
             # fig = px.line(x = freq_range.get(), y = dataX2C.get())
             # fig.add_shape( type="line", y0=dataX2C.get().min(), x0=max_freq, y1=dataX2C.get().max(), x1=max_freq, line=dict(color="Red", width=2) )
             # fig.show()
-            max_phi = func(freq, True)
+            max_phi = func(freq, deltaf==0, True)
+            leftpart = deltaf == 0
+
             sig_freqmax = 2 * cp.pi * (cp.array(max_freq) * tsamp2) + max_phi
-            fig.add_trace(go.Scatter(x=tsamp2.get(), y=sig_freqmax.get(), mode='lines', name='sig_freqmax', line=dict(dash='dot')))
+            # if not leftpart: sig_freqmax += 6.5
+            if leftpart:
+                fig.add_trace(go.Scatter(x=tsamp2[tsamp < tjump].get(), y=((dataX - sig_freqmax)[tsamp < tjump] ).get(), mode='lines', name=f'fit{deltaf}'))
+            else:
+                fig.add_trace(go.Scatter(x=tsamp2[tsamp >= tjump].get(), y=((dataX - sig_freqmax)[tsamp >= tjump]).get(), mode='lines', name=f'fit{deltaf}'))
+        # fig.update_layout( yaxis=dict(range=[-1, 1]) )
             print(max_freq, max_phi)
             print(dataX[tsamp < tjump][-1], sig_freqmax[tsamp < tjump][-1], dataX[tsamp < tjump][-1] - sig_freqmax[tsamp < tjump][-1], cp.max(cp.abs(dataX[tsamp < tjump] - sig_freqmax[tsamp < tjump])), cp.argmax(cp.abs(dataX[tsamp < tjump] - sig_freqmax[tsamp < tjump])))
             print(dataX[tsamp >= tjump][-1], sig_freqmax[tsamp >= tjump][-1], dataX[tsamp >= tjump][-1] - sig_freqmax[tsamp >= tjump][-1], cp.max(cp.abs(dataX[tsamp >= tjump] - sig_freqmax[tsamp >= tjump])), cp.argmax(cp.abs(dataX[tsamp >= tjump] - sig_freqmax[tsamp >= tjump])))
-        fig.update_layout(
-            xaxis=dict(range=[0, 1e-6]),
-            yaxis=dict(range=[-1, 1])
-        )
+        # fig.update_layout(
+        #     xaxis=dict(range=[0, 1e-6]),
+        #     yaxis=dict(range=[-1, 1])
+        # )
         fig.show()
         break
 
