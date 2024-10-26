@@ -22,7 +22,7 @@ from tqdm import tqdm
 # import scipy
 
 logger = logging.getLogger('my_logger')
-level = logging.INFO
+level = logging.DEBUG
 logger.setLevel(level)
 console_handler = logging.StreamHandler()
 console_handler.setLevel(level)  # Set the console handler level
@@ -40,7 +40,7 @@ logger.addHandler(file_handler)
 parser = argparse.ArgumentParser()
 parser.add_argument('--cpu', action='store_true', default=False, help='Use cpu instead of gpu (numpy instead of cupy)')
 parser.add_argument('--searchphase', action='store_true', default=False)
-parser.add_argument('--searchphase_step', type=int, default=10000)
+parser.add_argument('--searchphase_step', type=int, default=1000)
 parser.add_argument('--searchfromzero', action='store_true', default=False)
 parser.add_argument('--plotmap', action='store_true', default=False)
 parser.add_argument('--plotline', action='store_true', default=False)
@@ -120,13 +120,13 @@ def average_modulus(lst, n_classes):
 class Config:
     renew_switch = False
     s1 = 0
-    s2 = 0
-    s3 = 0
-    s4 = 0
-    s5 = 0
-    s6 = 0
-    s7 = 0
-    s8 = 0
+    s2 = 1
+    s3 = 1
+    s4 = 1
+    s5 = 1
+    s6 = 1
+    s7 = 1
+    s8 = 1
     sflag_end = None
 
     if parse_opts.noplot:
@@ -140,9 +140,9 @@ class Config:
         s8 = 0
 
     sf = 7
-    bw = 125e3
+    bw = 406250
     fs = 1e6
-    sig_freq = 470e6
+    sig_freq = 2.4e9
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples
     figpath = "fig"
@@ -152,14 +152,14 @@ class Config:
     # file_paths = ['/data/djl/datasets/sf7-470-pre-2.bin']
 
     base_dir = '/data/djl/datasets/Dataset_50Nodes'
-    file_paths = []
-    for file_name in os.listdir(base_dir):
-        if file_name.startswith('sf7') and file_name.endswith('.bin'):
-            file_paths.append(os.path.join(base_dir, file_name))
+    file_paths = ['/data/djl/temp/OptimalPkt/data1_test']
+    # for file_name in os.listdir(base_dir):
+    #     if file_name.startswith('sf7') and file_name.endswith('.bin'):
+    #         file_paths.append(os.path.join(base_dir, file_name))
 
     nsamp = round(n_classes * fs / bw)
 
-    preamble_len = 8  # TODO
+    preamble_len = 60  # TODO
     code_len = 2
     # codes = [50, 101]  # TODO set codes
     fft_upsamp = 1024
@@ -455,7 +455,7 @@ def fine_work_new(pktidx, pktdata2a):
     if Config.s1:
         phase = cp.angle(pktdata2a)
         unwrapped_phase = cp.unwrap(phase)
-        fig = px.line(y=tocpu(unwrapped_phase[:15 * 1024]), title="input data 15 symbol")
+        fig = px.line(y=tocpu(unwrapped_phase[:15 * Config.nsamp]), title="input data 15 symbol")
         if not parse_opts.noplot: fig.show()
         fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} input_data.html"))
 
@@ -477,13 +477,14 @@ def fine_work_new(pktidx, pktdata2a):
     if parse_opts.searchphase:
         if parse_opts.searchfromzero:
             t_lower, t_upper = 0, Config.nsamp
-            f_lower, f_upper = -30000, -23000
+            f_lower, f_upper = -60000, 60000
             bestx = None
             bestobj = cp.inf
         else:
-            f_guess = -26685.110 # best for 50/sf7/20
+            f_guess = -39500.110 # best for 50/sf7/20
             t_guess = 225.221
-            t_lower, t_upper = t_guess - 50, t_guess + 50
+            # t_lower, t_upper = t_guess - 50, t_guess + 50
+            t_lower, t_upper = 0, Config.nsamp
             f_lower, f_upper = f_guess - 500, f_guess + 500
             bestx = [f_guess, t_guess]
             bestobj = objective(bestx)
@@ -503,8 +504,8 @@ def fine_work_new(pktidx, pktdata2a):
         cfo_freq_est, time_error = bestx
         logger.info(f"Optimized parameters:\n{cfo_freq_est=}\n{time_error=}")
     else:
-        cfo_freq_est = -26685.110 # best for 50/sf7/20
-        time_error = 225.221
+        cfo_freq_est = -39500
+        time_error = 500+5402 # best for 50/sf7/20
         # cfo_freq_est = -26789.411976307307
         # time_error = 224.64248426804352
         # cfo_freq_est = -25364.299
@@ -570,7 +571,7 @@ def fine_work_new(pktidx, pktdata2a):
     if Config.s2:
         detect_symb_plt = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
         detect_symb_plt = cp.concatenate(detect_symb_plt)
-        detect_symb_plt *= (pktdata2a_roll[0] / cp.abs(pktdata2a_roll[0]))
+        # detect_symb_plt *= (pktdata2a_roll[0] / cp.abs(pktdata2a_roll[0]))
         phase1 = cp.angle(pktdata2a_roll)
         xval = cp.arange(len(detect_symb_plt))
         # xval = cp.arange(len(detect_symb_plt))
@@ -580,8 +581,13 @@ def fine_work_new(pktidx, pktdata2a):
         yval2[math.ceil(tsfd):] += (yval1[math.ceil(tsfd)] - yval2[math.ceil(tsfd)])
 
         fig = go.Figure()
+        # view_len = 60
         fig.add_trace(go.Scatter(x=tocpu(xval), y=tocpu(yval1[xval]), mode='lines', name='input', line=dict(color='blue')))
         fig.add_trace(go.Scatter(x=tocpu(xval), y=tocpu(yval2[xval]), mode='lines', name='fit', line=dict(dash='dash', color='red')))
+        # view_len = 60
+        # fig.add_trace(go.Scatter(x=tocpu(xval)[:Config.nsamp * view_len], y=tocpu(yval1[xval])[:Config.nsamp * view_len], mode='lines', name='input', line=dict(color='blue')))
+        # fig.add_trace(go.Scatter(x=tocpu(xval)[:Config.nsamp * view_len], y=tocpu(yval2[xval])[:Config.nsamp * view_len], mode='lines', name='fit', line=dict(dash='dash', color='red')))
+        # fig.add_trace(go.Scatter(x=tocpu(xval)[:Config.nsamp * view_len], y=tocpu(yval2[xval])[:Config.nsamp * view_len], mode='lines', name='fit', line=dict(color='red')))
         fig.update_layout(title='aligned pkt', legend=dict(x=0.1, y=1.1))
         if not parse_opts.noplot: fig.show()
 
@@ -620,7 +626,7 @@ def fine_work_new(pktidx, pktdata2a):
 
     tstart_p = tstart - math.ceil(tstart)
     pktdatas = pktdata2a_roll[math.ceil(tstart):]
-    # decode_new(pktidx, pktdatas, tstart_p, cfo_freq_est)
+    decode_new(pktidx, pktdatas, tstart_p, cfo_freq_est)
     return pktdatas, tstart_p, cfo_freq_est
 
 def decode_new(pktidx, pktdatas, tstart_p, cfo_freq_est):
@@ -767,8 +773,8 @@ def gen_refchirp_time(cfofreq, tstart):
 def gen_refchirp(cfofreq, tstart, deadzone=0):
     detect_symb = []
     # tid_times = gen_refchirp_time(cfofreq, tstart)
-    sigt = Config.tsig * (1 - cfofreq / Config.sig_freq)
-    beta = Config.bw / sigt
+    sigt = Config.tsig * (1 + cfofreq / Config.sig_freq)
+    beta = Config.bw / Config.tsig
     for tid in range(Config.preamble_len):
         upchirp = gen_upchirp(tstart + sigt * tid, sigt, -Config.bw / 2 + cfofreq, beta)
         # assert len(upchirp) == math.ceil(tid_times[tid + 1]) - math.ceil(tid_times[tid])
