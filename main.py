@@ -32,7 +32,7 @@ parser.add_argument("-d", "--daemon_mode", action="store_true")
 args = parser.parse_args()
 
 logger = logging.getLogger('my_logger')
-level = logging.ERROR
+level = logging.DEBUG
 console_handler = logging.StreamHandler()
 console_handler.setLevel(level)  # Set the console handler level
 file_handler = logging.FileHandler('my_log_file.log')
@@ -117,24 +117,41 @@ def get_oldest_file(folder_path, file_pattern):
 
 class Config:
     # Set parameters
-    sf = 11
-    bw = 125e3
+
+    sf = 12
+    bw = 406250
     fs = 1e6
-    sig_freq = 470e6
-    fft_upsamp = 1024
-    # logger.error("ERR_args.test_mode FFT_UPSAMP =====")
-    payload_len_expected = 18  # num of payload symbols
-    preamble_len = 8
+    sig_freq = 2.4e9
+    n_classes = 2 ** sf
+    tsig = 2 ** sf / bw * fs  # in samples
+    figpath = "fig"
+    if not os.path.exists(figpath): os.mkdir(figpath)
+    # file_paths = ['/data/djl/datasets/Dataset_50Nodes/sf7-470-new-70.bin']
+    # file_paths = ['/data/djl/datasets/sf7-470-pre-2.bin']
+    # file_paths = ['/data/djl/datasets/sf7-470-pre-2.bin']
+
+    base_dir = '/data/djl/datasets/Dataset_50Nodes'
+    file_paths = ['/data/djl/temp/OptimalPkt/testest.sigdat']
+    # for file_name in os.listdir(base_dir):
+    #     if file_name.startswith('sf7') and file_name.endswith('.bin'):
+    #         file_paths.append(os.path.join(base_dir, file_name))
+
+    nsamp = round(n_classes * fs / bw)
+
+    preamble_len = 60  # TODO
     code_len = 2
-    progress_bar_disp = False# not args.test_mode
+    # codes = [50, 101]  # TODO set codes
+    fft_upsamp = 1024
+    sfdpos = preamble_len + code_len
+    sfdend = sfdpos + 3
+    debug = True
+    breakflag = True
     skip_pkts = 0
 
-    if not args.daemon_mode:
-        file_paths = []
-        cpath = '/data/djl/datasets/240928_woldro'
-        for x in os.listdir(cpath): file_paths.append(os.path.join(cpath, x))
-        
-    dataout_path = os.path.join('/data/djl/datasets/', f'sf{sf}_wol_usrp_{fft_upsamp}_dataout')
+    payload_len_expected = 58  # num of payload symbols
+
+
+    dataout_path = os.path.join('/data/djl/datasets/', f'sf{sf}_wol_24G_{fft_upsamp}_dataout')
     if not os.path.exists(dataout_path):
         os.makedirs(dataout_path)
         logger.warning(f'W00_OUTDIR: make output directory {dataout_path}')
@@ -143,41 +160,9 @@ class Config:
         shutil.rmtree(dataout_path)
         os.makedirs(dataout_path)
         
-    if args.daemon_mode:
-        daemon_folder = '/data/djl/FileTransfer/ProcessData'
-        # shutil.rmtree(daemon_folder, ignore_errors=True)
-        os.makedirs(daemon_folder, exist_ok=True)
-        os.makedirs(dataout_path + '_zipped', exist_ok=True)
-        daemon_file_pattern = 'ProcessData_*.sigdat'
-        repo_url = 'https://cloud.tsinghua.edu.cn/u/d/0842056df80740149292/'
-        share_url = 'https://cloud.tsinghua.edu.cn/d/ad718c8129b74cfb80d1/'
-        assert share_url.startswith('https://cloud.tsinghua.edu.cn/d/')
-        cookies = {
-            'sessionid': 'rlqnpuxlyigavsy8k6gpmc60j87o75i8',
-            'sfcsrftoken': 'sfcsrftoken=kWOc2ZvTvzzdZTsGPp673ANsc2tPkSkDEOoHBjYKVnjIAz48vaIetckZTYQgWWns',
-            'serverid': '6',
-        }
-        headers = {
-            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-            'accept-language': 'en,zh;q=0.9,zh-CN;q=0.8',
-            'cache-control': 'max-age=0',
-            # 'cookie': 'sessionid=e8qgwv2rdtpflywmdrfjhsz8v4fomu5a; sfcsrftoken=t1KMw7CpW9eBMMzTRPGyGFn4dx830TsAXoH2sUqTsHNOQhUDiIwFvoHdvhDVEdzI; serverid=6',
-            '^sec-ch-ua': '^\\^Google',
-            'sec-ch-ua-mobile': '?0',
-            '^sec-ch-ua-platform': '^\\^Windows^^^',
-            'sec-fetch-dest': 'document',
-            'sec-fetch-mode': 'navigate',
-            'sec-fetch-site': 'none',
-            'sec-fetch-user': '?1',
-            'upgrade-insecure-requests': '1',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-        }
-        logger.warning(f"W00_STARTUP_INFO: Daemon Mode {sf=} {fft_upsamp=} {dataout_path=}")
-        share_key = share_url[len('https://cloud.tsinghua.edu.cn/d/'):].replace('/', '')
 
-    # preprocess
-    
     progress_bar = None
+    progress_bar_disp = False
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples
     nsamp = round(n_classes * fs / bw)
@@ -206,8 +191,8 @@ class Config:
 
     pkt_idx_in_file = 0
     detect_range_pkts = 3
-    # fft_ups = cp.zeros((preamble_len + detect_range_pkts, fft_n), dtype=cp.complex64)
-    # fft_downs = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.complex64)
+    fft_ups = cp.zeros((preamble_len + detect_range_pkts, fft_n), dtype=cp.complex64)
+    fft_downs = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.complex64)
 
 
 Config = Config()
@@ -253,64 +238,59 @@ def add_freq(pktdata_in, est_cfo_freq):
 
 
 def coarse_work_fast(pktdata_in):
-    phaseFlag = False
+    nsamp_range_len = 10
+    nsamp_range = list(range(Config.nsamp - nsamp_range_len, Config.nsamp + nsamp_range_len + 1))
+    fft_vals = cp.zeros((len(nsamp_range), Config.detect_range_pkts, 3), dtype=cp.float32)
+    for real_nsamp_idx, real_nsamp in enumerate(nsamp_range):
+        cfo_lower = (real_nsamp - 1 - Config.nsamp) / Config.nsamp * Config.sig_freq
+        cfo_higher = (real_nsamp + 1 - Config.nsamp) / Config.nsamp * Config.sig_freq
+        print(real_nsamp - Config.nsamp, cfo_lower, cfo_higher)
+        t = cp.linspace(0, 2 ** Config.sf / Config.bw, real_nsamp + 1)[:-1]
+        for pidx in range(Config.preamble_len + Config.detect_range_pkts):
+            downchirp = mychirp(t, f0=Config.bw / 2, f1=-Config.bw / 2, t1=2 ** Config.sf / Config.bw)
+            sig1 = pktdata_in[real_nsamp * pidx: real_nsamp * (pidx + 1)] * downchirp
+            Config.fft_ups[pidx] = cp.abs(myfft(sig1, n=Config.fft_n, plan=Config.plan)) ** 2
+        for pidx in range(2 + Config.detect_range_pkts):
+            upchirp = mychirp(t, f0=-Config.bw / 2, f1=Config.bw / 2, t1=2 ** Config.sf / Config.bw)
+            sig1 = (pktdata_in[real_nsamp * (pidx + Config.sfdpos): real_nsamp * (pidx + Config.sfdpos + 1)]
+                    * upchirp)
+            Config.fft_downs[pidx] = cp.abs(myfft(sig1, n=Config.fft_n, plan=Config.plan)) ** 2
 
-    for pidx in range(Config.preamble_len + Config.detect_range_pkts):
-        sig1 = pktdata_in[Config.nsamp * pidx: Config.nsamp * (pidx + 1)] * Config.downchirp
-        Config.fft_ups[pidx] = myfft(sig1, n=Config.fft_n, plan=Config.plan)
-    for pidx in range(2 + Config.detect_range_pkts):
-        sig1 = (pktdata_in[Config.nsamp * (pidx + Config.sfdpos): Config.nsamp * (pidx + Config.sfdpos + 1)]
-                * Config.upchirp)
-        Config.fft_downs[pidx] = myfft(sig1, n=Config.fft_n, plan=Config.plan)
-    if not phaseFlag:
-        fft_ups2 = cp.abs(Config.fft_ups) ** 2
-        fft_downs2 = cp.abs(Config.fft_downs) ** 2
-    else:
-        fft_ups2 = Config.fft_ups
-        fft_downs2 = Config.fft_downs
-
-
-    fft_vals = cp.zeros((Config.detect_range_pkts, 3), dtype=cp.float32)
-    for pidx in range(Config.detect_range_pkts):
-        fft_val_up = cp.argmax(cp.abs(cp.sum(fft_ups2[pidx: pidx + Config.preamble_len], axis=0)))
-        if fft_val_up > Config.fft_n / 2: fft_val_up -= Config.fft_n
-        fft_val_down = cp.argmax(cp.abs(cp.sum(fft_downs2[pidx: pidx + 2], axis=0)))  # + fft_down_lst[pidx]))
-        if fft_val_down > Config.fft_n / 2: fft_val_down -= Config.fft_n
-        fft_val_abs = cp.max(cp.abs(cp.sum(fft_ups2[pidx: pidx + Config.preamble_len], axis=0))) \
-                      + cp.max(cp.abs(cp.sum(fft_downs2[pidx: pidx + 2], axis=0)))  # + fft_down_lst[pidx]))
-        # logger.info(f"{fft_val_up=} {fft_val_down=} {Config.fft_n=}")
-        est_cfo_r = (fft_val_up + fft_val_down) / 2 / Config.fft_n  # rate, [0, 1)
-        est_to_r = (fft_val_down - fft_val_up) / 2 / Config.fft_n  # rate, [0, 1)
-        if abs(est_cfo_r - 1 / 2) <= 1 / 4:  # abs(cfo) > 1/4
-            est_cfo_r += 1 / 2
-            est_to_r += 1 / 2
-        est_cfo_r %= 1  # [0, 1)
-        est_to_r %= 1  # [0, 1)
-        if est_cfo_r > 1 / 2: est_cfo_r -= 1  # [-1/2, 1/2)
-        if est_to_r > 1 / 2:
-            est_to_r -= 1  # [-1/2, 1/2)
-            if pidx == 0: fft_val_abs *= 0  # shift left is nothing!
-        est_cfo_f = est_cfo_r * Config.fs
-        est_to_s = (est_to_r * 8 + pidx) * Config.nsamp  # add detect packet pos TODO
-        if abs(est_to_r) > 1/8:
-            logger.error(f"E07_LARGE_TIME_OFFSET: {Config.pkt_idx_in_file=} {fft_val_up=} {fft_val_down=} {est_cfo_r=} {est_to_r=} {est_cfo_f=} {est_to_s=} {pidx=}")
-        if abs(est_cfo_f) >= Config.fs / 8:
-            logger.warning(f"E07_LARGE_CFO: {Config.pkt_idx_in_file=} {fft_val_up=} {fft_val_down=} {est_cfo_r=} {est_to_r=} {est_cfo_f=} {est_to_s=} {pidx=}")
-        fft_vals[pidx] = cp.array((est_cfo_f, est_to_s, fft_val_abs), dtype=cp.float32)
-        # fig = go.Figure()
-        # fig.add_trace(go.Scatter(y=fft_ups2[idx].get(), mode='lines', name='Ours'))
-        # fig.add_trace(go.Scatter(y=fft_downs2[idx].get(), mode='lines', name='Ours'))
-        # fig.update_layout(title=f"{idx=} {fft_val_up=} {fft_val_down=}")
-        # fig.show()
-    # sys.exit(0)
-    bestidx = cp.argmax(fft_vals[:, 2])
-    # print(fft_vals[:, 2])
-    # if bestidx != 0:
-    #     logger.warning(f"E08_BESTIDX_NOT_ZERO: {bestidx=}")
-    #     logger.warning(f"E08_BESTIDX_NOT_ZERO: fft_ups2={cp_str(cp.argmax(cp.abs(fft_ups2), axis=1)/Config.fft_n)}")
-    #     logger.warning(f"E08_BESTIDX_NOT_ZERO: fft_dns={cp_str(cp.argmax(cp.abs(fft_downs2), axis=1)/Config.fft_n)}")
-    #     logger.warning(f"E08_BESTIDX_NOT_ZERO: fft_lls={cp_str(cp.argmax(cp.abs(fft_down_lst), axis=1)/Config.fft_n)}")
-    # logger.info(cp.argmax(fft_vals[:, 2]))
+        for pidx in range(Config.detect_range_pkts):
+            fft_val_up = cp.argmax(cp.abs(cp.sum(Config.fft_ups[pidx: pidx + Config.preamble_len], axis=0)))
+            if fft_val_up > Config.fft_n / 2: fft_val_up -= Config.fft_n
+            fft_val_down = cp.argmax(cp.abs(cp.sum(Config.fft_downs[pidx: pidx + 2], axis=0)))  # + fft_down_lst[pidx]))
+            if fft_val_down > Config.fft_n / 2: fft_val_down -= Config.fft_n
+            fft_val_abs = cp.max(cp.abs(cp.sum(Config.fft_ups[pidx: pidx + Config.preamble_len], axis=0))) \
+                          + cp.max(cp.abs(cp.sum(Config.fft_downs[pidx: pidx + 2], axis=0)))  # + fft_down_lst[pidx]))
+            # logger.info(f"{fft_val_up=} {fft_val_down=} {Config.fft_n=}")
+            est_cfo_r = (fft_val_up + fft_val_down) / 2 / Config.fft_n  # rate, [0, 1)
+            est_to_r = (fft_val_down - fft_val_up) / 2 / Config.fft_n  # rate, [0, 1)
+            if abs(est_cfo_r - 1 / 2) <= 1 / 4:  # abs(cfo) > 1/4
+                est_cfo_r += 1 / 2
+                est_to_r += 1 / 2
+            est_cfo_r %= 1  # [0, 1)
+            est_to_r %= 1  # [0, 1)
+            if est_cfo_r > 1 / 2: est_cfo_r -= 1  # [-1/2, 1/2)
+            if est_to_r > 1 / 2:
+                est_to_r -= 1  # [-1/2, 1/2)
+                if pidx == 0: fft_val_abs *= 0  # shift left is nothing!
+            est_cfo_f = est_cfo_r * Config.fs
+            est_to_s = (est_to_r * 8 + pidx) * real_nsamp  # add detect packet pos TODO
+            if abs(est_to_r) > 1 / 8:
+                logger.error(
+                    f"E07_LARGE_TIME_OFFSET: {Config.pkt_idx_in_file=} {fft_val_up=} {fft_val_down=} {est_cfo_r=} {est_to_r=} {est_cfo_f=} {est_to_s=} {pidx=}")
+            if abs(est_cfo_f) >= Config.fs / 8:
+                logger.warning(
+                    f"E07_LARGE_CFO: {Config.pkt_idx_in_file=} {fft_val_up=} {fft_val_down=} {est_cfo_r=} {est_to_r=} {est_cfo_f=} {est_to_s=} {pidx=}")
+            # if est_cfo_f <= cfo_lower or est_cfo_f >= cfo_higher:
+            #     if est_cfo_f <= cfo_lower: est_cfo_f = cfo_lower
+            #     if est_cfo_f >= cfo_higher: est_cfo_f = cfo_higher
+            if est_cfo_f > cfo_lower and est_cfo_f < cfo_higher:
+                fft_vals[real_nsamp_idx, pidx] = cp.array((est_cfo_f, est_to_s, fft_val_abs), dtype=cp.float32)
+    bestidx = cp.unravel_index(cp.argmax(fft_vals[:, :, 2]), fft_vals[:, :, 2].shape)
+    print(bestidx)
+    print("CFO in freq", fft_vals[bestidx[0], bestidx[1], 0].item(), "TO in samples", fft_vals[bestidx[0], bestidx[1], 1].item())
     return fft_vals[bestidx][0].item(), fft_vals[bestidx][1].item()
 
 
@@ -588,24 +568,6 @@ def main(file_path):
     Config.progress_bar.reset()
 
     prtidx = 0
-    while True:
-        session = requests.Session()
-        session.trust_env = False
-        response = requests.get(Config.repo_url, cookies=Config.cookies, headers=Config.headers)
-        if response.status_code != 200:
-            logger.error(f'Step1 GetToken Failed {response.status_code}, {response.text}')
-            sleep(1)
-        else:
-            response = response.content.decode('utf-8').split('\n')
-            line_token = list(filter(lambda x: ('token' in x), response))
-            token = re.compile(r"token: [\"\']([-\w]+)[\"\']").search(line_token[0])[1]
-            filelist = dfs_search_files(session, token)
-            # logger.warning([obj['file_name'] for obj in filelist])
-            for file in filelist:
-                fnamex = os.path.basename(file["file_path"])
-                assert re.fullmatch(r'part(\d+).zip', fnamex), f"filename in upload cloud link not recognized {fnamex}"
-                prtidx = max(prtidx, int(re.fullmatch(r'part(\d+).zip', fnamex)[1]) + 1)
-            break
 
     for Config.pkt_idx_in_file, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=20)):
         if Config.pkt_idx_in_file <= Config.skip_pkts: continue
@@ -849,165 +811,7 @@ def decode_payload_ours_angle(est_to_dec, pktdata4, dataE1, dataE2):
         ans1n[i], angles[i] = decode_ours_new(ndatas[i], Config.downchirp)
     return ans1n, angles
 
-def test():
-    downchirp, dataE1, dataE2 = gen_constants(Config.sf)
-    # pkt_contents = np.concatenate((np.array((16, 24), dtype=int), np.arange(20, 3000, 10, dtype=int)[:53]))
-    # pkt_contents = np.concatenate((np.array((16, 24), dtype=int), np.random.randint(1000, 2000, size=50)))
-    # pkt_contents = np.random.randint(1000, 2000, size=50)
-    # pkt_contents = np.arange(0, 2 ** Config.sf, 100)
-    # pkt_contents = np.arange(200, 2048, 200)
-    pkt_contents = np.ones(20) * 1000
-    Config.payload_len_expected = len(pkt_contents)
-    cfo = 0
-    sfo = cfo * Config.fs / Config.sig_freq
-    to = - 1 / Config.fs * 0 # -0.2 samples
-    pkt = gen_pkt_contents(cfo=cfo, sfo=sfo, to=to, pkt_contents=pkt_contents)
-    pkt_cancelled_cfo = add_freq(pkt, - cfo)
-
-    ans1B, angle1B = decode_payload_ours_angle(0, pkt_cancelled_cfo, dataE1, dataE2)
-    logger.warning(f'I03_5: After SFO decode Payload : {len(ans1B)=}\n    {cp_str(ans1B)=}\n    {cp_str(angle1B)=}')
-    print(ans1B)
-    x = np.arange(len(angle1B))
-    y = angle1B.get()
-    mask = ~np.isnan(y)
-    x_valid = x[mask]
-    y_valid = y[mask]
-    coefficients = np.polyfit(x_valid, y_valid, 1)  # degree 1 for linear
-    slope, intercept = coefficients
-    x2 = np.arange(len(angle1B))
-    y_fit = slope * x2 + intercept
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=x, y=y, mode='markers', name='Data'))
-    fig.add_trace(go.Scatter(x=x2, y=y_fit, mode='lines', name=f'Linear fit',
-                             line=dict(color='red')))
-    fig.update_layout(title="angle of pkt")
-    print(slope, intercept)
-    fig.show()
-
-
-
-
-def testold():
-    downchirp, dataE1, dataE2 = gen_constants(Config.sf)
-
-    b1 = []
-    b2 = []
-    b3 = []
-    for xto in range(100):
-        to = - 2 ** Config.sf / Config.bw * xto / 100
-        fig = go.Figure()
-        slopes = []
-        intercepts = []
-        cfos = np.arange(0, 2000, 20)
-        for cfo in cfos:
-            pkt_contents = np.concatenate((np.array((16, 24), dtype=int), np.arange(0, 3000, 10, dtype=int)))
-            # cfo = 2000
-            sfo = cfo * Config.fs / Config.sig_freq
-            # print('sfo',sfo)
-            est_cfo_slope = cfo / Config.sig_freq * Config.bw
-            # print(f'{est_cfo_slope=} Hz/symb, {sfo=} Hz, {to=} s {2**Config.sf/Config.bw=} s')
-            pkt = gen_pkt(cfo = cfo, sfo = sfo, to = to, pkt_contents = pkt_contents)
-            # pkt = cp.concatenate((cp.zeros(Config.nsamp, dtype=cp.complex64),
-            #                       pkt,
-            #                       cp.zeros(Config.nsamp, dtype=cp.complex64)))
-            outpath = "."
-            pkt.tofile(os.path.join(outpath, f"test.sigdat")) # !!!
-
-            est_cfo_f2, est_to_s2 = coarse_work_fast(pkt)
-            logger.warning(f"I02_WORK_RESULT {est_cfo_f2=}, {est_to_s2=}")
-
-            # pktdata2 = add_freq(pkt, - est_cfo_f2) # !!!!!
-            est_to_int = round(est_to_s2)
-            est_to_dec = est_to_s2 - est_to_int
-            # pktdata2 = cp.roll(pktdata2, - est_to_int)
-            pktdata2 = cp.roll(pkt, - est_to_int)
-
-            # pktdata4A = pktdata2[:Config.nsamp * Config.sfdpos]
-            # ans1A, power1A = decode_payload(est_to_dec, pktdata4A)
-            # logger.info(f'I03_1: Before SFO decode Preamble: {len(ans1A)=}\n    {cp_str(ans1A)=}\n    {cp_str(power1A)=}')
-            # pktdata4B = pktdata2[int(Config.nsamp * (Config.sfdpos + 2 + 0.25)):]
-            # ans1B, power1B = decode_payload(est_to_dec, pktdata4B)
-            # logger.info(f'I03_2: Before SFO decode Payload : {len(ans1B)=}\n    {cp_str(ans1B)=}\n    {cp_str(power1B)=}')
-            est_cfo_f2 = cfo # !!!
-            est_cfo_slope = est_cfo_f2 / Config.sig_freq * Config.bw /( Config.fs / Config.nsamp)
-            sig_time = len(pktdata2) / Config.fs
-            logger.warning(f'I03_3: SFO {est_cfo_f2=} Hz, {est_cfo_slope=} Hz/s, {sig_time=} s')
-            t = cp.linspace(0, sig_time, len(pktdata2) + 1)[:-1]
-            est_cfo_symbol = mychirp(t, f0=0, f1=- est_cfo_slope * sig_time, t1=sig_time)
-            pktdata2C = pktdata2 * est_cfo_symbol
-
-            pktdata4A = pktdata2C[:Config.nsamp * Config.sfdpos]
-            ans1A, power1A = decode_payload(est_to_dec, pktdata4A)
-            logger.warning(f'I03_4: After SFO decode Preamble: {len(ans1A)=}\n    {cp_str(ans1A)=}\n    {cp_str(power1A)=}')
-            pktdata4B = pktdata2C[int(Config.nsamp * (Config.sfdpos + 2 + 0.25)):]
-            ans1B, angle1B = decode_payload_ours_angle(est_to_dec, pktdata4B, dataE1, dataE2)
-            logger.warning(f'I03_5: After SFO decode Payload : {len(ans1B)=}\n    {cp_str(ans1B)=}\n    {cp_str(angle1B)=}')
-
-
-            # fig = px.line(angle1B.get()[1:])
-
-            x = np.arange(len(angle1B))
-            y = angle1B.get()
-
-            mask = ~np.isnan(y)
-
-            # Filter the data based on the mask
-            x_valid = x[mask]
-            y_valid = y[mask]
-
-            # Linear fit using numpy.polyfit on the filtered data
-            coefficients = np.polyfit(x_valid, y_valid, 1)  # degree 1 for linear
-            slope, intercept = coefficients
-
-            # Generate fitted y values for the valid x values
-            x2 = np.arange(-Config.sfdend, len(angle1B))
-            y_fit = slope * x2 + intercept
-
-            fig.add_trace(go.Scatter(x=x, y=y, mode='markers', name='Data'))
-            fig.add_trace(go.Scatter(x=x2, y=y_fit, mode='lines', name=f'Linear fit',
-                                     line=dict(color='red')))
-            # print(slope, intercept, slope * (-Config.sfdend + 0.75) + intercept)
-            slopes.append(slope)
-            intercepts.append(intercept)
-        fig.show()
-        sys.exit(1)
-        fig = px.line(x = cfos, y = slopes)
-        slope2 = np.linalg.lstsq(cfos[:, np.newaxis], slopes, rcond=None)[0][0]
-        fig.add_trace(go.Scatter(x=cfos, y=cfos * slope2, mode='lines', name=f'Linear fit',
-                                 line=dict(color='red')))
-        fig.show()
-        coefficients = np.polyfit(cfos, intercepts, 1)  # degree 1 for linear
-        slope, intercept = coefficients
-        y_fit = slope * cfos + intercept
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=cfos, y=intercepts, mode='markers', name='Data'))
-        fig.add_trace(go.Scatter(x=cfos, y=y_fit, mode='lines', name=f'Linear fit',
-                                 line=dict(color='red')))
-
-        fig.show()
-        print(slope2, slope, intercept)
-        b1.append(slope2)
-        b2.append(slope)
-        b3.append(intercept)
-        with open("t.pkl", "wb") as f:
-            pickle.dump((b1, b2, b3), f)
-    fig = px.line(b1)
-    fig.show()
-    fig = px.line(b2)
-    fig.show()
-    fig = px.line(b3)
-    fig.show()
-
-
-        # print(cp_str(ans1B))
 
 if __name__ == "__main__":
-    if args.daemon_mode:
-        daemon()
-    elif args.test_mode:
-        test()
-    else:
-        for file_path_main in Config.file_paths:
-            main(file_path_main)
-
-
+    for file_path_main in Config.file_paths:
+        main(file_path_main)
