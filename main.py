@@ -456,7 +456,7 @@ def fine_work_new(pktidx, pktdata2a):
     if Config.s1:
         phase = cp.angle(pktdata2a)
         unwrapped_phase = cp.unwrap(phase)
-        fig = px.line(y=tocpu(unwrapped_phase[:15 * Config.nsamp]), title="input data 15 symbol")
+        fig = px.line(y=tocpu(unwrapped_phase[:15 * Config.nsamp]), title=f"input data 15 symbol {pktidx=}")
         if not parse_opts.noplot: fig.show()
         fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} input_data.html"))
 
@@ -505,8 +505,29 @@ def fine_work_new(pktidx, pktdata2a):
         cfo_freq_est, time_error = bestx
         logger.info(f"Optimized parameters:\n{cfo_freq_est=}\n{time_error=}")
     else:
-        cfo_freq_est = -32532.308381448474
+        cfo_freq_est = -32620#532.308381448474
         time_error = 35.877924708091165
+        xrange = cp.linspace(cfo_freq_est - 1000, cfo_freq_est + 1000, 1000)
+        yvals = [objective((x, time_error)) for x in xrange]
+        plt.plot(xrange.get(), yvals)
+
+        def quadratic(x, a, b, c):
+            return a * x ** 2 + b * x + c
+
+        # noinspection PyTupleAssignmentBalance
+        params, covariance = curve_fit(quadratic, tocpu(xrange), yvals)
+        logger.error(f"RES {params=} {covariance=}")
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=tocpu(xrange), y=yvals, mode='lines', name='Input Data'))
+        fig.add_trace(go.Scatter(x=tocpu(xrange), y=quadratic(tocpu(xrange), *params), mode="lines", name='Fitted Curve'))
+        fig.update_layout(title=f"pkt{pktidx} objective fit")
+        if not parse_opts.noplot: fig.show()
+        # fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} objective fit.html"))
+
+
+
+        plt.title(f"objective with cfo {pktidx}")
+        plt.show()
         # cfo_freq_est = -33500
         # time_error = 34#500+5402 # best for 50/sf7/20
         # cfo_freq_est = -26789.411976307307
@@ -889,7 +910,7 @@ if __name__ == "__main__":
             tstart_lst = []
             cfo_freq_est = []
             for pkt_idx, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=10)):
-                if pkt_idx < 7: continue
+                if pkt_idx < 10: continue
                 logger.info(f"Prework {pkt_idx=} {len(pkt_data)=}")
                 p, t, c = fine_work_new(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
                 pktdata_lst.append(p)
