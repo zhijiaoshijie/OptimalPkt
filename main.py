@@ -505,39 +505,69 @@ def fine_work_new(pktidx, pktdata2a):
         cfo_freq_est, time_error = bestx
         logger.info(f"Optimized parameters:\n{cfo_freq_est=}\n{time_error=}")
     else:
-        cfo_freq_est = -32620#532.308381448474
-        time_error = 35.877924708091165
-        xrange = cp.linspace(cfo_freq_est - 1000, cfo_freq_est + 1000, 1000)
-        yvals = [objective((x, time_error)) for x in xrange]
-        plt.plot(xrange.get(), yvals)
+        cfo_freq_est = -32403.839
+        time_error = 36.153
+        # cfo_freq_est = -32620#532.308381448474
+        # time_error = 35.877924708091165
+        cfo_search = 200
+        to_search = 5
+        search_steps = 500
+        for searchidx in range(10):
+            xrange = cp.linspace(cfo_freq_est - cfo_search, cfo_freq_est + cfo_search, search_steps)
+            yvals = [objective((x, time_error)) for x in xrange]
+            # plt.plot(xrange.get(), yvals)
 
-        def quadratic(x, a, b, c):
-            return a * x ** 2 + b * x + c
+            def quadratic(x, a, b, c):
+                return a * x ** 2 + b * x + c
 
-        # noinspection PyTupleAssignmentBalance
-        params, covariance = curve_fit(quadratic, tocpu(xrange), yvals)
-        logger.error(f"RES {params=} {covariance=}")
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=tocpu(xrange), y=yvals, mode='lines', name='Input Data'))
-        fig.add_trace(go.Scatter(x=tocpu(xrange), y=quadratic(tocpu(xrange), *params), mode="lines", name='Fitted Curve'))
-        fig.update_layout(title=f"pkt{pktidx} objective fit")
-        if not parse_opts.noplot: fig.show()
-        # fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} objective fit.html"))
+            # noinspection PyTupleAssignmentBalance
+            params, covariance = curve_fit(quadratic, tocpu(xrange), yvals)
+            logger.error(f"RES {params=} {covariance=}")
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=tocpu(xrange), y=yvals, mode='markers', name='Input Data'))
+            fig.add_trace(go.Scatter(x=tocpu(xrange), y=quadratic(tocpu(xrange), *params), mode="lines", name='Fitted Curve'))
+            fig.add_vline(x=cfo_freq_est)
+            fig.update_layout(title=f"pkt{pktidx} {searchidx=} {cfo_search=} objective fit frequency")
+            cfo_freq_est_new = xrange[np.argmin(np.array(yvals))]
+            cfo_freq_est_delta = abs(cfo_freq_est_new - cfo_freq_est)
+            cfo_freq_est = cfo_freq_est_new
+            fig.add_vline(x=cfo_freq_est, line_dash="dash", line_color="red")
+            if not parse_opts.noplot: fig.show()
 
+            # fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} objective fit.html"))
 
+            xrange = cp.linspace(time_error - to_search, time_error + to_search, 1000)
+            yvals = [objective((cfo_freq_est, x)) for x in xrange]
+            # params, covariance = curve_fit(quadratic, tocpu(xrange), yvals)
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=tocpu(xrange), y=yvals, mode='markers', name='Input Data'))
+            # fig.add_trace(
+            #     go.Scatter(x=tocpu(xrange), y=quadratic(tocpu(xrange), *params), mode="lines", name='Fitted Curve'))
+            fig.add_vline(x=time_error)
+            fig.update_layout(title=f"pkt{pktidx} {searchidx=} {to_search=} objective fit timeerror")
+            time_error_new = xrange[np.argmin(np.array(yvals))]
+            time_error_delta = abs(time_error_new - time_error)
+            time_error = time_error_new
+            fig.add_vline(x=time_error, line_dash="dash", line_color="red")
+            if not parse_opts.noplot: fig.show()
+            if cfo_freq_est_delta > cfo_search / 2: cfo_search *= 3
+            else: cfo_search = (cfo_search + cfo_freq_est_delta) / 2
+            if time_error_delta > to_search / 2: to_search *= 3
+            else: to_search = (to_search + time_error_delta) / 2
+            # if searchidx==0: to_search /= 5
 
-        plt.title(f"objective with cfo {pktidx}")
-        plt.show()
-        # cfo_freq_est = -33500
-        # time_error = 34#500+5402 # best for 50/sf7/20
-        # cfo_freq_est = -26789.411976307307
-        # time_error = 224.64248426804352
-        # cfo_freq_est = -25364.299
-        # time_error = 922.660
-        cfo_freq_est_delta = 0
-        time_error_delta = 0
-        cfo_freq_est += cfo_freq_est_delta
-        time_error += time_error_delta
+            # plt.title(f"objective with cfo {pktidx}")
+            # plt.show()
+            # cfo_freq_est = -33500
+            # time_error = 34#500+5402 # best for 50/sf7/20
+            # cfo_freq_est = -26789.411976307307
+            # time_error = 224.64248426804352
+            # cfo_freq_est = -25364.299
+            # time_error = 922.660
+            # cfo_freq_est_delta = 0
+            # time_error_delta = 0
+            # cfo_freq_est += cfo_freq_est_delta
+            # time_error += time_error_delta
 
 
     pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
