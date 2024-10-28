@@ -161,6 +161,7 @@ class Config:
 
     nsamp = round(n_classes * fs / bw)
 
+    f_lower, f_upper = -60000, 60000
     preamble_len = 16  # TODO
     code_len = 2
     # codes = [50, 101]  # TODO set codes
@@ -450,6 +451,20 @@ def gen_upchirp_de(t0, td, f0, beta):
     sig = cp.exp(2j * cp.pi * (f0 * t + 0.5 * beta * t * t) / Config.fs) * 1j * cp.pi * (f0 + beta * t ) / Config.fs
     return sig
 
+def objective(params, pktdata2a):
+    cfofreq, time_error = params
+    cfofreq *= Config.scalef
+    pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
+    detect_symb = gen_refchirp(cfofreq, time_error - math.ceil(time_error), deadzone=20)
+    # tid_times = gen_refchirp_time(cfofreq, time_error - math.ceil(time_error))
+    # tid_times_ceil = cp.ceil(tid_times).astype(int)
+    res = cp.zeros(len(detect_symb), dtype=cp.complex64)
+    ddx = 0 # TODO
+    for sidx, ssymb in enumerate(detect_symb):
+        ress = cp.conj(ssymb).dot(pktdata2a_roll[ddx : ddx + len(ssymb)])
+        ddx += len(ssymb)
+        res[sidx] = ress / len(ssymb)
+    return - tocpu(cp.mean(cp.abs(res) ** 2))  # Negative because we use a minimizer
 
 def fine_work_new(pktidx, pktdata2a):
     pktdata2a = togpu(pktdata2a)
@@ -462,20 +477,7 @@ def fine_work_new(pktidx, pktdata2a):
         fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} input_data.html"))
 
     # Perform optimization
-    def objective(params):
-        cfofreq, time_error = params
-        cfofreq *= Config.scalef
-        pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
-        detect_symb = gen_refchirp(cfofreq, time_error - math.ceil(time_error), deadzone=20)
-        # tid_times = gen_refchirp_time(cfofreq, time_error - math.ceil(time_error))
-        # tid_times_ceil = cp.ceil(tid_times).astype(int)
-        res = cp.zeros(len(detect_symb), dtype=cp.complex64)
-        ddx = 0 # TODO
-        for sidx, ssymb in enumerate(detect_symb):
-            ress = cp.conj(ssymb).dot(pktdata2a_roll[ddx : ddx + len(ssymb)])
-            ddx += len(ssymb)
-            res[sidx] = ress / len(ssymb)
-        return - tocpu(cp.mean(cp.abs(res) ** 2))  # Negative because we use a minimizer
+
 
     if parse_opts.searchphase:
         if parse_opts.searchfromzero:
@@ -489,8 +491,10 @@ def fine_work_new(pktidx, pktdata2a):
             # t_lower, t_upper = t_guess - 50, t_guess + 50
             t_lower, t_upper = 0, Config.nsamp
             f_lower, f_upper = f_guess - 3000, f_guess + 3000
+            Config.f_lower = f_lower
+            Config.f_upper = f_upper
             bestx = [f_guess/Config.scalef, t_guess]
-            bestobj = objective(bestx)
+            bestobj = objective(bestx, pktdata2a)
             logger.debug(
                 f"trystart cfo_freq_est = {f_guess:.3f}, time_error = {t_guess:.3f} {bestobj=} {f_lower=} {f_upper=} {t_lower=} {t_upper=}")
             draw_fit(pktidx, pktdata2a, f_guess, t_guess)
@@ -498,7 +502,9 @@ def fine_work_new(pktidx, pktdata2a):
             start_t = random.uniform(t_lower, t_upper)
             start_f = random.uniform(f_lower, f_upper)
             # noinspection PyTypeChecker
-            result = opt.minimize(objective, [start_f/Config.scalef, start_t], bounds=[(f_lower/Config.scalef, f_upper/Config.scalef), (t_lower, t_upper)], method='L-BFGS-B',
+            result = opt.minimize(objective, [start_f/Config.scalef, start_t], args=(pktdata2a,),
+                                  bounds=[(f_lower/Config.scalef, f_upper/Config.scalef), (t_lower, t_upper)],
+                                  method='L-BFGS-B',
                                   options={'gtol': 1e-12, 'disp': False}
                                   )
 
@@ -507,81 +513,62 @@ def fine_work_new(pktidx, pktdata2a):
                 bestx = result.x
                 # f_guess, t_guess = result.x
                 bestobj = result.fun
-                draw_fit(pktidx, pktdata2a, result.x[0]*Config.scalef, result.x[1])
+                if tryidx > 100: draw_fit(pktidx, pktdata2a, result.x[0]*Config.scalef, result.x[1])
+            if tryidx == 100: draw_fit(pktidx, pktdata2a, bestx[0] * Config.scalef, bestx[1])
         cfo_freq_est, time_error = bestx
         cfo_freq_est *= Config.scalef
         logger.info(f"Optimized parameters:\n{cfo_freq_est=}\n{time_error=}")
-    # else:
-    #     cfo_freq_est = -40858.803
-    #     time_error = 4293.448
-        # cfo_freq_est = -31707.513
-        # time_error = 36.673
-        # cfo_freq_est = -32403.839
-        # time_error = 36.153
-        # cfo_freq_est = -32620#532.308381448474
-        # time_error = 35.877924708091165
-        cfo_search = 200
-        to_search = 5
-        search_steps = 100
-        for searchidx in range(5):
-            xrange = cp.linspace(cfo_freq_est - cfo_search, cfo_freq_est + cfo_search, search_steps)
-            yvals = [objective((x/Config.scalef, time_error)) for x in xrange]
-            # plt.plot(xrange.get(), yvals)
+    else:
+        cfo_freq_est = -37263.918
+        time_error = 4382.829
 
-            # def quadratic(x, a, b, c):
-            #     return a * x ** 2 + b * x + c
+    cfo_search = 200
+    to_search = 5
+    search_steps = 100
+    for searchidx in range(5):
+        xrange = cp.linspace(cfo_freq_est - cfo_search, cfo_freq_est + cfo_search, search_steps)
+        yvals = [objective((x/Config.scalef, time_error), pktdata2a) for x in xrange]
+        # plt.plot(xrange.get(), yvals)
 
-            # noinspection PyTupleAssignmentBalance
-            # params, covariance = curve_fit(quadratic, tocpu(xrange), yvals)
-            # logger.error(f"RES {params=} {covariance=}")
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=tocpu(xrange), y=yvals, mode='markers', name='Input Data'))
-            # fig.add_trace(go.Scatter(x=tocpu(xrange), y=quadratic(tocpu(xrange), *params), mode="lines", name='Fitted Curve'))
-            fig.add_vline(x=cfo_freq_est)
-            fig.update_layout(title=f"pkt{pktidx} {searchidx=} {cfo_search=} {cfo_freq_est=} {time_error=} objective fit frequency")
-            cfo_freq_est_new = xrange[np.argmin(np.array(yvals))]
-            cfo_freq_est_delta = abs(cfo_freq_est_new - cfo_freq_est)
-            cfo_freq_est = cfo_freq_est_new
-            fig.add_vline(x=cfo_freq_est, line_dash="dash", line_color="red")
-            if not parse_opts.noplot: fig.show()
+        # def quadratic(x, a, b, c):
+        #     return a * x ** 2 + b * x + c
 
-            # fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} objective fit.html"))
+        # noinspection PyTupleAssignmentBalance
+        # params, covariance = curve_fit(quadratic, tocpu(xrange), yvals)
+        # logger.error(f"RES {params=} {covariance=}")
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=tocpu(xrange), y=yvals, mode='markers', name='Input Data'))
+        # fig.add_trace(go.Scatter(x=tocpu(xrange), y=quadratic(tocpu(xrange), *params), mode="lines", name='Fitted Curve'))
+        fig.add_vline(x=cfo_freq_est)
+        fig.update_layout(title=f"pkt{pktidx} {searchidx=} {cfo_search=} {cfo_freq_est=} {time_error=} objective fit frequency")
+        cfo_freq_est_new = xrange[np.argmin(np.array(yvals))]
+        cfo_freq_est_delta = abs(cfo_freq_est_new - cfo_freq_est)
+        cfo_freq_est = cfo_freq_est_new
+        fig.add_vline(x=cfo_freq_est, line_dash="dash", line_color="red")
+        if not parse_opts.noplot: fig.show()
 
-            xrange = cp.linspace(time_error - to_search, time_error + to_search, 1000)
-            yvals = [objective((cfo_freq_est/Config.scalef, x)) for x in xrange]
-            # params, covariance = curve_fit(quadratic, tocpu(xrange), yvals)
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=tocpu(xrange), y=yvals, mode='markers', name='Input Data'))
-            # fig.add_trace(
-            #     go.Scatter(x=tocpu(xrange), y=quadratic(tocpu(xrange), *params), mode="lines", name='Fitted Curve'))
-            fig.add_vline(x=time_error)
-            fig.update_layout(title=f"pkt{pktidx} {searchidx=} {to_search=} objective fit timeerror")
-            time_error_new = xrange[np.argmin(np.array(yvals))]
-            time_error_delta = abs(time_error_new - time_error)
-            time_error = time_error_new
-            fig.add_vline(x=time_error, line_dash="dash", line_color="red")
-            if not parse_opts.noplot: fig.show()
-            if cfo_freq_est_delta > cfo_search / 2: cfo_search *= 3
-            else: cfo_search = (cfo_search + cfo_freq_est_delta) / 2
-            if time_error_delta > to_search / 2: to_search *= 3
-            else: to_search = (to_search + time_error_delta) / 2
-            logger.info(f"pkt{pktidx} {searchidx=} {cfo_freq_est=} {time_error=} objective={min(yvals)} fit")
-            # if searchidx==0: to_search /= 5
+        # fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} objective fit.html"))
 
-            # plt.title(f"objective with cfo {pktidx}")
-            # plt.show()
-            # cfo_freq_est = -33500
-            # time_error = 34#500+5402 # best for 50/sf7/20
-            # cfo_freq_est = -26789.411976307307
-            # time_error = 224.64248426804352
-            # cfo_freq_est = -25364.299
-            # time_error = 922.660
-            # cfo_freq_est_delta = 0
-            # time_error_delta = 0
-            # cfo_freq_est += cfo_freq_est_delta
-            # time_error += time_error_delta
-
-            draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error)
+        xrange = cp.linspace(time_error - to_search, time_error + to_search, 1000)
+        yvals = [objective((cfo_freq_est/Config.scalef, x), pktdata2a) for x in xrange]
+        # params, covariance = curve_fit(quadratic, tocpu(xrange), yvals)
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=tocpu(xrange), y=yvals, mode='markers', name='Input Data'))
+        # fig.add_trace(
+        #     go.Scatter(x=tocpu(xrange), y=quadratic(tocpu(xrange), *params), mode="lines", name='Fitted Curve'))
+        fig.add_vline(x=time_error)
+        fig.update_layout(title=f"pkt{pktidx} {searchidx=} {to_search=} objective fit timeerror")
+        time_error_new = xrange[np.argmin(np.array(yvals))]
+        time_error_delta = abs(time_error_new - time_error)
+        time_error = time_error_new
+        fig.add_vline(x=time_error, line_dash="dash", line_color="red")
+        if not parse_opts.noplot: fig.show()
+        if cfo_freq_est_delta > cfo_search / 2: cfo_search *= 3
+        else: cfo_search = (cfo_search + cfo_freq_est_delta) / 2
+        if time_error_delta > to_search / 2: to_search *= 3
+        else: to_search = (to_search + time_error_delta) / 2
+        logger.info(f"pkt{pktidx} {searchidx=} {cfo_freq_est=} {time_error=} objective={min(yvals)} fit")
+        draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error)
 
     return ###
     if parse_opts.end1: sys.exit(0)
@@ -642,11 +629,32 @@ def draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error):
     fig.add_trace(go.Scatter(x=tocpu(xval), y=tocpu(yval1[xval]), mode='lines', name='input', line=dict(color='blue')))
     fig.add_trace(
         go.Scatter(x=tocpu(xval), y=tocpu(yval2[xval]), mode='lines', name='fit', line=dict(dash='dash', color='red')))
+    fig.add_trace(go.Scatter(
+        x=[0, xval[-1].get()],
+        y=[0, Config.f_lower * 2 * np.pi / Config.fs * xval[-1].get()],
+        mode='lines',
+        line=dict(color='gray', dash='dash'),
+        showlegend=False
+    ))
+    fig.add_trace(go.Scatter(
+        x=[0, xval[-1].get()],
+        y=[0, Config.f_upper * 2 * np.pi / Config.fs * xval[-1].get()],
+        mode='lines',
+        line=dict(color='gray', dash='dash'),
+        showlegend=False
+    ))
+    fig.add_trace(go.Scatter(
+        x=[0, xval[-1].get()],
+        y=[0, tocpu(cfo_freq_est) * 2 * np.pi / Config.fs * xval[-1].get()],
+        mode='lines',
+        line=dict(color='gray', dash='dash'),
+        showlegend = False
+    ))
     # view_len = 60
     # fig.add_trace(go.Scatter(x=tocpu(xval)[:Config.nsamp * view_len], y=tocpu(yval1[xval])[:Config.nsamp * view_len], mode='lines', name='input', line=dict(color='blue')))
     # fig.add_trace(go.Scatter(x=tocpu(xval)[:Config.nsamp * view_len], y=tocpu(yval2[xval])[:Config.nsamp * view_len], mode='lines', name='fit', line=dict(dash='dash', color='red')))
     # fig.add_trace(go.Scatter(x=tocpu(xval)[:Config.nsamp * view_len], y=tocpu(yval2[xval])[:Config.nsamp * view_len], mode='lines', name='fit', line=dict(color='red')))
-    fig.update_layout(title=f'aligned pkt {pktidx} {cfo_freq_est=} {time_error=}', legend=dict(x=0.1, y=1.1))
+    fig.update_layout(title=f'{pktidx} f={cfo_freq_est:.3f} t={time_error:.3f} obj={objective((cfo_freq_est/Config.scalef, time_error), pktdata2a):.5f}', legend=dict(x=0.1, y=1.1))
     if not parse_opts.noplot: fig.show()
 
 
@@ -949,6 +957,9 @@ if __name__ == "__main__":
             logger.debug(f"higher: {cp_str(counts[threshpos:])}")
             fig = px.line(nmaxs.get())
             fig.add_hline(y=thresh)
+            fig.update_layout(
+                title=f"{file_path} pow {len(nmaxs)}",
+                legend=dict(x=0.1, y=1.1))
             fig.show()
 
             pkt_totcnt = 0
