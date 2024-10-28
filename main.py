@@ -7,7 +7,7 @@ import time
 import pickle
 import cmath
 import math
-# import matplotlib.pyplot as plt, mpld3
+import matplotlib.pyplot as plt, mpld3
 import plotly.express as px
 import plotly.graph_objects as go
 # import pandas as pd
@@ -40,7 +40,7 @@ logger.addHandler(file_handler)
 parser = argparse.ArgumentParser()
 parser.add_argument('--cpu', action='store_true', default=False, help='Use cpu instead of gpu (numpy instead of cupy)')
 parser.add_argument('--searchphase', action='store_true', default=False)
-parser.add_argument('--searchphase_step', type=int, default=1000)
+parser.add_argument('--searchphase_step', type=int, default=10000)
 parser.add_argument('--searchfromzero', action='store_true', default=False)
 parser.add_argument('--plotmap', action='store_true', default=False)
 parser.add_argument('--plotline', action='store_true', default=False)
@@ -119,14 +119,14 @@ def average_modulus(lst, n_classes):
 
 class Config:
     renew_switch = False
-    s1 = 0
+    s1 = 1
     s2 = 1
     s3 = 1
-    s4 = 1
+    s4 = 0
     s5 = 1
     s6 = 1
-    s7 = 1
-    s8 = 1
+    s7 = 0
+    s8 = 0
     sflag_end = None
 
     if parse_opts.noplot:
@@ -145,13 +145,14 @@ class Config:
     sig_freq = 2.4e9
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples
+    thresh = 0.03
     figpath = "fig"
     if not os.path.exists(figpath): os.mkdir(figpath)
     # file_paths = ['/data/djl/datasets/Dataset_50Nodes/sf7-470-new-70.bin']
     # file_paths = ['/data/djl/datasets/sf7-470-pre-2.bin']
     # file_paths = ['/data/djl/datasets/sf7-470-pre-2.bin']
 
-    base_dir = '/data/djl/datasets/Dataset_50Nodes'
+    # base_dir = '/data/djl/datasets/Dataset_50Nodes'
     file_paths = ['/data/djl/temp/OptimalPkt/data1_test']
     # for file_name in os.listdir(base_dir):
     #     if file_name.startswith('sf7') and file_name.endswith('.bin'):
@@ -159,7 +160,7 @@ class Config:
 
     nsamp = round(n_classes * fs / bw)
 
-    preamble_len = 60  # TODO
+    preamble_len = 8  # TODO
     code_len = 2
     # codes = [50, 101]  # TODO set codes
     fft_upsamp = 1024
@@ -472,7 +473,7 @@ def fine_work_new(pktidx, pktdata2a):
             ress = cp.conj(ssymb).dot(pktdata2a_roll[ddx : ddx + len(ssymb)])
             ddx += len(ssymb)
             res[sidx] = ress / len(ssymb)
-        return - tocpu(cp.sum(cp.abs(res) ** 2))  # Negative because we use a minimizer
+        return - tocpu(cp.mean(cp.abs(res) ** 2))  # Negative because we use a minimizer
 
     if parse_opts.searchphase:
         if parse_opts.searchfromzero:
@@ -481,11 +482,11 @@ def fine_work_new(pktidx, pktdata2a):
             bestx = None
             bestobj = cp.inf
         else:
-            f_guess = -39500.110 # best for 50/sf7/20
-            t_guess = 225.221
+            f_guess = -33500 # best for 50/sf7/20
+            t_guess = 34
             # t_lower, t_upper = t_guess - 50, t_guess + 50
             t_lower, t_upper = 0, Config.nsamp
-            f_lower, f_upper = f_guess - 500, f_guess + 500
+            f_lower, f_upper = f_guess - 2000, f_guess + 2000
             bestx = [f_guess, t_guess]
             bestobj = objective(bestx)
         for tryidx in tqdm(range(parse_opts.searchphase_step)):
@@ -504,8 +505,10 @@ def fine_work_new(pktidx, pktdata2a):
         cfo_freq_est, time_error = bestx
         logger.info(f"Optimized parameters:\n{cfo_freq_est=}\n{time_error=}")
     else:
-        cfo_freq_est = -39500
-        time_error = 500+5402 # best for 50/sf7/20
+        cfo_freq_est = -32532.308381448474
+        time_error = 35.877924708091165
+        # cfo_freq_est = -33500
+        # time_error = 34#500+5402 # best for 50/sf7/20
         # cfo_freq_est = -26789.411976307307
         # time_error = 224.64248426804352
         # cfo_freq_est = -25364.299
@@ -514,61 +517,12 @@ def fine_work_new(pktidx, pktdata2a):
         time_error_delta = 0
         cfo_freq_est += cfo_freq_est_delta
         time_error += time_error_delta
-    if parse_opts.plotmap:
-        start_t = np.linspace(0, Config.nsamp, Config.nsamp * 5)
-        start_f = np.linspace(-24000, -29000, 1000)
-        Z = np.zeros((len(start_f), len(start_t)))
-        for i, f in tqdm(enumerate(start_f), total=len(start_f)):
-            for j, t in enumerate(start_t):
-                Z[i, j] = objective((f, t))
 
-        fig = go.Figure(data=go.Heatmap( z=Z, x=start_t, y=start_f, colorscale='Viridis' ))
-        fig.update_layout( title='Heatmap of objective(start_t, start_f)', xaxis_title='t', yaxis_title='f')
-        if not parse_opts.noplot: fig.show()
-        fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} Plotmap.html"))
-        maxidx = np.unravel_index(np.argmin(Z, axis=None), Z.shape, order='C')
-        best_f = start_t[maxidx[0]]
-        best_t = start_t[maxidx[1]]
-        logger.info(f'PlotMap {objective((best_f, best_t))=} {np.min(Z)=} {best_f=} {best_t=}')
-        sys.exit(0)
-        cfo_freq_est_delta = 0  # 100
-        time_error_delta = 0
-
-
-    if parse_opts.plotline:
-        xt_data = np.linspace(time_error - 200, time_error + 200, 1000)
-        yval = np.zeros(len(xt_data))
-        yval2 = np.zeros(len(xt_data))
-        for idx, time_error_2 in enumerate(xt_data):
-            detect_symb_p = gen_refchirp(cfo_freq_est, time_error_2 - math.ceil(time_error_2))
-            detect_symb_p2 = gen_refchirp_de(cfo_freq_est, time_error_2 - math.ceil(time_error_2))
-            didx = math.ceil(time_error_2)
-            ssum = 0
-            ssum2 = 0
-            for sidx, ssymb in enumerate(detect_symb_p[:Config.preamble_len]):
-                ress = cp.conj(togpu(ssymb)).dot(pktdata2a[didx: didx + len(ssymb)])
-                ssum += cp.abs(ress) ** 2
-                ress2 = cp.conj(togpu(detect_symb_p2[sidx])).dot(pktdata2a[didx: didx + len(ssymb)])
-                ssum2 += cp.abs(ress2) ** 2
-                didx += len(ssymb)
-            yval[idx] = ssum
-            yval2[idx] = ssum2
-
-        # def quadratic(x, a, b, c):
-        #     return a * x ** 2 + b * x + c
-        # params, covariance = curve_fit(quadratic, xt_data, yval)
-        # logger.info(f"FT fit time line curve {params=}")
-        fig = px.line(x = xt_data, y=yval / np.max(yval), title="power with time err")
-        # fig.add_trace(go.Scatter(x=xt_data, y=quadratic(xt_data, *params), mode='lines', line=dict(color='red', dash='dash'), name='Fitted Curve'))
-        fig.add_trace(go.Scatter(x=xt_data, y=yval2 / np.max(yval2), mode='lines', line=dict(color='red', dash='dash'), name='Derivative'))
-        fig.add_vline(x=time_error, line=dict(color='black', width=2, dash='dash'), annotation_text='est_time',
-                              annotation_position='top')
-        if not parse_opts.noplot: fig.show()
-        fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} power with time err.html"))
 
     pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
     tstart = time_error - math.ceil(time_error) + (Config.sfdend - 0.75) * Config.tsig * (1 - cfo_freq_est / Config.sig_freq)
     if Config.s2:
+        logger.info( f"{cfo_freq_est=:.3f}, time_error = {time_error:.3f}")
         detect_symb_plt = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
         detect_symb_plt = cp.concatenate(detect_symb_plt)
         # detect_symb_plt *= (pktdata2a_roll[0] / cp.abs(pktdata2a_roll[0]))
@@ -588,7 +542,7 @@ def fine_work_new(pktidx, pktdata2a):
         # fig.add_trace(go.Scatter(x=tocpu(xval)[:Config.nsamp * view_len], y=tocpu(yval1[xval])[:Config.nsamp * view_len], mode='lines', name='input', line=dict(color='blue')))
         # fig.add_trace(go.Scatter(x=tocpu(xval)[:Config.nsamp * view_len], y=tocpu(yval2[xval])[:Config.nsamp * view_len], mode='lines', name='fit', line=dict(dash='dash', color='red')))
         # fig.add_trace(go.Scatter(x=tocpu(xval)[:Config.nsamp * view_len], y=tocpu(yval2[xval])[:Config.nsamp * view_len], mode='lines', name='fit', line=dict(color='red')))
-        fig.update_layout(title='aligned pkt', legend=dict(x=0.1, y=1.1))
+        fig.update_layout(title=f'aligned pkt {pktidx}', legend=dict(x=0.1, y=1.1))
         if not parse_opts.noplot: fig.show()
 
     if parse_opts.end1: sys.exit(0)
@@ -611,6 +565,7 @@ def fine_work_new(pktidx, pktdata2a):
         res_angle = cp.unwrap(res_angle)
         # noinspection PyTupleAssignmentBalance
         params, covariance = curve_fit(quadratic, x_data, tocpu(res_angle))
+        logger.error(f"RES {params=} {covariance=} {cp_str(res_angle)=}")
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=x_data, y=tocpu(res_angle), mode='markers', name='Input Data'))
         fig.add_trace(go.Scatter(x=x_data, y=quadratic(x_data, *params), mode="lines", name='Fitted Curve'))
@@ -915,20 +870,26 @@ if __name__ == "__main__":
                 if idx == power_eval_len - 1: break
             kmeans = KMeans(n_clusters=2, random_state=0, n_init=10)
             kmeans.fit(tocpu(nmaxs.reshape(-1, 1)))
-            thresh = cp.mean(kmeans.cluster_centers_)
-            counts, bins = cp.histogram(nmaxs, bins=100)
-            # logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
-            logger.debug(f"cluster: {kmeans.cluster_centers_[0]} {kmeans.cluster_centers_[1]} {thresh=}")
-            threshpos = np.searchsorted(tocpu(bins), thresh).item()
-            logger.debug(f"lower: {cp_str(counts[:threshpos])}")
-            logger.debug(f"higher: {cp_str(counts[threshpos:])}")
+            if Config.thresh:
+                thresh = Config.thresh
+            else:
+                thresh = cp.mean(kmeans.cluster_centers_) * 5
+                counts, bins = cp.histogram(nmaxs, bins=100)
+                # logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
+                logger.debug(f"cluster: {kmeans.cluster_centers_[0]} {kmeans.cluster_centers_[1]} {thresh=}")
+                threshpos = np.searchsorted(tocpu(bins), thresh).item()
+                logger.debug(f"lower: {cp_str(counts[:threshpos])}")
+                logger.debug(f"higher: {cp_str(counts[threshpos:])}")
+                plt.plot(nmaxs.get())
+                plt.axhline(thresh, 'b')
+                plt.show()
 
             pkt_totcnt = 0
             pktdata_lst = []
             tstart_lst = []
             cfo_freq_est = []
-            for pkt_idx, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=20)):
-                if pkt_idx == 0: continue
+            for pkt_idx, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=10)):
+                if pkt_idx < 7: continue
                 logger.info(f"Prework {pkt_idx=} {len(pkt_data)=}")
                 p, t, c = fine_work_new(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
                 pktdata_lst.append(p)
