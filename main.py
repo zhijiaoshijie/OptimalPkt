@@ -139,28 +139,29 @@ class Config:
         s7 = 0
         s8 = 0
 
-    sf = 7
+    sf = 12
     bw = 406250
     fs = 1e6
     sig_freq = 2.4e9
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples
-    thresh = 0.03
+    thresh = None# 0.03
     figpath = "fig"
     if not os.path.exists(figpath): os.mkdir(figpath)
+    scalef = 1000
     # file_paths = ['/data/djl/datasets/Dataset_50Nodes/sf7-470-new-70.bin']
     # file_paths = ['/data/djl/datasets/sf7-470-pre-2.bin']
     # file_paths = ['/data/djl/datasets/sf7-470-pre-2.bin']
 
     # base_dir = '/data/djl/datasets/Dataset_50Nodes'
-    file_paths = ['/data/djl/temp/OptimalPkt/data1_test']
+    file_paths = ['/data/djl/temp/OptimalPkt/data1_test_0']
     # for file_name in os.listdir(base_dir):
     #     if file_name.startswith('sf7') and file_name.endswith('.bin'):
     #         file_paths.append(os.path.join(base_dir, file_name))
 
     nsamp = round(n_classes * fs / bw)
 
-    preamble_len = 8  # TODO
+    preamble_len = 16  # TODO
     code_len = 2
     # codes = [50, 101]  # TODO set codes
     fft_upsamp = 1024
@@ -456,13 +457,14 @@ def fine_work_new(pktidx, pktdata2a):
     if Config.s1:
         phase = cp.angle(pktdata2a)
         unwrapped_phase = cp.unwrap(phase)
-        fig = px.line(y=tocpu(unwrapped_phase[:15 * Config.nsamp]), title=f"input data 15 symbol {pktidx=}")
+        fig = px.line(y=tocpu(unwrapped_phase[:30 * Config.nsamp]), title=f"input data 15 symbol {pktidx=}")
         if not parse_opts.noplot: fig.show()
         fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} input_data.html"))
 
     # Perform optimization
     def objective(params):
         cfofreq, time_error = params
+        cfofreq *= Config.scalef
         pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
         detect_symb = gen_refchirp(cfofreq, time_error - math.ceil(time_error), deadzone=20)
         # tid_times = gen_refchirp_time(cfofreq, time_error - math.ceil(time_error))
@@ -482,52 +484,61 @@ def fine_work_new(pktidx, pktdata2a):
             bestx = None
             bestobj = cp.inf
         else:
-            f_guess = -33500 # best for 50/sf7/20
-            t_guess = 34
+            f_guess = -40000
+            t_guess = 36.153
             # t_lower, t_upper = t_guess - 50, t_guess + 50
             t_lower, t_upper = 0, Config.nsamp
-            f_lower, f_upper = f_guess - 2000, f_guess + 2000
-            bestx = [f_guess, t_guess]
+            f_lower, f_upper = f_guess - 3000, f_guess + 3000
+            bestx = [f_guess/Config.scalef, t_guess]
             bestobj = objective(bestx)
+            logger.debug(
+                f"trystart cfo_freq_est = {f_guess:.3f}, time_error = {t_guess:.3f} {bestobj=} {f_lower=} {f_upper=} {t_lower=} {t_upper=}")
+            draw_fit(pktidx, pktdata2a, f_guess, t_guess)
         for tryidx in tqdm(range(parse_opts.searchphase_step)):
             start_t = random.uniform(t_lower, t_upper)
             start_f = random.uniform(f_lower, f_upper)
             # noinspection PyTypeChecker
-            result = opt.minimize(objective, [start_f, start_t], bounds=[(f_lower, f_upper), (t_lower, t_upper)], method='L-BFGS-B',
+            result = opt.minimize(objective, [start_f/Config.scalef, start_t], bounds=[(f_lower/Config.scalef, f_upper/Config.scalef), (t_lower, t_upper)], method='L-BFGS-B',
                                   options={'gtol': 1e-12, 'disp': False}
                                   )
 
             if result.fun < bestobj:
-                logger.debug(f"{tryidx=: 6d} cfo_freq_est = {result.x[0]:.3f}, time_error = {result.x[1]:.3f} {result.fun=:.3f}")
+                logger.debug(f"{tryidx=: 6d} cfo_freq_est = {result.x[0]*Config.scalef:.3f}, time_error = {result.x[1]:.3f} {result.fun=:.3f}")
                 bestx = result.x
                 # f_guess, t_guess = result.x
                 bestobj = result.fun
+                draw_fit(pktidx, pktdata2a, result.x[0]*Config.scalef, result.x[1])
         cfo_freq_est, time_error = bestx
+        cfo_freq_est *= Config.scalef
         logger.info(f"Optimized parameters:\n{cfo_freq_est=}\n{time_error=}")
-    else:
-        cfo_freq_est = -32403.839
-        time_error = 36.153
+    # else:
+    #     cfo_freq_est = -40858.803
+    #     time_error = 4293.448
+        # cfo_freq_est = -31707.513
+        # time_error = 36.673
+        # cfo_freq_est = -32403.839
+        # time_error = 36.153
         # cfo_freq_est = -32620#532.308381448474
         # time_error = 35.877924708091165
         cfo_search = 200
         to_search = 5
-        search_steps = 500
-        for searchidx in range(10):
+        search_steps = 100
+        for searchidx in range(5):
             xrange = cp.linspace(cfo_freq_est - cfo_search, cfo_freq_est + cfo_search, search_steps)
-            yvals = [objective((x, time_error)) for x in xrange]
+            yvals = [objective((x/Config.scalef, time_error)) for x in xrange]
             # plt.plot(xrange.get(), yvals)
 
-            def quadratic(x, a, b, c):
-                return a * x ** 2 + b * x + c
+            # def quadratic(x, a, b, c):
+            #     return a * x ** 2 + b * x + c
 
             # noinspection PyTupleAssignmentBalance
-            params, covariance = curve_fit(quadratic, tocpu(xrange), yvals)
-            logger.error(f"RES {params=} {covariance=}")
+            # params, covariance = curve_fit(quadratic, tocpu(xrange), yvals)
+            # logger.error(f"RES {params=} {covariance=}")
             fig = go.Figure()
             fig.add_trace(go.Scatter(x=tocpu(xrange), y=yvals, mode='markers', name='Input Data'))
-            fig.add_trace(go.Scatter(x=tocpu(xrange), y=quadratic(tocpu(xrange), *params), mode="lines", name='Fitted Curve'))
+            # fig.add_trace(go.Scatter(x=tocpu(xrange), y=quadratic(tocpu(xrange), *params), mode="lines", name='Fitted Curve'))
             fig.add_vline(x=cfo_freq_est)
-            fig.update_layout(title=f"pkt{pktidx} {searchidx=} {cfo_search=} objective fit frequency")
+            fig.update_layout(title=f"pkt{pktidx} {searchidx=} {cfo_search=} {cfo_freq_est=} {time_error=} objective fit frequency")
             cfo_freq_est_new = xrange[np.argmin(np.array(yvals))]
             cfo_freq_est_delta = abs(cfo_freq_est_new - cfo_freq_est)
             cfo_freq_est = cfo_freq_est_new
@@ -537,7 +548,7 @@ def fine_work_new(pktidx, pktdata2a):
             # fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} objective fit.html"))
 
             xrange = cp.linspace(time_error - to_search, time_error + to_search, 1000)
-            yvals = [objective((cfo_freq_est, x)) for x in xrange]
+            yvals = [objective((cfo_freq_est/Config.scalef, x)) for x in xrange]
             # params, covariance = curve_fit(quadratic, tocpu(xrange), yvals)
             fig = go.Figure()
             fig.add_trace(go.Scatter(x=tocpu(xrange), y=yvals, mode='markers', name='Input Data'))
@@ -554,6 +565,7 @@ def fine_work_new(pktidx, pktdata2a):
             else: cfo_search = (cfo_search + cfo_freq_est_delta) / 2
             if time_error_delta > to_search / 2: to_search *= 3
             else: to_search = (to_search + time_error_delta) / 2
+            logger.info(f"pkt{pktidx} {searchidx=} {cfo_freq_est=} {time_error=} objective={min(yvals)} fit")
             # if searchidx==0: to_search /= 5
 
             # plt.title(f"objective with cfo {pktidx}")
@@ -569,33 +581,9 @@ def fine_work_new(pktidx, pktdata2a):
             # cfo_freq_est += cfo_freq_est_delta
             # time_error += time_error_delta
 
+            draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error)
 
-    pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
-    tstart = time_error - math.ceil(time_error) + (Config.sfdend - 0.75) * Config.tsig * (1 - cfo_freq_est / Config.sig_freq)
-    if Config.s2:
-        logger.info( f"{cfo_freq_est=:.3f}, time_error = {time_error:.3f}")
-        detect_symb_plt = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
-        detect_symb_plt = cp.concatenate(detect_symb_plt)
-        # detect_symb_plt *= (pktdata2a_roll[0] / cp.abs(pktdata2a_roll[0]))
-        phase1 = cp.angle(pktdata2a_roll)
-        xval = cp.arange(len(detect_symb_plt))
-        # xval = cp.arange(len(detect_symb_plt))
-        yval1 = cp.unwrap(phase1)
-        yval2 = cp.unwrap(cp.angle(detect_symb_plt))
-        tsfd = time_error - math.ceil(time_error) + Config.sfdpos * Config.tsig * (1 - cfo_freq_est / Config.sig_freq)
-        yval2[math.ceil(tsfd):] += (yval1[math.ceil(tsfd)] - yval2[math.ceil(tsfd)])
-
-        fig = go.Figure()
-        # view_len = 60
-        fig.add_trace(go.Scatter(x=tocpu(xval), y=tocpu(yval1[xval]), mode='lines', name='input', line=dict(color='blue')))
-        fig.add_trace(go.Scatter(x=tocpu(xval), y=tocpu(yval2[xval]), mode='lines', name='fit', line=dict(dash='dash', color='red')))
-        # view_len = 60
-        # fig.add_trace(go.Scatter(x=tocpu(xval)[:Config.nsamp * view_len], y=tocpu(yval1[xval])[:Config.nsamp * view_len], mode='lines', name='input', line=dict(color='blue')))
-        # fig.add_trace(go.Scatter(x=tocpu(xval)[:Config.nsamp * view_len], y=tocpu(yval2[xval])[:Config.nsamp * view_len], mode='lines', name='fit', line=dict(dash='dash', color='red')))
-        # fig.add_trace(go.Scatter(x=tocpu(xval)[:Config.nsamp * view_len], y=tocpu(yval2[xval])[:Config.nsamp * view_len], mode='lines', name='fit', line=dict(color='red')))
-        fig.update_layout(title=f'aligned pkt {pktidx}', legend=dict(x=0.1, y=1.1))
-        if not parse_opts.noplot: fig.show()
-
+    return ###
     if parse_opts.end1: sys.exit(0)
 
     if Config.s3:
@@ -634,6 +622,33 @@ def fine_work_new(pktidx, pktdata2a):
     pktdatas = pktdata2a_roll[math.ceil(tstart):]
     decode_new(pktidx, pktdatas, tstart_p, cfo_freq_est)
     return pktdatas, tstart_p, cfo_freq_est
+
+
+def draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error):
+    pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
+    logger.info(f"{cfo_freq_est=:.3f}, time_error = {time_error:.3f}")
+    detect_symb_plt = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
+    detect_symb_plt = cp.concatenate(detect_symb_plt)
+    # detect_symb_plt *= (pktdata2a_roll[0] / cp.abs(pktdata2a_roll[0]))
+    phase1 = cp.angle(pktdata2a_roll)
+    xval = cp.arange(len(detect_symb_plt))
+    # xval = cp.arange(len(detect_symb_plt))
+    yval1 = cp.unwrap(phase1)
+    yval2 = cp.unwrap(cp.angle(detect_symb_plt))
+    tsfd = time_error - math.ceil(time_error) + Config.sfdpos * Config.tsig * (1 - cfo_freq_est / Config.sig_freq)
+    yval2[math.ceil(tsfd):] += (yval1[math.ceil(tsfd)] - yval2[math.ceil(tsfd)])
+    fig = go.Figure()
+    # view_len = 60
+    fig.add_trace(go.Scatter(x=tocpu(xval), y=tocpu(yval1[xval]), mode='lines', name='input', line=dict(color='blue')))
+    fig.add_trace(
+        go.Scatter(x=tocpu(xval), y=tocpu(yval2[xval]), mode='lines', name='fit', line=dict(dash='dash', color='red')))
+    # view_len = 60
+    # fig.add_trace(go.Scatter(x=tocpu(xval)[:Config.nsamp * view_len], y=tocpu(yval1[xval])[:Config.nsamp * view_len], mode='lines', name='input', line=dict(color='blue')))
+    # fig.add_trace(go.Scatter(x=tocpu(xval)[:Config.nsamp * view_len], y=tocpu(yval2[xval])[:Config.nsamp * view_len], mode='lines', name='fit', line=dict(dash='dash', color='red')))
+    # fig.add_trace(go.Scatter(x=tocpu(xval)[:Config.nsamp * view_len], y=tocpu(yval2[xval])[:Config.nsamp * view_len], mode='lines', name='fit', line=dict(color='red')))
+    fig.update_layout(title=f'aligned pkt {pktidx} {cfo_freq_est=} {time_error=}', legend=dict(x=0.1, y=1.1))
+    if not parse_opts.noplot: fig.show()
+
 
 def decode_new(pktidx, pktdatas, tstart_p, cfo_freq_est):
     code_cnt = math.floor(len(pktdatas) / Config.nsamp)
@@ -849,7 +864,7 @@ def read_pkt(file_path_in, threshold, min_length=20):
             if len(current_sequence) > min_length:
                 yield cp.concatenate(current_sequence)
             current_sequence = []
-
+    yield cp.concatenate(current_sequence)###!!!
 
 # read packets from file
 if __name__ == "__main__":
@@ -915,36 +930,39 @@ if __name__ == "__main__":
             logger.debug(f'reading file: {file_path} SF: {Config.sf} pkts in file: {fsize}')
 
             power_eval_len = 5000
-            nmaxs = cp.zeros(power_eval_len, dtype=float)
+            nmaxs = []
             for idx, rawdata in enumerate(read_large_file(file_path)):
-                nmaxs[idx] = cp.max(cp.abs(rawdata))
+                nmaxs.append(cp.max(cp.abs(rawdata)))
                 if idx == power_eval_len - 1: break
+            nmaxs = cp.array(nmaxs)
             kmeans = KMeans(n_clusters=2, random_state=0, n_init=10)
             kmeans.fit(tocpu(nmaxs.reshape(-1, 1)))
             if Config.thresh:
                 thresh = Config.thresh
             else:
-                thresh = cp.mean(kmeans.cluster_centers_) * 5
-                counts, bins = cp.histogram(nmaxs, bins=100)
-                # logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
-                logger.debug(f"cluster: {kmeans.cluster_centers_[0]} {kmeans.cluster_centers_[1]} {thresh=}")
-                threshpos = np.searchsorted(tocpu(bins), thresh).item()
-                logger.debug(f"lower: {cp_str(counts[:threshpos])}")
-                logger.debug(f"higher: {cp_str(counts[threshpos:])}")
-                plt.plot(nmaxs.get())
-                plt.axhline(thresh, 'b')
-                plt.show()
+                thresh = cp.mean(kmeans.cluster_centers_)
+            counts, bins = cp.histogram(nmaxs, bins=100)
+            # logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
+            logger.debug(f"cluster: {kmeans.cluster_centers_[0]} {kmeans.cluster_centers_[1]} {thresh=}")
+            threshpos = np.searchsorted(tocpu(bins), thresh).item()
+            logger.debug(f"lower: {cp_str(counts[:threshpos])}")
+            logger.debug(f"higher: {cp_str(counts[threshpos:])}")
+            fig = px.line(nmaxs.get())
+            fig.add_hline(y=thresh)
+            fig.show()
 
             pkt_totcnt = 0
             pktdata_lst = []
             tstart_lst = []
             cfo_freq_est = []
-            for pkt_idx, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=10)):
-                if pkt_idx < 10: continue
+            for pkt_idx, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=30)):
+                if pkt_idx < 0: continue
+                # if cp.max(cp.abs(pkt_data)) > 0.072: continue
                 logger.info(f"Prework {pkt_idx=} {len(pkt_data)=}")
-                p, t, c = fine_work_new(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
-                pktdata_lst.append(p)
-                tstart_lst.append(t)
-                cfo_freq_est.append(c)
-                with open(f"dataout{parse_opts.searchphase_step}.pkl","wb") as f:
-                    pickle.dump((pktdata_lst, tstart_lst, cfo_freq_est),f)
+                fine_work_new(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
+                # p, t, c = fine_work_new(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
+                # pktdata_lst.append(p)
+                # tstart_lst.append(t)
+                # cfo_freq_est.append(c)
+                # with open(f"dataout{parse_opts.searchphase_step}.pkl","wb") as f:
+                #     pickle.dump((pktdata_lst, tstart_lst, cfo_freq_est),f)
