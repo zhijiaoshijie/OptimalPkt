@@ -40,7 +40,7 @@ logger.addHandler(file_handler)
 parser = argparse.ArgumentParser()
 parser.add_argument('--cpu', action='store_true', default=False, help='Use cpu instead of gpu (numpy instead of cupy)')
 parser.add_argument('--searchphase', action='store_true', default=False)
-parser.add_argument('--searchphase_step', type=int, default=100fdafddfadsdfsdsfdsfdsa0)
+parser.add_argument('--searchphase_step', type=int, default=10000)
 parser.add_argument('--searchfromzero', action='store_true', default=False)
 parser.add_argument('--plotmap', action='store_true', default=False)
 parser.add_argument('--plotline', action='store_true', default=False)
@@ -450,15 +450,6 @@ def gen_upchirp_de(t0, td, f0, beta):
 
 
 def fine_work_new(pktidx, pktdata2a):
-    pktdata2a = togpu(pktdata2a)
-
-    if Config.s1:
-        phase = cp.angle(pktdata2a)
-        unwrapped_phase = cp.unwrap(phase)
-        fig = px.line(y=tocpu(unwrapped_phase[:15 * Config.nsamp]), title="input data 15 symbol")
-        if not parse_opts.noplot: fig.show()
-        fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} input_data.html"))
-
     # Perform optimization
     def objective(params):
         cfofreq, time_error = params
@@ -472,99 +463,38 @@ def fine_work_new(pktidx, pktdata2a):
             ress = cp.conj(ssymb).dot(pktdata2a_roll[ddx : ddx + len(ssymb)])
             ddx += len(ssymb)
             res[sidx] = ress / len(ssymb)
-        return - tocpu(cp.sum(cp.abs(res) ** 2))  # Negative because we use a minimizer
+        return - tocpu(cp.mean(cp.abs(res) ** 2))  # Negative because we use a minimizer
 
-    if parse_opts.searchphase:
-        if parse_opts.searchfromzero:
-            t_lower, t_upper = 0, Config.nsamp
-            f_lower, f_upper = -60000, 60000
-            bestx = None
-            bestobj = cp.inf
-        else:
-            f_guess = -39500.110 # best for 50/sf7/20
-            t_guess = 225.221
-            # t_lower, t_upper = t_guess - 50, t_guess + 50
-            t_lower, t_upper = 0, Config.nsamp
-            f_lower, f_upper = f_guess - 500, f_guess + 500
-            bestx = [f_guess, t_guess]
-            bestobj = objective(bestx)
-        for tryidx in tqdm(range(parse_opts.searchphase_step)):
-            start_t = random.uniform(t_lower, t_upper)
-            start_f = random.uniform(f_lower, f_upper)
-            # noinspection PyTypeChecker
-            result = opt.minimize(objective, [start_f, start_t], bounds=[(f_lower, f_upper), (t_lower, t_upper)], method='L-BFGS-B',
-                                  options={'gtol': 1e-12, 'disp': False}
-                                  )
-
-            if result.fun < bestobj:
-                logger.debug(f"{tryidx=: 6d} cfo_freq_est = {result.x[0]:.3f}, time_error = {result.x[1]:.3f} {result.fun=:.3f}")
-                bestx = result.x
-                # f_guess, t_guess = result.x
-                bestobj = result.fun
-        cfo_freq_est, time_error = bestx
-        logger.info(f"Optimized parameters:\n{cfo_freq_est=}\n{time_error=}")
+    if parse_opts.searchfromzero:
+        t_lower, t_upper = 0, Config.nsamp
+        f_lower, f_upper = -60000, 60000
+        bestx = None
+        bestobj = cp.inf
     else:
-        cfo_freq_est = -39500
-        time_error = 500+5402 # best for 50/sf7/20
-        # cfo_freq_est = -26789.411976307307
-        # time_error = 224.64248426804352
-        # cfo_freq_est = -25364.299
-        # time_error = 922.660
-        cfo_freq_est_delta = 0
-        time_error_delta = 0
-        cfo_freq_est += cfo_freq_est_delta
-        time_error += time_error_delta
-    if parse_opts.plotmap:
-        start_t = np.linspace(0, Config.nsamp, Config.nsamp * 5)
-        start_f = np.linspace(-24000, -29000, 1000)
-        Z = np.zeros((len(start_f), len(start_t)))
-        for i, f in tqdm(enumerate(start_f), total=len(start_f)):
-            for j, t in enumerate(start_t):
-                Z[i, j] = objective((f, t))
+        f_guess = -39500.110 # best for 50/sf7/20
+        t_guess = 225.221
+        # t_lower, t_upper = t_guess - 50, t_guess + 50
+        t_lower, t_upper = 0, Config.nsamp
+        f_lower, f_upper = f_guess - 500, f_guess + 500
+        bestx = [f_guess, t_guess]
+        bestobj = objective(bestx)
+    for tryidx in tqdm(range(parse_opts.searchphase_step)):
+        start_t = random.uniform(t_lower, t_upper)
+        start_f = random.uniform(f_lower, f_upper)
+        # noinspection PyTypeChecker
+        result = opt.minimize(objective, [start_f, start_t], bounds=[(f_lower, f_upper), (t_lower, t_upper)], method='L-BFGS-B',
+                              options={'gtol': 1e-12, 'disp': False}
+                              )
 
-        fig = go.Figure(data=go.Heatmap( z=Z, x=start_t, y=start_f, colorscale='Viridis' ))
-        fig.update_layout( title='Heatmap of objective(start_t, start_f)', xaxis_title='t', yaxis_title='f')
-        if not parse_opts.noplot: fig.show()
-        fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} Plotmap.html"))
-        maxidx = np.unravel_index(np.argmin(Z, axis=None), Z.shape, order='C')
-        best_f = start_t[maxidx[0]]
-        best_t = start_t[maxidx[1]]
-        logger.info(f'PlotMap {objective((best_f, best_t))=} {np.min(Z)=} {best_f=} {best_t=}')
-        sys.exit(0)
-        cfo_freq_est_delta = 0  # 100
-        time_error_delta = 0
-
-
-    if parse_opts.plotline:
-        xt_data = np.linspace(time_error - 200, time_error + 200, 1000)
-        yval = np.zeros(len(xt_data))
-        yval2 = np.zeros(len(xt_data))
-        for idx, time_error_2 in enumerate(xt_data):
-            detect_symb_p = gen_refchirp(cfo_freq_est, time_error_2 - math.ceil(time_error_2))
-            detect_symb_p2 = gen_refchirp_de(cfo_freq_est, time_error_2 - math.ceil(time_error_2))
-            didx = math.ceil(time_error_2)
-            ssum = 0
-            ssum2 = 0
-            for sidx, ssymb in enumerate(detect_symb_p[:Config.preamble_len]):
-                ress = cp.conj(togpu(ssymb)).dot(pktdata2a[didx: didx + len(ssymb)])
-                ssum += cp.abs(ress) ** 2
-                ress2 = cp.conj(togpu(detect_symb_p2[sidx])).dot(pktdata2a[didx: didx + len(ssymb)])
-                ssum2 += cp.abs(ress2) ** 2
-                didx += len(ssymb)
-            yval[idx] = ssum
-            yval2[idx] = ssum2
-
-        # def quadratic(x, a, b, c):
-        #     return a * x ** 2 + b * x + c
-        # params, covariance = curve_fit(quadratic, xt_data, yval)
-        # logger.info(f"FT fit time line curve {params=}")
-        fig = px.line(x = xt_data, y=yval / np.max(yval), title="power with time err")
-        # fig.add_trace(go.Scatter(x=xt_data, y=quadratic(xt_data, *params), mode='lines', line=dict(color='red', dash='dash'), name='Fitted Curve'))
-        fig.add_trace(go.Scatter(x=xt_data, y=yval2 / np.max(yval2), mode='lines', line=dict(color='red', dash='dash'), name='Derivative'))
-        fig.add_vline(x=time_error, line=dict(color='black', width=2, dash='dash'), annotation_text='est_time',
-                              annotation_position='top')
-        if not parse_opts.noplot: fig.show()
-        fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} power with time err.html"))
+        if result.fun < bestobj:
+            logger.debug(f"{tryidx=: 6d} cfo_freq_est = {result.x[0]:.3f}, time_error = {result.x[1]:.3f} {result.fun=:.3f}")
+            bestx = result.x
+            # f_guess, t_guess = result.x
+            bestobj = result.fun
+    cfo_freq_est, time_error = bestx
+    logger.info(f"Optimized parameters:\n{cfo_freq_est=}\n{time_error=}")
+    # cfo_freq_est = -39500
+    # time_error = 500+5402
 
     pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
     tstart = time_error - math.ceil(time_error) + (Config.sfdend - 0.75) * Config.tsig * (1 - cfo_freq_est / Config.sig_freq)
@@ -614,6 +544,7 @@ def fine_work_new(pktidx, pktdata2a):
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=x_data, y=tocpu(res_angle), mode='markers', name='Input Data'))
         fig.add_trace(go.Scatter(x=x_data, y=quadratic(x_data, *params), mode="lines", name='Fitted Curve'))
+        fig.update_layout(title=f"pkt{pktidx} res_angle (crude) fit quadratic code {codeid=} {est_code=}")
         if not parse_opts.noplot: fig.show()
         fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} res_angle.html"))
 
@@ -722,6 +653,7 @@ def decode_new(pktidx, pktdatas, tstart_p, cfo_freq_est):
             fig = go.Figure()
             fig.add_trace(go.Scatter(y=tocpu(cp.diff(cp.unwrap(phase1))), mode='lines', name='Input Data'))
             fig.add_trace(go.Scatter(y=tocpu(cp.diff(cp.unwrap(phase2))), mode="lines", line=dict(dash='dash', color='red'), name='Fitted Curve'))
+            fig.update_layout(title=f"pkt{pktidx} fit code {codeid=} {est_code=}")
             # fig.add_vline(x=tid_times[tid] + tsig_arr[est_code], line=dict(color='black', width=2, dash='dash'), annotation_text='est_code',
             #               annotation_position='top')
             if not parse_opts.noplot: fig.show()
@@ -849,90 +781,39 @@ def read_pkt(file_path_in, threshold, min_length=20):
 if __name__ == "__main__":
     angles = []
 
-    if parse_opts.fromfile:
-        with open(f"{parse_opts.fromfile}", "rb") as f:
-            pktdata_lst, tstart_lst, cfo_freq_est = pickle.load(f)
-            code_ref = cp.array([33,61,61,113,73,25,29,45,51,102,75,86,110,43,91,78,10,109,39,109,76,103,110,10,90,52,40,80,6,12,118,68,104,79,99,59,120,23,84,64,123,11,108,55,20,48,69,102,25,50,29,40,96,71,115,86,4,8,113,63,125,2,1,52,4,8,16,32,100,58,28,62,105,48,32,32,69,122,109,23,97,63,68,71,114,22,81,90,126,6,117,10,43,93,116,31,56,18,29,25,39,76,85,122,62,124,55,77,111,46,95,0,7,116,26,20,57,0,3,1,7,13,25,49,9,17,59,27,28,56,17,64,93,79,18,89,114,29,121,47,86,91,120,32,60,10,45,121,55,108,33,78,3,65,32,33,32,16,3,0])
-            if parse_opts.decode_unknown: code_ref = None
-            snr_range = np.arange(parse_opts.snrlow, parse_opts.snrhigh, dtype=int)
-            snr_list = np.zeros((2, len(snr_range)))
-            snr_list_cnt = 0
-            logger.info(f"{len(snr_range)=} {snr_list.shape=}")
-            for idx, (p, t, c) in enumerate(zip(pktdata_lst, tstart_lst, cfo_freq_est)):
-                if parse_opts.compLTSNR:
-                    if code_ref is None:
-                        code_ref, code_ref_LT = decode_new(idx, p, t, c)
-                        logger.info(f"decoderef: ACC:{tocpu(cp.sum(code_ref_LT[:lenc]==code_ref[:lenc])/lenc)}")
-                        logger.info(f"ref:{cp_str(code_ref, precision=0)}")
-                    else:
-                        code_res, code_res_LT = decode_new(idx, p, t, c)
-                        lenc = min(len(code_res), len(code_ref))
-                        if cp.sum(code_ref[:lenc]==code_res[:lenc]) != lenc:
-                            logger.warning(f"skipping: decodecheck ACC:{tocpu(cp.sum(code_ref[:lenc] == code_res[:lenc]) / lenc)}")
-                            continue
-                        if cp.sum(code_ref[:lenc] == code_res_LT[:lenc]) != lenc:
-                            logger.warning(f"skipping: decodecheck ACC:{tocpu(cp.sum(code_ref[:lenc] == code_res_LT[:lenc]) / lenc)}")
-                            continue
-                    snr_list_cnt += 1
-                    for snridx, snr in enumerate(snr_range):
-                        amp = math.pow(0.1, snr / 20) * np.mean(np.abs(p))
-                        noise = amp / math.sqrt(2) * cp.random.randn(len(p)) + 1j * amp / math.sqrt(2) * cp.random.randn(len(p))
-                        pX = p + togpu(noise)  # dataX: data with noise
-                        code_res, code_res_LT = decode_new(idx, pX, t, c)
-                        lenc = min(len(code_res), len(code_ref))
-                        acc = tocpu(cp.sum(code_res[:lenc] == code_ref[:lenc]) / lenc)
-                        snr_list[0, snridx] += acc
-                        acc_LT = tocpu(cp.sum(code_res_LT[:lenc] == code_ref[:lenc]) / lenc)
-                        snr_list[1, snridx] += acc_LT
-                        logger.info(f"decode:{idx} len:{len(code_res)}/{len(code_ref)} SNR:{snr} ACC:{acc} ACCLT:{acc_LT}")
-                        fig = go.Figure()
-                        fig.add_trace(go.Scatter(x=snr_range, y=snr_list[0]/snr_list_cnt, mode='lines', name='Ours'))
-                        fig.add_trace(go.Scatter(x=snr_range, y=snr_list[1]/snr_list_cnt, mode='lines', name='LT'))
-                        fig.write_html(os.path.join(Config.figpath, f"acc_snr_ours_LT.html"))
-                        if not parse_opts.noplot: fig.show()
-                    logger.info(f"snrlow:{parse_opts.snrlow} acc:{cp_str(snr_list/snr_list_cnt)}")
-                else:
-                    code_res, _ = decode_new(idx, p, t, c)
-                    if code_ref is None:
-                        code_ref = code_res
-                        logger.info(f"ref:{cp_str(code_ref, precision=0)}")
-                    else:
-                        lenc = min(len(code_res), len(code_ref))
-                        logger.info(f"decode:{idx} len:{len(code_res)}/{len(code_ref)} ACC:{tocpu(cp.sum(code_res[:lenc]==code_ref[:lenc])/lenc)}")
-            if parse_opts.compLTSNR:
-                logger.info(f"compLTSNR fin snrlow:{parse_opts.snrlow} acc:{cp_str(snr_list/snr_list_cnt)}")
-    else:
-        for file_path in Config.file_paths:
-            pkt_cnt = 0
-            pktdata = []
-            fsize = int(os.stat(file_path).st_size / (Config.nsamp * 4 * 2))
-            logger.debug(f'reading file: {file_path} SF: {Config.sf} pkts in file: {fsize}')
+    for file_path in Config.file_paths:
+        pkt_cnt = 0
+        pktdata = []
+        fsize = int(os.stat(file_path).st_size / (Config.nsamp * 4 * 2))
+        logger.debug(f'reading file: {file_path} SF: {Config.sf} pkts in file: {fsize}')
 
-            power_eval_len = 5000
-            nmaxs = cp.zeros(power_eval_len, dtype=float)
-            for idx, rawdata in enumerate(read_large_file(file_path)):
-                nmaxs[idx] = cp.max(cp.abs(rawdata))
-                if idx == power_eval_len - 1: break
-            kmeans = KMeans(n_clusters=2, random_state=0, n_init=10)
-            kmeans.fit(tocpu(nmaxs.reshape(-1, 1)))
-            thresh = cp.mean(kmeans.cluster_centers_)
-            counts, bins = cp.histogram(nmaxs, bins=100)
-            # logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
-            logger.debug(f"cluster: {kmeans.cluster_centers_[0]} {kmeans.cluster_centers_[1]} {thresh=}")
-            threshpos = np.searchsorted(tocpu(bins), thresh).item()
-            logger.debug(f"lower: {cp_str(counts[:threshpos])}")
-            logger.debug(f"higher: {cp_str(counts[threshpos:])}")
+        power_eval_len = 5000
+        nmaxs = cp.zeros(power_eval_len, dtype=float)
+        for idx, rawdata in enumerate(read_large_file(file_path)):
+            nmaxs[idx] = cp.max(cp.abs(rawdata))
+            if idx == power_eval_len - 1: break
+        kmeans = KMeans(n_clusters=2, random_state=0, n_init=10)
+        kmeans.fit(tocpu(nmaxs.reshape(-1, 1)))
+        thresh = cp.mean(kmeans.cluster_centers_)
+        counts, bins = cp.histogram(nmaxs, bins=100)
+        # logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
+        logger.debug(f"cluster: {kmeans.cluster_centers_[0]} {kmeans.cluster_centers_[1]} {thresh=}")
+        threshpos = np.searchsorted(tocpu(bins), thresh).item()
+        logger.debug(f"lower: {cp_str(counts[:threshpos])}")
+        logger.debug(f"higher: {cp_str(counts[threshpos:])}")
+        logger.debug(f"maxval: {cp.max(nmaxs).get()}")
+        if cp.max(nmaxs).get() >= 1 - 1e-3: logger.error(f"E10: maxval larger than .999, check if there is overflow in USRP recv signal.")
 
-            pkt_totcnt = 0
-            pktdata_lst = []
-            tstart_lst = []
-            cfo_freq_est = []
-            for pkt_idx, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=20)):
-                if pkt_idx == 0: continue
-                logger.info(f"Prework {pkt_idx=} {len(pkt_data)=}")
-                p, t, c = fine_work_new(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
-                pktdata_lst.append(p)
-                tstart_lst.append(t)
-                cfo_freq_est.append(c)
-                with open(f"dataout{parse_opts.searchphase_step}.pkl","wb") as f:
-                    pickle.dump((pktdata_lst, tstart_lst, cfo_freq_est),f)
+        pkt_totcnt = 0
+        pktdata_lst = []
+        tstart_lst = []
+        cfo_freq_est = []
+        for pkt_idx, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=20)):
+            if pkt_idx == 0: continue
+            logger.info(f"Prework {pkt_idx=} {len(pkt_data)=}")
+            p, t, c = fine_work_new(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
+            pktdata_lst.append(p)
+            tstart_lst.append(t)
+            cfo_freq_est.append(c)
+            with open(f"dataout{parse_opts.searchphase_step}.pkl","wb") as f:
+                pickle.dump((pktdata_lst, tstart_lst, cfo_freq_est),f)
