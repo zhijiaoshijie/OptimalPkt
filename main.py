@@ -42,6 +42,7 @@ parser.add_argument('--cpu', action='store_true', default=False, help='Use cpu i
 parser.add_argument('--pltphase', action='store_true', default=False)
 parser.add_argument('--searchphase', action='store_true', default=False)
 parser.add_argument('--refine', action='store_true', default=False)
+parser.add_argument('--pltpower', action='store_true', default=False)
 parser.add_argument('--searchphase_step', type=int, default=10000)
 parser.add_argument('--plotmap', action='store_true', default=False)
 parser.add_argument('--plotline', action='store_true', default=False)
@@ -132,17 +133,28 @@ class Config:
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples
     nsamp = round(n_classes * fs / bw)
-    f_lower, f_upper = -50000, -30000
-    t_lower, t_upper = 0, nsamp
-    fguess = (f_lower + f_upper) / 2
-    tguess = nsamp / 2
+    # f_lower, f_upper = -50000, -30000
+    # t_lower, t_upper = 0, nsamp
+    # fguess = (f_lower + f_upper) / 2
+    # tguess = nsamp / 2
     code_len = 2
+
+    fguess = -39919.369
+    tguess = 4315.966
+    f_lower, f_upper = fguess - 500, fguess + 500
+    t_lower, t_upper = 0, nsamp
+
 
     gen_refchirp_deadzone = 0
     sfdpos = preamble_len + code_len
     sfdend = sfdpos + 3
-    figpath = "fig"
-    if not os.path.exists(figpath): os.mkdir(figpath)
+
+    fft_upsamp = 16#024
+    fft_n = nsamp * fft_upsamp
+    plan = fft.get_fft_plan(cp.zeros(fft_n, dtype=cp.complex64))
+    detect_range_pkts = 3
+    fft_ups = cp.zeros((preamble_len + detect_range_pkts, fft_n), dtype=cp.complex64)
+    fft_downs = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.complex64)
 
 
 if use_gpu:
@@ -150,30 +162,105 @@ if use_gpu:
 Config = Config()
 
 
+def myfft(chirp_data, n, plan):
+    return fft.fft(chirp_data, n=n, plan=plan)
+
+
 def gen_upchirp(t0, td, f0, beta):
     # start from ceil(t0in), end
     t = (cp.arange(math.ceil(t0), math.ceil(t0 + td), dtype=float) - t0)
     phase = 2 * cp.pi * (f0 * t + 0.5 * beta * t * t) / Config.fs
-    sig = cp.exp(1j * phase)
+    sig = cp.exp(1j * phase).astype(cp.complex64)
     return sig
 
 
-def objective(params, pktdata2a):
-    cfofreq, time_error = params
-    cfofreq *= Config.scalef
-    pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
-    detect_symb = gen_refchirp(cfofreq, time_error - math.ceil(time_error), deadzone=Config.gen_refchirp_deadzone)
-    res = cp.zeros(len(detect_symb), dtype=cp.complex64)
-    ddx = 0 # TODO
-    for sidx, ssymb in enumerate(detect_symb):
-        ress = cp.conj(ssymb).dot(pktdata2a_roll[ddx : ddx + len(ssymb)])
-        ddx += len(ssymb)
-        res[sidx] = ress / len(ssymb)
-    # print(cp.mean(cp.abs(pktdata2a[:ddx])))  # Negative because we use a minimizer
-    # TODO qian zhui he plot
-    # TODO remove **2 because res[sidx] is sum not sumofsquare
-    # TODO phase consistency?
-    return - tocpu(cp.abs(cp.sum(res)) / len(res))  # Negative because we use a minimizer
+# def objective(params, pktdata2a):
+#     cfofreq, time_error = params
+#     cfofreq *= Config.scalef
+#     pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
+#     detect_symb = gen_refchirp(cfofreq, time_error - math.ceil(time_error), deadzone=Config.gen_refchirp_deadzone)
+#     res = cp.zeros(len(detect_symb), dtype=cp.complex64)
+#     ddx = 0 # TODO
+#     for sidx, ssymb in enumerate(detect_symb):
+#         ress = cp.conj(ssymb).dot(pktdata2a_roll[ddx : ddx + len(ssymb)])
+#         ddx += len(ssymb)
+#         res[sidx] = ress / len(ssymb)
+#     # print(cp.mean(cp.abs(pktdata2a[:ddx])))  # Negative because we use a minimizer
+#     # TODO qian zhui he plot
+#     # TODO remove **2 because res[sidx] is sum not sumofsquare
+#     # TODO phase consistency?
+#     return - tocpu(cp.abs(cp.sum(res)) / len(res))  # Negative because we use a minimizer
+#
+
+def objective_new_core(pktdata_in, cfofreq):
+    phaseFlag = False
+    tstart = 0
+    sigt = Config.tsig * (1 - cfofreq / Config.sig_freq)
+    beta = Config.bw * (1 + cfofreq / Config.sig_freq) / Config.tsig / (1 - cfofreq / Config.sig_freq)  # TODO
+    for tid in range(Config.preamble_len + Config.detect_range_pkts):
+        upchirp = gen_upchirp(tstart + sigt * tid, sigt, -Config.bw / 2 + cfofreq, beta)
+        sig1 = pktdata_in[math.ceil(tstart + sigt * tid) : math.ceil(tstart + sigt * tid + sigt)] * upchirp.conj()
+        Config.fft_ups[tid] = cp.abs(myfft(sig1, n=Config.fft_n, plan=Config.plan))
+        # if tid==2:
+        #     plt.plot(cp.abs(Config.fft_ups[tid]).get())
+        #     plt.show()
+        print(tid, cp.argmax(Config.fft_ups[tid]), cp.max(Config.fft_ups[tid]))
+        Config.fft_ups[tid, cp.argmax(Config.fft_ups[tid])-200:cp.argmax(Config.fft_ups[tid])+200] = 0
+        print(cp.argmax(Config.fft_ups[tid]), cp.max(Config.fft_ups[tid]))
+        print(Config.fft_n)
+        print()
+    sys.exit(0)
+    for tid in range(Config.sfdpos, Config.sfdpos + 2 + Config.detect_range_pkts):
+        downchirp = gen_upchirp(tstart + sigt * tid, sigt, Config.bw / 2 + cfofreq, - beta)
+        sig2 = pktdata_in[math.ceil(tstart + sigt * tid) : math.ceil(tstart + sigt * tid + sigt)] * downchirp.conj()
+        Config.fft_downs[tid - Config.sfdpos] = myfft(sig2, n=Config.fft_n, plan=Config.plan)
+
+    if not phaseFlag:
+        fft_ups2 = cp.abs(Config.fft_ups) ** 2
+        fft_downs2 = cp.abs(Config.fft_downs) ** 2
+    else:
+        fft_ups2 = Config.fft_ups
+        fft_downs2 = Config.fft_downs
+
+    fft_vals = cp.zeros((Config.detect_range_pkts, 3), dtype=cp.float32)
+    for pidx in range(Config.detect_range_pkts):
+        fft_val_up = cp.argmax(cp.abs(cp.mean(fft_ups2[pidx: pidx + Config.preamble_len], axis=0)))
+        if fft_val_up > Config.fft_n / 2: fft_val_up -= Config.fft_n
+        fft_val_down = cp.argmax(cp.abs(cp.mean(fft_downs2[pidx: pidx + 2], axis=0)))  # + fft_down_lst[pidx]))
+        if fft_val_down > Config.fft_n / 2: fft_val_down -= Config.fft_n
+        fft_val_abs = cp.max(cp.abs(cp.sum(fft_ups2[pidx: pidx + Config.preamble_len], axis=0)) \
+                      + cp.abs(cp.sum(fft_downs2[pidx: pidx + 2], axis=0)))  # + fft_down_lst[pidx]))
+        # logger.info(f"{fft_val_up=} {fft_val_down=} {Config.fft_n=}")
+        est_cfo_r = (fft_val_up + fft_val_down) / 2 / Config.fft_n  # rate, [0, 1)
+        est_to_r = (fft_val_down - fft_val_up) / 2 / Config.fft_n  # rate, [0, 1)
+        if abs(est_cfo_r - 1 / 2) <= 1 / 4:  # abs(cfo) > 1/4
+            est_cfo_r += 1 / 2
+            est_to_r += 1 / 2
+        est_cfo_r %= 1  # [0, 1)
+        est_to_r %= 1  # [0, 1)
+        if est_cfo_r > 1 / 2: est_cfo_r -= 1  # [-1/2, 1/2)
+        if est_to_r > 1 / 2:
+            est_to_r -= 1  # [-1/2, 1/2)
+            if pidx == 0: fft_val_abs *= 0  # shift left is nothing!
+        est_cfo_f = est_cfo_r * Config.fs
+        est_to_s = (est_to_r * 8 + pidx) * Config.nsamp  # add detect packet pos TODO
+        # if abs(est_to_r) > 1/8:
+        #     logger.error(f"E07_LARGE_TIME_OFFSET: {fft_val_up=} {fft_val_down=} {est_cfo_r=} {est_to_r=} {est_cfo_f=} {est_to_s=} {pidx=}")
+        # if abs(est_cfo_f) >= Config.fs / 8:
+        #     logger.warning(f"E07_LARGE_CFO: {fft_val_up=} {fft_val_down=} {est_cfo_r=} {est_to_r=} {est_cfo_f=} {est_to_s=} {pidx=}")
+        fft_vals[pidx] = cp.array((est_cfo_f, est_to_s, fft_val_abs), dtype=cp.float32)
+    return fft_vals
+
+def objective_new(cfofreq, pktdata_in):
+    fft_vals = objective_new_core(pktdata_in, cfofreq)
+    return -cp.max(fft_vals[:, 2])
+
+
+def objective_new_calc(cfofreq, pktdata_in):
+    fft_vals = objective_new_core(pktdata_in, cfofreq)
+    bestidx = cp.argmax(fft_vals[:, 2])
+    return cp.max(fft_vals[:, 2]), fft_vals[bestidx][0].item(), fft_vals[bestidx][1].item()
+
 
 def fine_work_new(pktidx, pktdata2a):
     pktdata2a = togpu(pktdata2a)
@@ -183,81 +270,63 @@ def fine_work_new(pktidx, pktdata2a):
         unwrapped_phase = cp.unwrap(phase)
         fig = px.line(y=tocpu(unwrapped_phase[:30 * Config.nsamp]), title=f"input data 15 symbol {pktidx=}")
         if not parse_opts.noplot: fig.show()
-        fig.write_html(os.path.join(Config.figpath, f"pkt{pktidx} input_data.html"))
 
     # Perform optimization
-
-
     if parse_opts.searchphase:
         Config.f_lower, Config.f_upper = Config.fguess - 3000, Config.fguess + 3000
-        bestx = [Config.fguess/Config.scalef, Config.tguess]
-        bestobj = objective(bestx, pktdata2a)
+        bestx = Config.fguess
+        bestobj = objective_new(bestx, pktdata2a)
         logger.debug(
             f"trystart cfo_freq_est = {Config.fguess:.3f}, time_error = {Config.tguess:.3f} {bestobj=} {Config.f_lower=} {Config.f_upper=} {Config.t_lower=} {Config.t_upper=}")
-        draw_fit(pktidx, pktdata2a, Config.fguess, Config.tguess)
+        draw_fit(pktidx, pktdata2a, Config.fguess)
         for tryidx in tqdm(range(parse_opts.searchphase_step)):
             start_t = random.uniform(Config.t_lower, Config.t_upper)
             start_f = random.uniform(Config.f_lower, Config.f_upper)
             # noinspection PyTypeChecker
-            result = opt.minimize(objective, [start_f/Config.scalef, start_t], args=(pktdata2a,),
-                                  bounds=[(Config.f_lower/Config.scalef, Config.f_upper/Config.scalef), (Config.t_lower, Config.t_upper)],
+            result = opt.minimize(objective_new, [start_f, start_t], args=(pktdata2a,),
+                                  bounds=[(Config.f_lower, Config.f_upper), ],
                                   method='L-BFGS-B',
                                   options={'gtol': 1e-12, 'disp': False}
                                   )
 
             if result.fun < bestobj:
-                logger.debug(f"{tryidx=: 6d} cfo_freq_est = {result.x[0]*Config.scalef:.3f}, time_error = {result.x[1]:.3f} {result.fun=:.5f}")
+                logger.debug(f"{tryidx=: 6d} cfo_freq_est = {result.x:.3f}, {result.fun=:.5f}")
                 bestx = result.x
                 # Config.fguess, Config.tguess = result.x
                 bestobj = result.fun
-                if tryidx > 100: draw_fit(pktidx, pktdata2a, result.x[0]*Config.scalef, result.x[1])
-            if tryidx == 100: draw_fit(pktidx, pktdata2a, bestx[0] * Config.scalef, bestx[1])
-        cfo_freq_est, time_error = bestx
-        cfo_freq_est *= Config.scalef
-        logger.info(f"Optimized parameters:\n{cfo_freq_est=}\n{time_error=}")
+                if tryidx > 100: draw_fit(pktidx, pktdata2a, result.x)
+            if tryidx == 100: draw_fit(pktidx, pktdata2a, bestx)
+        cfo_freq_est = bestx
+        logger.info(f"Optimized parameters:\n{cfo_freq_est=}")
     else:
         cfo_freq_est = Config.fguess
-        time_error = Config.tguess
 
     if parse_opts.refine:
-        cfo_search = 200
-        to_search = 5
+        cfo_search = 2000
         search_steps = 100
         for searchidx in range(5):
             xrange = cp.linspace(cfo_freq_est - cfo_search, cfo_freq_est + cfo_search, search_steps)
-            yvals = [objective((x/Config.scalef, time_error), pktdata2a) for x in xrange]
+            yvals = [objective_new(x, pktdata2a).get() for x in xrange]
             fig = go.Figure()
             fig.add_trace(go.Scatter(x=tocpu(xrange), y=yvals, mode='markers', name='Input Data'))
             fig.add_vline(x=cfo_freq_est)
-            fig.update_layout(title=f"pkt{pktidx} {searchidx=} {cfo_search=} {cfo_freq_est=} {time_error=} objective fit frequency")
+            fig.update_layout(title=f"pkt{pktidx} {searchidx=} {cfo_search=} {cfo_freq_est=} objective_new fit frequency")
             cfo_freq_est_new = xrange[np.argmin(np.array(yvals))]
             cfo_freq_est_delta = abs(cfo_freq_est_new - cfo_freq_est)
             cfo_freq_est = cfo_freq_est_new
             fig.add_vline(x=cfo_freq_est, line_dash="dash", line_color="red")
             if not parse_opts.noplot: fig.show()
 
-            xrange = cp.linspace(time_error - to_search, time_error + to_search, 1000)
-            yvals = [objective((cfo_freq_est/Config.scalef, x), pktdata2a) for x in xrange]
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=tocpu(xrange), y=yvals, mode='markers', name='Input Data'))
-            fig.add_vline(x=time_error)
-            fig.update_layout(title=f"pkt{pktidx} {searchidx=} {to_search=} objective fit timeerror")
-            time_error_new = xrange[np.argmin(np.array(yvals))]
-            time_error_delta = abs(time_error_new - time_error)
-            time_error = time_error_new
-            fig.add_vline(x=time_error, line_dash="dash", line_color="red")
-            if not parse_opts.noplot: fig.show()
             if cfo_freq_est_delta > cfo_search / 2: cfo_search *= 3
             else: cfo_search = (cfo_search + cfo_freq_est_delta) / 2
-            if time_error_delta > to_search / 2: to_search *= 3
-            else: to_search = (to_search + time_error_delta) / 2
-            logger.info(f"pkt{pktidx} {searchidx=} {cfo_freq_est=} {time_error=} objective={min(yvals)} fit")
-            draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error)
-    logger.info(f"FIN pkt{pktidx} {cfo_freq_est=} {time_error=}")
+            logger.info(f"pkt{pktidx} {searchidx=} {cfo_freq_est=} objective_new={min(yvals)} fit")
+            draw_fit(pktidx, pktdata2a, cfo_freq_est)
+    logger.info(f"FIN pkt{pktidx} {cfo_freq_est=}")
 
 
 
-def draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error):
+def draw_fit(pktidx, pktdata2a, cfo_freq_est):
+    time_error, val = objective_new_calc(cfo_freq_est, pktdata2a)
     pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
     logger.info(f"{cfo_freq_est=:.3f}, time_error = {time_error:.3f}")
     detect_symb_plt = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
@@ -275,20 +344,21 @@ def draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error):
     fig.add_trace(go.Scatter(x=tocpu(xval), y=tocpu(yval1[xval]), mode='lines', name='input', line=dict(color='blue')))
     fig.add_trace(
         go.Scatter(x=tocpu(xval), y=tocpu(yval2[xval]), mode='lines', name='fit', line=dict(dash='dash', color='red')))
-    fig.add_trace(go.Scatter(
-        x=[0, xval[-1].get()],
-        y=[0, Config.f_lower * 2 * np.pi / Config.fs * xval[-1].get()],
-        mode='lines',
-        line=dict(color='gray', dash='dash'),
-        showlegend=False
-    ))
-    fig.add_trace(go.Scatter(
-        x=[0, xval[-1].get()],
-        y=[0, Config.f_upper * 2 * np.pi / Config.fs * xval[-1].get()],
-        mode='lines',
-        line=dict(color='gray', dash='dash'),
-        showlegend=False
-    ))
+    if parse_opts.searchphase:
+        fig.add_trace(go.Scatter(
+            x=[0, xval[-1].get()],
+            y=[0, Config.f_lower * 2 * np.pi / Config.fs * xval[-1].get()],
+            mode='lines',
+            line=dict(color='gray', dash='dash'),
+            showlegend=False
+        ))
+        fig.add_trace(go.Scatter(
+            x=[0, xval[-1].get()],
+            y=[0, Config.f_upper * 2 * np.pi / Config.fs * xval[-1].get()],
+            mode='lines',
+            line=dict(color='gray', dash='dash'),
+            showlegend=False
+        ))
     fig.add_trace(go.Scatter(
         x=[0, xval[-1].get()],
         y=[0, tocpu(cfo_freq_est) * 2 * np.pi / Config.fs * xval[-1].get()],
@@ -296,14 +366,14 @@ def draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error):
         line=dict(color='gray', dash='dash'),
         showlegend = False
     ))
-    fig.update_layout(title=f'{pktidx} f={cfo_freq_est:.3f} t={time_error:.3f} obj={objective((cfo_freq_est/Config.scalef, time_error), pktdata2a):.5f}', legend=dict(x=0.1, y=1.1))
+    fig.update_layout(title=f'{pktidx} f={cfo_freq_est:.3f} t={time_error:.3f} obj={val:.5f}', legend=dict(x=0.1, y=1.1))
     if not parse_opts.noplot: fig.show()
 
 
 def gen_refchirp(cfofreq, tstart, deadzone=0):
     detect_symb = []
     sigt = Config.tsig * (1 + cfofreq / Config.sig_freq)
-    beta = Config.bw / Config.tsig
+    beta = Config.bw / Config.tsig * (1 + cfofreq / Config.sig_freq) ** 2 # TODO
     for tid in range(Config.preamble_len):
         upchirp = gen_upchirp(tstart + sigt * tid, sigt, -Config.bw / 2 + cfofreq, beta)
         # assert len(upchirp) == math.ceil(tid_times[tid + 1]) - math.ceil(tid_times[tid])
@@ -372,18 +442,19 @@ if __name__ == "__main__":
             thresh = Config.thresh
         else:
             thresh = cp.mean(kmeans.cluster_centers_)
-        counts, bins = cp.histogram(nmaxs, bins=100)
-        # logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
-        logger.debug(f"cluster: {kmeans.cluster_centers_[0]} {kmeans.cluster_centers_[1]} {thresh=}")
-        threshpos = np.searchsorted(tocpu(bins), thresh).item()
-        logger.debug(f"lower: {cp_str(counts[:threshpos])}")
-        logger.debug(f"higher: {cp_str(counts[threshpos:])}")
-        fig = px.line(nmaxs.get())
-        fig.add_hline(y=thresh)
-        fig.update_layout(
-            title=f"{file_path} pow {len(nmaxs)}",
-            legend=dict(x=0.1, y=1.1))
-        fig.show()
+        if parse_opts.pltpower:
+            counts, bins = cp.histogram(nmaxs, bins=100)
+            # logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
+            logger.debug(f"cluster: {kmeans.cluster_centers_[0]} {kmeans.cluster_centers_[1]} {thresh=}")
+            threshpos = np.searchsorted(tocpu(bins), thresh).item()
+            logger.debug(f"lower: {cp_str(counts[:threshpos])}")
+            logger.debug(f"higher: {cp_str(counts[threshpos:])}")
+            fig = px.line(nmaxs.get())
+            fig.add_hline(y=thresh)
+            fig.update_layout(
+                title=f"{file_path} pow {len(nmaxs)}",
+                legend=dict(x=0.1, y=1.1))
+            fig.show()
 
         pkt_totcnt = 0
         pktdata_lst = []
@@ -394,6 +465,7 @@ if __name__ == "__main__":
             # if cp.max(cp.abs(pkt_data)) > 0.072: continue
             logger.info(f"Prework {pkt_idx=} {len(pkt_data)=}")
             fine_work_new(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
+            break
             # p, t, c = fine_work_new(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
             # pktdata_lst.append(p)
             # tstart_lst.append(t)
