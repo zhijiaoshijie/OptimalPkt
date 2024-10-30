@@ -266,8 +266,6 @@ def draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error):
     logger.info(f"{cfo_freq_est=:.3f}, time_error = {time_error:.3f}")
     detect_symb_plt = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
     tsfd = sum([len(x) for x in detect_symb_plt[:-3]])
-    print([len(x) for x in detect_symb_plt])
-    print([max(abs(x)) for x in detect_symb_plt])
     detect_symb_plt = cp.concatenate(detect_symb_plt)
     # detect_symb_plt *= (pktdata2a_roll[0] / cp.abs(pktdata2a_roll[0]))
     phase1 = cp.angle(pktdata2a)
@@ -311,7 +309,10 @@ def draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error):
 def gen_refchirp(cfofreq, tstart, deadzone=0):
     detect_symb = []
     sigt = Config.tsig * (1 + cfofreq / Config.sig_freq)
-    beta = Config.bw / Config.tsig #* (1 + cfofreq / Config.sig_freq) / (1 - cfofreq / Config.sig_freq)  # TODO
+    beta = Config.bw / Config.tsig
+    # print(Config.bw / Config.tsig * (1 + cfofreq / Config.sig_freq) / (1 - cfofreq / Config.sig_freq))
+    # print(Config.bw / Config.tsig * (1 + cfofreq / Config.sig_freq) )
+    # print(Config.bw / Config.tsig )
     for tid in range(Config.preamble_len):
         upchirp = gen_upchirp(tstart + sigt * tid, sigt, -Config.bw / 2 + cfofreq, beta)
         # assert len(upchirp) == math.ceil(tid_times[tid + 1]) - math.ceil(tid_times[tid])
