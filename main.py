@@ -122,11 +122,11 @@ class Config:
     sf = 12
     bw = 406250
     fs = 1e6
-    sig_freq = 2.4e9
+    # sig_freq = 2.4e9
+    sig_freq = 2400000030.517578#-52e6/(2**18)
     preamble_len = 16  # TODO
 
     thresh = None# 0.03
-    scalef = 1000
     file_paths = ['/data/djl/temp/OptimalPkt/data1_test_0']
 
     n_classes = 2 ** sf
@@ -139,6 +139,10 @@ class Config:
     tguess = nsamp / 2
     code_len = 2
 
+    cfo_freq_est = -39866.691-30.517578+200#+52e6/(2**18)
+    time_error = 4320.967+2
+    fguess = cfo_freq_est
+    tguess = time_error
     # fguess = -39000
     # tguess = 4320
 
@@ -161,26 +165,75 @@ def gen_upchirp(t0, td, f0, beta):
     sig = cp.exp(1j * phase)
     return sig
 
+def converter_down(cfofreq, time_error):
+    cfofreq -= (Config.f_upper + Config.f_lower) / 2
+    cfofreq /= (Config.f_upper - Config.f_lower) / 2
+    time_error -= (Config.t_upper + Config.t_lower) / 2
+    time_error /= (Config.t_upper - Config.t_lower) / 2
+    return cfofreq, time_error
+
+def converter_up(cfofreq, time_error):
+    cfofreq *= (Config.f_upper - Config.f_lower) / 2
+    cfofreq += (Config.f_upper + Config.f_lower) / 2
+    time_error *= (Config.t_upper - Config.t_lower) / 2
+    time_error += (Config.t_upper + Config.t_lower) / 2
+    return cfofreq, time_error
 
 def objective(params, pktdata2a):
-    cfofreq, time_error = params
-    cfofreq *= Config.scalef
-    pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
-    detect_symb = gen_refchirp(cfofreq, time_error - math.ceil(time_error), deadzone=Config.gen_refchirp_deadzone)
-    res = cp.zeros(len(detect_symb), dtype=cp.complex64)
-    ddx = 0 # TODO
-    for sidx, ssymb in enumerate(detect_symb):
-        ress = cp.conj(ssymb).dot(pktdata2a_roll[ddx : ddx + len(ssymb)])
-        ddx += len(ssymb)
-        res[sidx] = ress / len(ssymb)
+    cfofreq, time_error = converter_up(*params)
+    return objective_core(cfofreq, time_error, pktdata2a)
+
+
+def objective_core(cfofreq, time_error, pktdata2a):
+
+    # pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
+    detect_symb0 = gen_refchirp(cfofreq, time_error - math.ceil(time_error), deadzone=Config.gen_refchirp_deadzone)
+    detect_symb = cp.concatenate(detect_symb0)
+    # res = cp.zeros(len(detect_symb), dtype=cp.complex64)
+    res = cp.conj(detect_symb).dot(pktdata2a[math.ceil(time_error) : len(detect_symb) + math.ceil(time_error)])
+    # ddx = 0 # TODO
+    # for sidx, ssymb in enumerate(detect_symb):
+    #     ress = cp.conj(ssymb) * (pktdata2a_roll[ddx : ddx + len(ssymb)])
+    #     ddx += len(ssymb)
+    #     print(ress.shape, ssymb.shape, pktdata2a_roll[ddx : ddx + len(ssymb)].shape, pktdata2a.shape)
+        # res.append(ress)
+        # res[sidx] = ress / len(ssymb)
     # print(cp.mean(cp.abs(pktdata2a[:ddx])))  # Negative because we use a minimizer
     # TODO qian zhui he plot
     # TODO remove **2 because res[sidx] is sum not sumofsquare
     # TODO phase consistency?
-    return - tocpu(cp.abs(cp.sum(res)) / len(res))  # Negative because we use a minimizer
+    # print([x.shape for x in res])
+    # res = cp.concatenate(res)
+    if False:
+        res2 = cp.conj(detect_symb) * (pktdata2a[math.ceil(time_error) : len(detect_symb) + math.ceil(time_error)])
+        fig = px.line([cp.abs(cp.sum(res2[:x])).get() for x in range(len(res2))])
+        fig.add_vline(x = len(detect_symb0[0]))
+        fig.add_vline(x = len(detect_symb0[0]) + len(detect_symb0[1]))
+        fig.show()
+        fig = px.line([cp.angle(res2[x]).get() for x in range(len(res2))])
+        fig.show()
+    # return - tocpu(cp.abs(cp.sum(res)) / len(res))  # Negative because we use a minimizer
+    # print(- tocpu(cp.abs(res) / detect_symb.shape[0]), cp.abs(res), detect_symb.shape)
+    return - tocpu(cp.abs(res) / detect_symb.shape[0])  # Negative because we use a minimizer
 
 def fine_work_new(pktidx, pktdata2a):
     pktdata2a = togpu(pktdata2a)
+    xvals = np.linspace(Config.tguess - 10, Config.tguess + 10, 100)
+    yvals = np.array([ draw2(pktdata2a, Config.fguess, x) for x in xvals])
+    fig = px.line(x=xvals, y=yvals[:, 0])
+    fig.add_trace(go.Scatter(x=xvals, y=yvals[:, 1]))
+    fig.show()
+    m1, b1 = np.polyfit(xvals, yvals[:,0], 1)
+    m2, b2 = np.polyfit(xvals, yvals[:,1], 1)
+    print('FIT', m1, m2)
+    xvals = np.linspace(Config.fguess - 100, Config.fguess + 100, 100)
+    yvals = np.array([ draw2(pktdata2a, x, Config.tguess) for x in xvals])
+    fig = px.line(x=xvals, y=yvals[:, 0])
+    fig.add_trace(go.Scatter(x=xvals, y=yvals[:, 1]))
+    fig.show()
+    m1, b1 = np.polyfit(xvals, yvals[:,0], 1)
+    m2, b2 = np.polyfit(xvals, yvals[:,1], 1)
+    print('FIT', m1, m2)
 
     if parse_opts.pltphase:
         phase = cp.angle(pktdata2a)
@@ -194,8 +247,7 @@ def fine_work_new(pktidx, pktdata2a):
 
     if parse_opts.searchphase:
         # Config.f_lower, Config.f_upper = Config.fguess - 3000, Config.fguess + 3000
-        bestx = [Config.fguess/Config.scalef, Config.tguess]
-        bestobj = objective(bestx, pktdata2a)
+        bestobj = objective_core(Config.fguess, Config.tguess, pktdata2a)
         logger.debug(
             f"trystart cfo_freq_est = {Config.fguess:.3f}, time_error = {Config.tguess:.3f} {bestobj=} {Config.f_lower=} {Config.f_upper=} {Config.t_lower=} {Config.t_upper=}")
         draw_fit(pktidx, pktdata2a, Config.fguess, Config.tguess)
@@ -203,25 +255,26 @@ def fine_work_new(pktidx, pktdata2a):
             start_t = random.uniform(Config.t_lower, Config.t_upper)
             start_f = random.uniform(Config.f_lower, Config.f_upper)
             # noinspection PyTypeChecker
-            result = opt.minimize(objective, [start_f/Config.scalef, start_t], args=(pktdata2a,),
-                                  bounds=[(Config.f_lower/Config.scalef, Config.f_upper/Config.scalef), (Config.t_lower, Config.t_upper)],
+            # print([(converter_down(Config.f_lower, 0)[0], converter_down(Config.f_upper, 0)[0]),
+            #           (converter_down(0, Config.t_lower)[1], converter_down(0, Config.t_upper)[1])], converter_down(start_f, start_t), objective(converter_down(start_f, start_t), pktdata2a), objective_core(start_f, start_t, pktdata2a))
+            result = opt.minimize(objective, converter_down(start_f, start_t), args=(pktdata2a,),
+                                  bounds=[(converter_down(Config.f_lower,0)[0],converter_down(Config.f_upper,0)[0]), (converter_down(0,Config.t_lower)[1], converter_down(0,Config.t_upper)[1])],
                                   method='L-BFGS-B',
                                   options={'gtol': 1e-12, 'disp': False}
                                   )
 
             if result.fun < bestobj:
-                logger.debug(f"{tryidx=: 6d} cfo_freq_est = {result.x[0]*Config.scalef:.3f}, time_error = {result.x[1]:.3f} {result.fun=:.5f}")
-                bestx = result.x
+                cfo_freq_est, time_error = converter_up(*result.x)
+                logger.debug(f"{tryidx=: 6d} cfo_freq_est = {cfo_freq_est:.3f}, time_error = {time_error:.3f} {result.fun=:.5f}")
                 # Config.fguess, Config.tguess = result.x
                 bestobj = result.fun
-                if tryidx > 100: draw_fit(pktidx, pktdata2a, result.x[0]*Config.scalef, result.x[1])
-            if tryidx == 100: draw_fit(pktidx, pktdata2a, bestx[0] * Config.scalef, bestx[1])
-        cfo_freq_est, time_error = bestx
-        cfo_freq_est *= Config.scalef
+                if tryidx > 100: draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error)
+            if tryidx == 100: draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error)
         logger.info(f"Optimized parameters:\n{cfo_freq_est=}\n{time_error=}")
     else:
         cfo_freq_est = Config.fguess
         time_error = Config.tguess
+        draw_fit(pktidx, pktdata2a, Config.fguess, Config.tguess)
 
     if parse_opts.refine:
         cfo_search = 200
@@ -229,7 +282,7 @@ def fine_work_new(pktidx, pktdata2a):
         search_steps = 100
         for searchidx in range(5):
             xrange = cp.linspace(cfo_freq_est - cfo_search, cfo_freq_est + cfo_search, search_steps)
-            yvals = [objective((x/Config.scalef, time_error), pktdata2a) for x in xrange]
+            yvals = [objective_core(x, time_error, pktdata2a) for x in xrange]
             fig = go.Figure()
             fig.add_trace(go.Scatter(x=tocpu(xrange), y=yvals, mode='markers', name='Input Data'))
             fig.add_vline(x=cfo_freq_est)
@@ -241,7 +294,7 @@ def fine_work_new(pktidx, pktdata2a):
             if not parse_opts.noplot: fig.show()
 
             xrange = cp.linspace(time_error - to_search, time_error + to_search, 1000)
-            yvals = [objective((cfo_freq_est/Config.scalef, x), pktdata2a) for x in xrange]
+            yvals = [objective_core(cfo_freq_est, x, pktdata2a) for x in xrange]
             fig = go.Figure()
             fig.add_trace(go.Scatter(x=tocpu(xrange), y=yvals, mode='markers', name='Input Data'))
             fig.add_vline(x=time_error)
@@ -262,6 +315,10 @@ def fine_work_new(pktidx, pktdata2a):
 
 
 def draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error):
+    # fig = px.scatter(cp.diff(cp.angle(pktdata2a)[:Config.nsamp*2]).get())
+    # fig.show()
+    # fig = px.scatter(cp.diff(cp.unwrap(cp.angle(pktdata2a))[:Config.nsamp*2]).get())
+    # fig.show()
     pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
     logger.info(f"{cfo_freq_est=:.3f}, time_error = {time_error:.3f}")
     detect_symb_plt = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
@@ -276,35 +333,98 @@ def draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error):
     yval2 = cp.unwrap(cp.angle(detect_symb_plt))
     # tsfd = time_error - math.ceil(time_error) + Config.sfdpos * Config.tsig * (1 + cfo_freq_est / Config.sig_freq)
     yval2[math.ceil(tsfd):] += (yval1[math.ceil(tsfd) + math.ceil(time_error)] - yval2[math.ceil(tsfd)])
-    fig = go.Figure()
-    # view_len = 60
-    fig.add_trace(go.Scatter(x=tocpu(xval2), y=tocpu(yval1[xval2]), mode='lines', name='input', line=dict(color='blue')))
-    fig.add_trace(
-        go.Scatter(x=tocpu(xval), y=tocpu(yval2), mode='lines', name='fit', line=dict(dash='dash', color='red')))
-    fig.add_trace(go.Scatter(
-        x=[math.ceil(time_error), math.ceil(time_error) + len(detect_symb_plt)],
-        y=[0, Config.f_lower * 2 * np.pi / Config.fs * len(detect_symb_plt)],
-        mode='lines',
-        line=dict(color='gray', dash='dash'),
-        showlegend=False
-    ))
-    fig.add_trace(go.Scatter(
-        x=[math.ceil(time_error), math.ceil(time_error) + len(detect_symb_plt)],
-        y=[0, Config.f_upper * 2 * np.pi / Config.fs * len(detect_symb_plt)],
-        mode='lines',
-        line=dict(color='gray', dash='dash'),
-        showlegend=False
-    ))
-    fig.add_trace(go.Scatter(
-        x=[math.ceil(time_error), math.ceil(time_error) + len(detect_symb_plt)],
-        y=[0, tocpu(cfo_freq_est) * 2 * np.pi / Config.fs * len(detect_symb_plt)],
-        mode='lines',
-        line=dict(color='gray', dash='dash'),
-        showlegend = False
-    ))
-    fig.update_layout(title=f'{pktidx} f={cfo_freq_est:.3f} t={time_error:.3f} obj={objective((cfo_freq_est/Config.scalef, time_error), pktdata2a):.5f}', legend=dict(x=0.1, y=1.1))
-    if not parse_opts.noplot: fig.show()
+    if True:
+        fig = go.Figure()
+        # view_len = 60
+        fig.add_trace(go.Scatter(x=tocpu(xval2), y=tocpu(yval1[xval2]), mode='lines', name='input', line=dict(color='blue')))
+        fig.add_trace(
+            go.Scatter(x=tocpu(xval), y=tocpu(yval2), mode='lines', name='fit', line=dict(dash='dash', color='red')))
+        fig.add_trace(go.Scatter(
+            x=[math.ceil(time_error), math.ceil(time_error) + len(detect_symb_plt)],
+            y=[0, Config.f_lower * 2 * np.pi / Config.fs * len(detect_symb_plt)],
+            mode='lines',
+            line=dict(color='gray', dash='dash'),
+            showlegend=False
+        ))
+        fig.add_trace(go.Scatter(
+            x=[math.ceil(time_error), math.ceil(time_error) + len(detect_symb_plt)],
+            y=[0, Config.f_upper * 2 * np.pi / Config.fs * len(detect_symb_plt)],
+            mode='lines',
+            line=dict(color='gray', dash='dash'),
+            showlegend=False
+        ))
+        fig.add_trace(go.Scatter(
+            x=[math.ceil(time_error), math.ceil(time_error) + len(detect_symb_plt)],
+            y=[0, tocpu(cfo_freq_est) * 2 * np.pi / Config.fs * len(detect_symb_plt)],
+            mode='lines',
+            line=dict(color='gray', dash='dash'),
+            showlegend = False
+        ))
+        fig.update_layout(title=f'{pktidx} f={cfo_freq_est:.3f} t={time_error:.3f} obj={objective_core(cfo_freq_est, time_error, pktdata2a):.5f}', legend=dict(x=0.1, y=1.1))
+        if not parse_opts.noplot: fig.show()
+    if False:
+        fig = go.Figure()#px.line(tocpu(yval1[xval] - yval2[xval])[:3 * Config.nsamp])
+        fig.add_vline(Config.nsamp)
+        # fig.add_vline(Config.nsamp * 2)
+        length = len(detect_symb_plt)
+        y = tocpu(yval1[math.ceil(time_error):length+math.ceil(time_error)] - yval2[:length])
+        fig.add_trace(
+            go.Scatter(y=y[:Config.nsamp*2], mode="markers",marker=dict(symbol='circle', size=0.5), showlegend=False))
 
+        # First range for fit
+        x1 = np.arange(int(Config.nsamp * 0.1), int(Config.nsamp * 0.9))
+        # print(x1)
+        m1, b1 = np.polyfit(x1, y[x1], 1)
+        # print(m1, b1)
+        fig.add_trace(
+            go.Scatter(x=x1, y=m1 * x1 + b1, mode="lines", line=dict(color='red', dash='dash'), showlegend=False))
+        fig.show()
+        fig = go.Figure()
+        fig.add_trace(
+            go.Scatter(y=y[Config.nsamp*Config.sfdpos+100:Config.nsamp * (Config.sfdpos+2)], mode="markers",marker=dict(symbol='circle', size=0.5), showlegend=False))
+
+        # Second range for fit
+        x2 = np.arange(int(Config.nsamp * (0.1 + Config.sfdpos)), int(Config.nsamp * (0.9 + Config.sfdpos)))
+        # print(x2)
+        m2, b2 = np.polyfit(x2, y[x2], 1)
+        print('FIT', m1, m2)
+        x_intersect = (b2 - b1) / (m1 - m2)
+        y_intersect = m1 * x_intersect + b1
+        # fig.add_vline(x=x_intersect)
+        # print('xxxx', x_intersect, y_intersect)
+        fig.add_trace(
+            go.Scatter(x=x2-Config.nsamp*Config.sfdpos+100, y=m2 * x2 + b2, mode="lines", line=dict(color='red', dash='dash'), showlegend=False))
+
+        # fig.add_trace(go.Scatter(x=tocpu(xval2) - math.ceil(time_error), y=tocpu(yval1[xval2]), mode='lines', name='input', line=dict(color='blue')))
+        # fig.add_trace(
+        #     go.Scatter(x=tocpu(xval) - math.ceil(time_error), y=tocpu(yval2), mode='lines', name='fit', line=dict(dash='dash', color='red')))
+        # print(cp.argmin(yval1[:Config.nsamp + math.ceil(time_error)]))
+        # fig.add_hline(y=cp.min(yval1[:Config.nsamp + math.ceil(time_error)]).get())
+        # fig.add_vline(x=cp.argmin(yval1[:Config.nsamp + math.ceil(time_error)]).get() - math.ceil(time_error))
+
+
+
+        fig.show()
+        print(f'{pktidx} f={cfo_freq_est:.3f} t={time_error:.3f} obj={objective_core(cfo_freq_est, time_error, pktdata2a):.5f}')
+        sys.exit(0)
+
+
+def draw2(pktdata2a, cfo_freq_est, time_error):
+    detect_symb_plt = gen_refchirp(cfo_freq_est, time_error - math.ceil(time_error))
+    tsfd = sum([len(x) for x in detect_symb_plt[:-3]])
+    detect_symb_plt = cp.concatenate(detect_symb_plt)
+    phase1 = cp.angle(pktdata2a)
+    yval1 = cp.unwrap(phase1)
+    yval2 = cp.unwrap(cp.angle(detect_symb_plt))
+    yval2[math.ceil(tsfd):] += (yval1[math.ceil(tsfd) + math.ceil(time_error)] - yval2[math.ceil(tsfd)])
+    length = len(detect_symb_plt)
+    y = tocpu(yval1[math.ceil(time_error):length+math.ceil(time_error)] - yval2[:length])
+    x1 = np.arange(int(Config.nsamp * 0.1), int(Config.nsamp * 0.9))
+    m1, b1 = np.polyfit(x1, y[x1], 1)
+    x2 = np.arange(int(Config.nsamp * (0.1 + Config.sfdpos)), int(Config.nsamp * (0.9 + Config.sfdpos)))
+    m2, b2 = np.polyfit(x2, y[x2], 1)
+    # print('FIT', m1, m2)
+    return m1, m2
 
 def gen_refchirp(cfofreq, tstart, deadzone=0):
     detect_symb = []
