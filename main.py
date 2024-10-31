@@ -139,10 +139,15 @@ class Config:
     tguess = nsamp / 2
     code_len = 2
 
-    cfo_freq_est = -39866.691-30.517578+200#+52e6/(2**18)
-    time_error = 4320.967+2
+    cfo_freq_est = -39615.50445099
+    time_error = 4323.68793268
+    # cfo_freq_est = -39866.691-30.517578#+52e6/(2**18)
+    # time_error = 4320.967
     fguess = cfo_freq_est
     tguess = time_error
+
+    tbeta = (0.00025319588796389843+0.0002531603667156756)/2
+    fbeta = (-6.283185307178473e-06-6.302329387166181e-06)/2
     # fguess = -39000
     # tguess = 4320
 
@@ -218,6 +223,18 @@ def objective_core(cfofreq, time_error, pktdata2a):
 
 def fine_work_new(pktidx, pktdata2a):
     pktdata2a = togpu(pktdata2a)
+    # draw_fit(pktidx, pktdata2a, Config.fguess, Config.tguess)
+    print('obj0',objective_core(Config.fguess, Config.tguess, pktdata2a))
+    yval1, yval2 = draw2(pktdata2a, Config.fguess, Config.tguess)
+    t1 = -(yval1-yval2)/2/Config.tbeta
+    f1 = -(yval1+yval2)/2/Config.fbeta
+    print('dtdf', t1, f1)
+    print('obj1',objective_core(Config.fguess+f1, Config.tguess+t1, pktdata2a))
+    print('draw2slope',draw2(pktdata2a, Config.fguess+f1, Config.tguess+t1))
+    draw_fit(pktidx, pktdata2a, Config.fguess+f1, Config.tguess+t1)
+    Config.fguess += f1
+    Config.tguess += t1
+
     xvals = np.linspace(Config.tguess - 10, Config.tguess + 10, 100)
     yvals = np.array([ draw2(pktdata2a, Config.fguess, x) for x in xvals])
     fig = px.line(x=xvals, y=yvals[:, 0])
@@ -362,6 +379,18 @@ def draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error):
         ))
         fig.update_layout(title=f'{pktidx} f={cfo_freq_est:.3f} t={time_error:.3f} obj={objective_core(cfo_freq_est, time_error, pktdata2a):.5f}', legend=dict(x=0.1, y=1.1))
         if not parse_opts.noplot: fig.show()
+    if True:
+        fig = go.Figure()  # px.line(tocpu(yval1[xval] - yval2[xval])[:3 * Config.nsamp])
+        fig.add_vline(Config.nsamp)
+        # fig.add_vline(Config.nsamp * 2)
+        length = len(detect_symb_plt)
+        y = tocpu(yval1[math.ceil(time_error):length + math.ceil(time_error)] - yval2[:length])
+        y[abs(y)>200] = 0
+        fig.add_trace(
+            go.Scatter(y=y, mode="markers", marker=dict(symbol='circle', size=0.5),
+                       showlegend=False))
+        fig.show()
+
     if False:
         fig = go.Figure()#px.line(tocpu(yval1[xval] - yval2[xval])[:3 * Config.nsamp])
         fig.add_vline(Config.nsamp)
@@ -406,7 +435,6 @@ def draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error):
 
         fig.show()
         print(f'{pktidx} f={cfo_freq_est:.3f} t={time_error:.3f} obj={objective_core(cfo_freq_est, time_error, pktdata2a):.5f}')
-        sys.exit(0)
 
 
 def draw2(pktdata2a, cfo_freq_est, time_error):
@@ -501,18 +529,19 @@ if __name__ == "__main__":
             thresh = Config.thresh
         else:
             thresh = cp.mean(kmeans.cluster_centers_)
-        counts, bins = cp.histogram(nmaxs, bins=100)
-        # logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
-        logger.debug(f"cluster: {kmeans.cluster_centers_[0]} {kmeans.cluster_centers_[1]} {thresh=}")
-        threshpos = np.searchsorted(tocpu(bins), thresh).item()
-        logger.debug(f"lower: {cp_str(counts[:threshpos])}")
-        logger.debug(f"higher: {cp_str(counts[threshpos:])}")
-        fig = px.line(nmaxs.get())
-        fig.add_hline(y=thresh)
-        fig.update_layout(
-            title=f"{file_path} pow {len(nmaxs)}",
-            legend=dict(x=0.1, y=1.1))
-        fig.show()
+        if False:
+            counts, bins = cp.histogram(nmaxs, bins=100)
+            # logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
+            logger.debug(f"cluster: {kmeans.cluster_centers_[0]} {kmeans.cluster_centers_[1]} {thresh=}")
+            threshpos = np.searchsorted(tocpu(bins), thresh).item()
+            logger.debug(f"lower: {cp_str(counts[:threshpos])}")
+            logger.debug(f"higher: {cp_str(counts[threshpos:])}")
+            fig = px.line(nmaxs.get())
+            fig.add_hline(y=thresh)
+            fig.update_layout(
+                title=f"{file_path} pow {len(nmaxs)}",
+                legend=dict(x=0.1, y=1.1))
+            fig.show()
 
         pkt_totcnt = 0
         pktdata_lst = []
