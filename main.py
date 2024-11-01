@@ -1,5 +1,6 @@
 import argparse
 import logging
+import itertools
 import os
 import random
 import sys
@@ -122,13 +123,12 @@ class Config:
     sf = 12
     bw = 406250
     fs = 1e6
-    # sig_freq = 2.4e9
-    sig_freq = 2400000030.517578#-52e6/(2**18)
+    sig_freq = 2.4e9
+    # sig_freq = 2400000030.517578#-52e6/(2**18)
     preamble_len = 16  # TODO
 
     thresh = None# 0.03
-    file_paths = ['/data/djl/temp/OptimalPkt/data1_test_0']
-
+    file_paths = ['/data/djl/temp/OptimalPkt/fingerprint_data/data0_test_0',]
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples
     nsamp = round(n_classes * fs / bw)
@@ -497,62 +497,90 @@ def read_large_file(file_path_in):
             yield rawdata
 
 
-def read_pkt(file_path_in, threshold, min_length=20):
-    current_sequence = []
-    for rawdata in read_large_file(file_path_in):
-        number = cp.max(cp.abs(rawdata))
-        if number > threshold:
-            current_sequence.append(rawdata)
+def read_pkt(file_path_in1, file_path_in2, threshold, min_length=20):
+    current_sequence1 = []
+    current_sequence2 = []
+
+    for rawdata1, rawdata2 in itertools.zip_longest(read_large_file(file_path_in1), read_large_file(file_path_in2)):
+        if rawdata1 is None or rawdata2 is None:
+            break  # Both files are done
+
+        number1 = cp.max(cp.abs(rawdata1)) if rawdata1 is not None else 0
+
+        # Check for threshold in both files
+        if number1 > threshold:
+            current_sequence1.append(rawdata1)
+            current_sequence2.append(rawdata2)
         else:
-            if len(current_sequence) > min_length:
-                yield cp.concatenate(current_sequence)
-            current_sequence = []
+            if len(current_sequence1) > min_length:
+                yield cp.concatenate(current_sequence1), cp.concatenate(current_sequence2)
+            current_sequence1 = []
+            current_sequence2 = []
+
+    # Yield any remaining sequences after the loop
+    if len(current_sequence1) > min_length:
+        yield cp.concatenate(current_sequence1), cp.concatenate(current_sequence2)
 
 
 # read packets from file
 if __name__ == "__main__":
     for file_path in Config.file_paths:
-        pkt_cnt = 0
-        pktdata = []
-        fsize = int(os.stat(file_path).st_size / (Config.nsamp * 4 * 2))
-        logger.debug(f'reading file: {file_path} SF: {Config.sf} pkts in file: {fsize}')
+            pkt_cnt = 0
+            pktdata = []
+            fsize = int(os.stat(file_path).st_size / (Config.nsamp * 4 * 2))
+            logger.debug(f'reading file: {file_path} SF: {Config.sf} pkts in file: {fsize}')
 
-        power_eval_len = 5000
-        nmaxs = []
-        for idx, rawdata in enumerate(read_large_file(file_path)):
-            nmaxs.append(cp.max(cp.abs(rawdata)))
-            if idx == power_eval_len - 1: break
-        nmaxs = cp.array(nmaxs)
-        kmeans = KMeans(n_clusters=2, random_state=0, n_init=10)
-        kmeans.fit(tocpu(nmaxs.reshape(-1, 1)))
-        if Config.thresh:
-            thresh = Config.thresh
-        else:
-            thresh = cp.mean(kmeans.cluster_centers_)
-        if False:
-            counts, bins = cp.histogram(nmaxs, bins=100)
-            # logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
-            logger.debug(f"cluster: {kmeans.cluster_centers_[0]} {kmeans.cluster_centers_[1]} {thresh=}")
-            threshpos = np.searchsorted(tocpu(bins), thresh).item()
-            logger.debug(f"lower: {cp_str(counts[:threshpos])}")
-            logger.debug(f"higher: {cp_str(counts[threshpos:])}")
-            fig = px.line(nmaxs.get())
-            fig.add_hline(y=thresh)
-            fig.update_layout(
-                title=f"{file_path} pow {len(nmaxs)}",
-                legend=dict(x=0.1, y=1.1))
-            fig.show()
+            power_eval_len = 5000
+            nmaxs = []
+            for idx, rawdata in enumerate(read_large_file(file_path)):
+                nmaxs.append(cp.max(cp.abs(rawdata)))
+                if idx == power_eval_len - 1: break
+            nmaxs = cp.array(nmaxs)
+            kmeans = KMeans(n_clusters=2, random_state=0, n_init=10)
+            kmeans.fit(tocpu(nmaxs.reshape(-1, 1)))
+            if Config.thresh:
+                thresh = Config.thresh
+            else:
+                thresh = cp.mean(kmeans.cluster_centers_)
+            if False:
+                counts, bins = cp.histogram(nmaxs, bins=100)
+                # logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
+                logger.debug(f"cluster: {kmeans.cluster_centers_[0]} {kmeans.cluster_centers_[1]} {thresh=}")
+                threshpos = np.searchsorted(tocpu(bins), thresh).item()
+                logger.debug(f"lower: {cp_str(counts[:threshpos])}")
+                logger.debug(f"higher: {cp_str(counts[threshpos:])}")
+                fig = px.line(nmaxs.get())
+                fig.add_hline(y=thresh)
+                fig.update_layout(
+                    title=f"{file_path} pow {len(nmaxs)}",
+                    legend=dict(x=0.1, y=1.1))
+                fig.show()
 
-        pkt_totcnt = 0
-        pktdata_lst = []
-        tstart_lst = []
-        cfo_freq_est = []
-        for pkt_idx, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=30)):
-            if pkt_idx < 0: continue
+            pkt_totcnt = 0
+            pktdata_lst = []
+            tstart_lst = []
+            cfo_freq_est = []
+            for pkt_idx, pkt_data in enumerate(read_pkt(file_path, file_path.replace("data0", "data1"), thresh, min_length=30)):
+                if pkt_idx <= 0: continue
+                else:
+                    data1, data2 = pkt_data
+                    datat1 = cp.unwrap(cp.angle(data1[Config.nsamp : -Config.nsamp]))
+                    datat2 = cp.unwrap(cp.angle(data2[Config.nsamp : -Config.nsamp]))
+                    # datadt = datat1[:min(len(datat1), len(datat2))] - datat2[:min(len(datat1), len(datat2))]
+                    # fig = px.line(tocpu(datat1[-5*Config.nsamp:]), line_shape='linear')
+                    # fig.update_traces(line=dict(dash='dash', color='blue'))
+                    # fig.add_trace(go.Scatter(y=tocpu(datat2[-5*Config.nsamp:]),  mode='lines',  line=dict(dash='dash', color='red')))
+                    fig = px.line(tocpu(cp.unwrap(datat1-datat2)))
+                    fig.show()
+
+
+
+
+
             # if cp.max(cp.abs(pkt_data)) > 0.072: continue
-            logger.info(f"Prework {pkt_idx=} {len(pkt_data)=}")
-            fine_work_new(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
-            break
+            # logger.info(f"Prework {pkt_idx=} {len(pkt_data)=}")
+            # fine_work_new(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
+            # break
             # p, t, c = fine_work_new(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
             # pktdata_lst.append(p)
             # tstart_lst.append(t)
