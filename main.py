@@ -120,10 +120,10 @@ def average_modulus(lst, n_classes):
 
 class Config:
     sf = 12
-    bw = 406250
+    bw = 406250#*(1-20*1e-6)
     fs = 1e6
-    # sig_freq = 2.4e9
-    sig_freq = 2400000030.517578#-52e6/(2**18)
+    sig_freq = 2.4e9
+    # sig_freq = 2400000030.517578#-52e6/(2**18)
     preamble_len = 16  # TODO
 
     thresh = None# 0.03
@@ -139,8 +139,8 @@ class Config:
     tguess = nsamp / 2
     code_len = 2
 
-    cfo_freq_est = -39615.50445099
-    time_error = 4323.68793268
+    cfo_freq_est = -39686.044
+    time_error = 4321.617
     # cfo_freq_est = -39866.691-30.517578#+52e6/(2**18)
     # time_error = 4320.967
     fguess = cfo_freq_est
@@ -190,36 +190,19 @@ def objective(params, pktdata2a):
 
 
 def objective_core(cfofreq, time_error, pktdata2a):
-
-    # pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
-    detect_symb0 = gen_refchirp(cfofreq, time_error - math.ceil(time_error), deadzone=Config.gen_refchirp_deadzone)
-    detect_symb = cp.concatenate(detect_symb0)
-    # res = cp.zeros(len(detect_symb), dtype=cp.complex64)
-    res = cp.conj(detect_symb).dot(pktdata2a[math.ceil(time_error) : len(detect_symb) + math.ceil(time_error)])
-    # ddx = 0 # TODO
-    # for sidx, ssymb in enumerate(detect_symb):
-    #     ress = cp.conj(ssymb) * (pktdata2a_roll[ddx : ddx + len(ssymb)])
-    #     ddx += len(ssymb)
-    #     print(ress.shape, ssymb.shape, pktdata2a_roll[ddx : ddx + len(ssymb)].shape, pktdata2a.shape)
-        # res.append(ress)
-        # res[sidx] = ress / len(ssymb)
+    pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
+    detect_symb = gen_refchirp(cfofreq, time_error - math.ceil(time_error), deadzone=Config.gen_refchirp_deadzone)
+    res = cp.zeros(len(detect_symb), dtype=cp.complex64)
+    ddx = 0  # TODO
+    for sidx, ssymb in enumerate(detect_symb):
+        ress = cp.conj(ssymb).dot(pktdata2a_roll[ddx: ddx + len(ssymb)])
+        ddx += len(ssymb)
+        res[sidx] = ress / len(ssymb)
     # print(cp.mean(cp.abs(pktdata2a[:ddx])))  # Negative because we use a minimizer
     # TODO qian zhui he plot
     # TODO remove **2 because res[sidx] is sum not sumofsquare
     # TODO phase consistency?
-    # print([x.shape for x in res])
-    # res = cp.concatenate(res)
-    if False:
-        res2 = cp.conj(detect_symb) * (pktdata2a[math.ceil(time_error) : len(detect_symb) + math.ceil(time_error)])
-        fig = px.line([cp.abs(cp.sum(res2[:x])).get() for x in range(len(res2))])
-        fig.add_vline(x = len(detect_symb0[0]))
-        fig.add_vline(x = len(detect_symb0[0]) + len(detect_symb0[1]))
-        fig.show()
-        fig = px.line([cp.angle(res2[x]).get() for x in range(len(res2))])
-        fig.show()
-    # return - tocpu(cp.abs(cp.sum(res)) / len(res))  # Negative because we use a minimizer
-    # print(- tocpu(cp.abs(res) / detect_symb.shape[0]), cp.abs(res), detect_symb.shape)
-    return - tocpu(cp.abs(res) / detect_symb.shape[0])  # Negative because we use a minimizer
+    return - tocpu(cp.abs(cp.sum(res)) / len(res))
 
 def fine_work_new(pktidx, pktdata2a):
     pktdata2a = togpu(pktdata2a)
@@ -251,6 +234,7 @@ def fine_work_new(pktidx, pktdata2a):
     m1, b1 = np.polyfit(xvals, yvals[:,0], 1)
     m2, b2 = np.polyfit(xvals, yvals[:,1], 1)
     print('FIT', m1, m2)
+    sys.exit(0)
 
     if parse_opts.pltphase:
         phase = cp.angle(pktdata2a)
@@ -268,7 +252,7 @@ def fine_work_new(pktidx, pktdata2a):
         logger.debug(
             f"trystart cfo_freq_est = {Config.fguess:.3f}, time_error = {Config.tguess:.3f} {bestobj=} {Config.f_lower=} {Config.f_upper=} {Config.t_lower=} {Config.t_upper=}")
         draw_fit(pktidx, pktdata2a, Config.fguess, Config.tguess)
-        for tryidx in tqdm(range(parse_opts.searchphase_step)):
+        for tryidx in tqdm(range(parse_opts.searchphase_step), disable=True):
             start_t = random.uniform(Config.t_lower, Config.t_upper)
             start_f = random.uniform(Config.f_lower, Config.f_upper)
             # noinspection PyTypeChecker
@@ -379,7 +363,7 @@ def draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error):
         ))
         fig.update_layout(title=f'{pktidx} f={cfo_freq_est:.3f} t={time_error:.3f} obj={objective_core(cfo_freq_est, time_error, pktdata2a):.5f}', legend=dict(x=0.1, y=1.1))
         if not parse_opts.noplot: fig.show()
-    if True:
+    if False:
         fig = go.Figure()  # px.line(tocpu(yval1[xval] - yval2[xval])[:3 * Config.nsamp])
         fig.add_vline(Config.nsamp)
         # fig.add_vline(Config.nsamp * 2)
@@ -387,27 +371,33 @@ def draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error):
         y = tocpu(yval1[math.ceil(time_error):length + math.ceil(time_error)] - yval2[:length])
         y[abs(y)>200] = 0
         fig.add_trace(
-            go.Scatter(y=y, mode="markers", marker=dict(symbol='circle', size=0.5),
+            go.Scatter(y=y, mode="lines", #marker=dict(symbol='circle', size=0.5),
                        showlegend=False))
         fig.show()
 
-    if False:
+    if True:
         fig = go.Figure()#px.line(tocpu(yval1[xval] - yval2[xval])[:3 * Config.nsamp])
         fig.add_vline(Config.nsamp)
-        # fig.add_vline(Config.nsamp * 2)
+        fig.add_vline(Config.nsamp * 2)
         length = len(detect_symb_plt)
         y = tocpu(yval1[math.ceil(time_error):length+math.ceil(time_error)] - yval2[:length])
-        fig.add_trace(
-            go.Scatter(y=y[:Config.nsamp*2], mode="markers",marker=dict(symbol='circle', size=0.5), showlegend=False))
+        # fig.add_trace( go.Scatter(y=y, mode="markers",marker=dict(symbol='circle', size=0.5), showlegend=False))
 
         # First range for fit
-        x1 = np.arange(int(Config.nsamp * 0.1), int(Config.nsamp * 0.9))
-        # print(x1)
-        m1, b1 = np.polyfit(x1, y[x1], 1)
-        # print(m1, b1)
-        fig.add_trace(
-            go.Scatter(x=x1, y=m1 * x1 + b1, mode="lines", line=dict(color='red', dash='dash'), showlegend=False))
-        fig.show()
+        lst1 = []
+        lst2 = []
+        for idx in range(Config.sfdend-1):
+            if idx >= Config.preamble_len and idx < Config.preamble_len+2: continue
+            x1 = np.arange(int(Config.nsamp * (0.1+idx)), int(Config.nsamp * (0.9+idx)))
+            m1, b1 = np.polyfit(x1, y[x1], 1)
+            # fig.add_trace( go.Scatter(x=x1, y=m1 * x1 + b1, mode="lines", line=dict(color='red', dash='dash'), showlegend=False))
+            print("Fit", idx, m1)
+            if idx < Config.preamble_len: lst1.append(m1)
+            else: lst2.append(m1)
+        m1, b1 = np.polyfit(np.arange(len(lst1)), lst1, 1)
+        m2, b2 = np.polyfit(np.arange(len(lst2)), lst2, 1)
+        # fig.show()
+        return m1, m2
         fig = go.Figure()
         fig.add_trace(
             go.Scatter(y=y[Config.nsamp*Config.sfdpos+100:Config.nsamp * (Config.sfdpos+2)], mode="markers",marker=dict(symbol='circle', size=0.5), showlegend=False))
@@ -447,22 +437,34 @@ def draw2(pktdata2a, cfo_freq_est, time_error):
     yval2[math.ceil(tsfd):] += (yval1[math.ceil(tsfd) + math.ceil(time_error)] - yval2[math.ceil(tsfd)])
     length = len(detect_symb_plt)
     y = tocpu(yval1[math.ceil(time_error):length+math.ceil(time_error)] - yval2[:length])
-    x1 = np.arange(int(Config.nsamp * 0.1), int(Config.nsamp * 0.9))
-    m1, b1 = np.polyfit(x1, y[x1], 1)
-    x2 = np.arange(int(Config.nsamp * (0.1 + Config.sfdpos)), int(Config.nsamp * (0.9 + Config.sfdpos)))
-    m2, b2 = np.polyfit(x2, y[x2], 1)
-    # print('FIT', m1, m2)
+
+    lst1 = []
+    lst2 = []
+    for idx in range(Config.sfdend - 1):
+        if idx >= Config.preamble_len and idx < Config.preamble_len + 2: continue
+        x1 = np.arange(int(Config.nsamp * (0.1 + idx)), int(Config.nsamp * (0.9 + idx)))
+        m1, b1 = np.polyfit(x1, y[x1], 1)
+        # fig.add_trace( go.Scatter(x=x1, y=m1 * x1 + b1, mode="lines", line=dict(color='red', dash='dash'), showlegend=False))
+        # print("Fit", idx, m1)
+        if idx < Config.preamble_len:
+            lst1.append(m1)
+        else:
+            lst2.append(m1)
+    m1, b1 = np.polyfit(np.arange(len(lst1)), lst1, 1)
+    m2, b2 = np.polyfit(np.arange(len(lst2)), lst2, 1)
+    # fig.show()
     return m1, m2
 
 def gen_refchirp(cfofreq, tstart, deadzone=0):
     detect_symb = []
-    sigt = Config.tsig * (1 + cfofreq / Config.sig_freq)
-    beta = Config.bw / Config.tsig
+    bw = Config.bw * (1 + cfofreq / Config.sig_freq)
+    sigt = 2 ** Config.sf / bw * Config.fs #* (1 - cfofreq / Config.sig_freq)
+    beta = bw / sigt
     # print(Config.bw / Config.tsig * (1 + cfofreq / Config.sig_freq) / (1 - cfofreq / Config.sig_freq))
     # print(Config.bw / Config.tsig * (1 + cfofreq / Config.sig_freq) )
     # print(Config.bw / Config.tsig )
     for tid in range(Config.preamble_len):
-        upchirp = gen_upchirp(tstart + sigt * tid, sigt, -Config.bw / 2 + cfofreq, beta)
+        upchirp = gen_upchirp(tstart + sigt * tid, sigt, -bw  / 2 + cfofreq, beta)
         # assert len(upchirp) == math.ceil(tid_times[tid + 1]) - math.ceil(tid_times[tid])
         if deadzone > 0:
             upchirp[:deadzone] = cp.zeros(deadzone, dtype=cp.complex64)
@@ -472,7 +474,7 @@ def gen_refchirp(cfofreq, tstart, deadzone=0):
         detect_symb.append(cp.zeros(math.ceil(tstart + sigt * (tid + 1)) - math.ceil(tstart + sigt * tid), dtype=cp.complex64))
     for tid in range(Config.sfdpos, Config.sfdend):
         upchirp = gen_upchirp(tstart + sigt * tid, sigt if tid != Config.sfdend - 1 else sigt / 4,
-                              Config.bw / 2 + cfofreq, - beta)
+                              bw / 2 + cfofreq, - beta)
         # assert len(upchirp) == math.ceil(tid_times[tid + 1]) - math.ceil(tid_times[tid])
         if deadzone > 0:
             upchirp[:deadzone] = cp.zeros(deadzone, dtype=cp.complex64)
