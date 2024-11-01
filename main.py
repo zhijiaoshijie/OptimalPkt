@@ -139,10 +139,8 @@ class Config:
     tguess = nsamp / 2
     code_len = 2
 
-    cfo_freq_est = -39686.044
-    time_error = 4321.617
-    # cfo_freq_est = -39866.691-30.517578#+52e6/(2**18)
-    # time_error = 4320.967
+    cfo_freq_est = -39686.044+10
+    time_error = 4321.617-2
     fguess = cfo_freq_est
     tguess = time_error
 
@@ -206,35 +204,37 @@ def objective_core(cfofreq, time_error, pktdata2a):
 
 def fine_work_new(pktidx, pktdata2a):
     pktdata2a = togpu(pktdata2a)
-    # draw_fit(pktidx, pktdata2a, Config.fguess, Config.tguess)
-    print('obj0',objective_core(Config.fguess, Config.tguess, pktdata2a))
-    yval1, yval2 = draw2(pktdata2a, Config.fguess, Config.tguess)
-    t1 = -(yval1-yval2)/2/Config.tbeta
-    f1 = -(yval1+yval2)/2/Config.fbeta
-    print('dtdf', t1, f1)
-    print('obj1',objective_core(Config.fguess+f1, Config.tguess+t1, pktdata2a))
-    print('draw2slope',draw2(pktdata2a, Config.fguess+f1, Config.tguess+t1))
-    draw_fit(pktidx, pktdata2a, Config.fguess+f1, Config.tguess+t1)
-    Config.fguess += f1
-    Config.tguess += t1
-
-    xvals = np.linspace(Config.tguess - 10, Config.tguess + 10, 100)
-    yvals = np.array([ draw2(pktdata2a, Config.fguess, x) for x in xvals])
-    fig = px.line(x=xvals, y=yvals[:, 0])
-    fig.add_trace(go.Scatter(x=xvals, y=yvals[:, 1]))
-    fig.show()
-    m1, b1 = np.polyfit(xvals, yvals[:,0], 1)
-    m2, b2 = np.polyfit(xvals, yvals[:,1], 1)
-    print('FIT', m1, m2)
-    xvals = np.linspace(Config.fguess - 100, Config.fguess + 100, 100)
-    yvals = np.array([ draw2(pktdata2a, x, Config.tguess) for x in xvals])
-    fig = px.line(x=xvals, y=yvals[:, 0])
-    fig.add_trace(go.Scatter(x=xvals, y=yvals[:, 1]))
-    fig.show()
-    m1, b1 = np.polyfit(xvals, yvals[:,0], 1)
-    m2, b2 = np.polyfit(xvals, yvals[:,1], 1)
-    print('FIT', m1, m2)
+    draw_fit(pktidx, pktdata2a, Config.fguess, Config.tguess)
     sys.exit(0)
+    if False:
+        print('obj0',objective_core(Config.fguess, Config.tguess, pktdata2a))
+        yval1, yval2 = draw2(pktdata2a, Config.fguess, Config.tguess)
+        t1 = -(yval1-yval2)/2/Config.tbeta
+        f1 = -(yval1+yval2)/2/Config.fbeta
+        print('dtdf', t1, f1)
+        print('obj1',objective_core(Config.fguess+f1, Config.tguess+t1, pktdata2a))
+        print('draw2slope',draw2(pktdata2a, Config.fguess+f1, Config.tguess+t1))
+        draw_fit(pktidx, pktdata2a, Config.fguess+f1, Config.tguess+t1)
+        Config.fguess += f1
+        Config.tguess += t1
+
+        xvals = np.linspace(Config.tguess - 10, Config.tguess + 10, 100)
+        yvals = np.array([ draw2(pktdata2a, Config.fguess, x) for x in xvals])
+        fig = px.line(x=xvals, y=yvals[:, 0])
+        fig.add_trace(go.Scatter(x=xvals, y=yvals[:, 1]))
+        fig.show()
+        m1, b1 = np.polyfit(xvals, yvals[:,0], 1)
+        m2, b2 = np.polyfit(xvals, yvals[:,1], 1)
+        print('FIT', m1, m2)
+        xvals = np.linspace(Config.fguess - 100, Config.fguess + 100, 100)
+        yvals = np.array([ draw2(pktdata2a, x, Config.tguess) for x in xvals])
+        fig = px.line(x=xvals, y=yvals[:, 0])
+        fig.add_trace(go.Scatter(x=xvals, y=yvals[:, 1]))
+        fig.show()
+        m1, b1 = np.polyfit(xvals, yvals[:,0], 1)
+        m2, b2 = np.polyfit(xvals, yvals[:,1], 1)
+        print('FIT', m1, m2)
+        sys.exit(0)
 
     if parse_opts.pltphase:
         phase = cp.angle(pktdata2a)
@@ -334,7 +334,7 @@ def draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error):
     yval2 = cp.unwrap(cp.angle(detect_symb_plt))
     # tsfd = time_error - math.ceil(time_error) + Config.sfdpos * Config.tsig * (1 + cfo_freq_est / Config.sig_freq)
     yval2[math.ceil(tsfd):] += (yval1[math.ceil(tsfd) + math.ceil(time_error)] - yval2[math.ceil(tsfd)])
-    if True:
+    if False:
         fig = go.Figure()
         # view_len = 60
         fig.add_trace(go.Scatter(x=tocpu(xval2), y=tocpu(yval1[xval2]), mode='lines', name='input', line=dict(color='blue')))
@@ -363,19 +363,21 @@ def draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error):
         ))
         fig.update_layout(title=f'{pktidx} f={cfo_freq_est:.3f} t={time_error:.3f} obj={objective_core(cfo_freq_est, time_error, pktdata2a):.5f}', legend=dict(x=0.1, y=1.1))
         if not parse_opts.noplot: fig.show()
-    if False:
+    if True:
         fig = go.Figure()  # px.line(tocpu(yval1[xval] - yval2[xval])[:3 * Config.nsamp])
         fig.add_vline(Config.nsamp)
+        fig.add_vline(Config.nsamp*Config.preamble_len)
+        fig.add_vline(Config.nsamp*(Config.sfdpos + 2.25))
         # fig.add_vline(Config.nsamp * 2)
         length = len(detect_symb_plt)
-        y = tocpu(yval1[math.ceil(time_error):length + math.ceil(time_error)] - yval2[:length])
-        y[abs(y)>200] = 0
+        y = tocpu(cp.unwrap(cp.angle(pktdata2a[math.ceil(time_error):length + math.ceil(time_error)] * detect_symb_plt[:length].conj())))
+        # y[abs(y)>2000] = 0
         fig.add_trace(
             go.Scatter(y=y, mode="lines", #marker=dict(symbol='circle', size=0.5),
                        showlegend=False))
         fig.show()
 
-    if True:
+    if False:
         fig = go.Figure()#px.line(tocpu(yval1[xval] - yval2[xval])[:3 * Config.nsamp])
         fig.add_vline(Config.nsamp)
         fig.add_vline(Config.nsamp * 2)
