@@ -81,7 +81,6 @@ def tocpu(x):
 
 def mychirp(t, f0, f1, t1):
     beta = (f1 - f0) / t1
-    print(beta)
     phase = 2 * cp.pi * (f0 * t + 0.5 * beta * t * t)
     sig = cp.exp(1j * togpu(phase))
     return sig
@@ -107,7 +106,7 @@ def myplot(*args, **kwargs):
 
 
 def myfft(chirp_data, n, plan):
-    return fft.fft(chirp_data.astype(cp.complex64), n=n, plan=plan)
+    return np.fft.fftshift(fft.fft(chirp_data.astype(cp.complex64), n=n, plan=plan))
 
 
 script_path = __file__
@@ -146,6 +145,12 @@ class Config:
 
     cfo_freq_est = -39705.621
     time_error = 4321.507
+
+    time_r = time_error / tsig
+    cfo_r = cfo_freq_est / bw
+    print(time_r + cfo_r, cfo_r - time_r)
+
+
     fguess = cfo_freq_est
     tguess = time_error
     f_lower = fguess - 500
@@ -165,7 +170,7 @@ class Config:
     if not os.path.exists(figpath): os.mkdir(figpath)
 
     fft_upsamp = 1024
-    detect_range_pkts = 7
+    detect_range_pkts = 0
     fft_n = nsamp * fft_upsamp
     plan = fft.get_fft_plan(cp.zeros(fft_n, dtype=cp.complex64))
     fft_ups = cp.zeros((preamble_len + detect_range_pkts, fft_n), dtype=cp.complex64)
@@ -364,7 +369,7 @@ def draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error):
     yval2 = cp.unwrap(cp.angle(detect_symb_plt))
     # tsfd = time_error - math.ceil(time_error) + Config.sfdpos * Config.tsig * (1 + cfo_freq_est / Config.sig_freq)
     yval2[math.ceil(tsfd):] += (yval1[math.ceil(tsfd) + math.ceil(time_error)] - yval2[math.ceil(tsfd)])
-    if False:
+    if True:
         fig = go.Figure()
         # view_len = 60
         fig.add_trace(go.Scatter(x=tocpu(xval2), y=tocpu(yval1[xval2]), mode='lines', name='input', line=dict(color='blue')))
@@ -393,13 +398,14 @@ def draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error):
         ))
         fig.update_layout(title=f'{pktidx} f={cfo_freq_est:.3f} t={time_error:.3f} obj={objective_core(cfo_freq_est, time_error, pktdata2a):.5f}', legend=dict(x=0.1, y=1.1))
         if not parse_opts.noplot: fig.show()
-    if True:
+    if False:
         fig = go.Figure()  # px.line(tocpu(yval1[xval] - yval2[xval])[:3 * Config.nsamp])
         fig.add_vline(Config.nsamp)
         fig.add_vline(Config.nsamp*Config.preamble_len)
         fig.add_vline(Config.nsamp*(Config.sfdpos + 2.25))
         # fig.add_vline(Config.nsamp * 2)
         length = len(detect_symb_plt)
+        print(pktdata2a.shape, detect_symb_plt.shape)
         y = tocpu(cp.unwrap(cp.angle(pktdata2a[math.ceil(time_error):length + math.ceil(time_error)] * detect_symb_plt[:length].conj())))
         # y[abs(y)>2000] = 0
         x = np.arange(0, len(y), 100)
@@ -567,274 +573,78 @@ def read_pkt(file_path_in, threshold, min_length=20):
                 yield cp.concatenate(current_sequence)
             current_sequence = []
 
-
+def add_freq(pktdata_in, est_cfo_freq):
+    cfosymb = cp.exp(2j * cp.pi * est_cfo_freq * cp.linspace(0, (len(pktdata_in) - 1) / Config.fs, num=len(pktdata_in)))
+    cfosymb = cfosymb.astype(cp.complex64)
+    pktdata2a = pktdata_in * cfosymb
+    return pktdata2a
 
 def coarse_work_fast(pktdata_in):
-    # sig1 = pktdata_in[Config.nsamp * Config.sfdpos: Config.nsamp * (Config.sfdpos + 1)]
-    # y_values = cp.unwrap(cp.angle(sig1)).get()[3000:]
-    # x_values = np.arange(len(y_values)) + 3000  # x values from 1 to n
-    # degree = 2
-    # coefficients = np.polyfit(x_values, y_values, degree)
-    # print('c0', coefficients)
-
-    phaseFlag = False
-
+    # pktdata_in = cp.roll(pktdata_in, 1000) #this makes t - 1000
+    # pktdata_in = add_freq(pktdata_in, 1000) #this makes f + 1000
     t = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
     upchirp = mychirp(t, f0=-Config.bw / 2, f1=Config.bw / 2, t1=2 ** Config.sf / Config.bw)
     downchirp = mychirp(t, f0=Config.bw / 2, f1=-Config.bw / 2, t1=2 ** Config.sf / Config.bw)
     plotflag = False
+    ld = round(Config.bw / Config.fs * Config.fft_n)
+    fups = []
+    fdowns = []
     for pidx in range(Config.preamble_len + Config.detect_range_pkts):
         sig1 = pktdata_in[Config.nsamp * pidx: Config.nsamp * (pidx + 1)]
-        y_values = cp.unwrap(cp.angle(sig1)).get()[3000:]
-        x_values = np.arange(len(y_values)) + 3000  # x values from 1 to n
-        degree = 2
-        coefficients = np.polyfit(x_values, y_values, degree)
-        print('c', pidx, coefficients)
-
-        if plotflag:
-            plt.plot(cp.unwrap(cp.angle(sig1)).get())
-            plt.plot(cp.unwrap(cp.angle(upchirp)).get())
-            polynomial = np.poly1d(coefficients)
-            predicted_y = polynomial(x_values)
-            plt.figure(figsize=(10, 6))
-            plt.plot(x_values, y_values, '-', label='Original y values')
-            plt.plot(x_values, predicted_y, '--', label='Fitted polynomial')
-            plt.xlabel('x values')
-            plt.ylabel('y values')
-            plt.title('Polynomial Fit to y values')
-            plt.legend()
-            plt.grid(True)
-            plt.show()
-
-            plt.title(str(pidx) + 'pa')
-            plt.savefig(str(pidx) + 'p.png')
-            plt.clf()
         sig2 = sig1 * downchirp
-        if plotflag:
-            plt.plot(cp.unwrap(cp.angle(sig2)).get())
-            plt.title(str(pidx) + 'pa')
-            plt.savefig(str(pidx) + 'p2.png')
-            plt.clf()
-        Config.fft_ups[pidx] = myfft(sig2, n=Config.fft_n, plan=Config.plan)
-        # print(pidx, cp.argmax(cp.abs(Config.fft_ups[pidx][:Config.fft_n // 2])) / Config.fft_upsamp, cp.max(cp.abs(Config.fft_ups[pidx])[:Config.fft_n//2]))
-        # get the first half which is the upper (fft_n//2:)
-        # print(pidx, cp.argmax(cp.abs(Config.fft_ups[pidx][Config.fft_n // 2:])) / Config.fft_upsamp, cp.max(cp.abs(Config.fft_ups[pidx])[Config.fft_n//2:]), Config.fft_n/ Config.fft_upsamp)
-        if plotflag:
-            plt.plot(cp.abs(Config.fft_ups[pidx]).get())
-            # plt.plot((cp.abs(Config.fft_ups[pidx][:Config.fft_n // 2]) + cp.abs(Config.fft_ups[pidx][Config.fft_n // 2:])).get())
-            plt.title(str(pidx))
-            plt.savefig(str(pidx) + '.png')
-            plt.clf()
+        data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
+        data = cp.abs(data0[ld:]) + cp.abs(data0[:-ld])
+        # data2 = data.copy()
+        # data2[cp.argmax(cp.abs(data)) - 2000 :cp.argmax(cp.abs(data)) + 2000 ]= 0
+        # print(cp.max(cp.abs(data2)), cp.argmax(cp.abs(data2)))
+        fups.append(cp.argmax(cp.abs(data)).get() - (Config.fft_n // 2 ))
+        # plt.plot(data[::100].get())
+        # plt.title(f"up {pidx}")
+        # plt.show() # TODO
 
-    # plt.plot(cp.unwrap(cp.angle(downchirp)).get())
-    # plt.plot(cp.unwrap(cp.angle(upchirp)).get())
-    # for sig1 in (downchirp, upchirp):
-    #     y_values = cp.unwrap(cp.angle(sig1)).get()[3000:]
-    #     x_values = np.arange(len(y_values)) + 3000  # x values from 1 to n
-    #     degree = 2
-    #     coefficients = np.polyfit(x_values, y_values, degree)
-    #     print('c2', coefficients)
-
-    plotflag = False
     for pidx in range(0, 2 + Config.detect_range_pkts):
         sig1 = pktdata_in[Config.nsamp * (pidx + Config.sfdpos): Config.nsamp * (pidx + Config.sfdpos + 1)]
-        y_values = cp.unwrap(cp.angle(sig1)).get()[3000:]
-        x_values = np.arange(len(y_values)) + 3000  # x values from 1 to n
-        degree = 2
-        coefficients = np.polyfit(x_values, y_values, degree)
-        print('c0', coefficients)
-
-        if plotflag:
-            plt.plot(cp.unwrap(cp.angle(sig1)).get())
-            # plt.plot(-cp.unwrap(cp.angle(upchirp)).get())
-            plt.title(str(pidx)+'sig1')
-            # plt.savefig(str(pidx) + 'ad.png')
-            plt.show()
-        if plotflag:
-            # plt.plot(cp.unwrap(cp.angle(sig1)).get())
-            # plt.title(str(pidx)+'a2')
-            # plt.savefig(str(pidx) + 'ad2.png')
-            # plt.clf()
-
-            plt.plot(cp.unwrap(cp.angle(sig1)).get())
-            plt.title("sig1 time upchirp")
-            plt.show()
-
-            plt.plot(cp.unwrap(cp.angle(upchirp)).get())
-            y_values = cp.unwrap(cp.angle(sig1)).get()[3000:]
-            x_values = np.arange(len(y_values)) + 3000  # x values from 1 to n
-            degree = 2
-            coefficients = np.polyfit(x_values, y_values, degree)
-            print('c', coefficients)
-
-            polynomial = np.poly1d(coefficients)
-
-            # Generate predicted y values
-            predicted_y = polynomial(x_values)
-
-            # Plot the original y values and the fitted polynomial
-            plt.figure(figsize=(10, 6))
-            plt.plot(x_values, y_values, '-', label='Original y values')
-            plt.plot(x_values, predicted_y, '--', label='Fitted polynomial')
-            plt.xlabel('x values')
-            plt.ylabel('y values')
-            plt.title('Polynomial Fit to y values')
-            plt.legend()
-            plt.grid(True)
-            plt.show()
-
-            plt.title(str(pidx) + 'da')
-            plt.savefig(str(pidx) + 'dd.png')
-            plt.clf()
         sig2 =  sig1 * upchirp
+        data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
+        data = cp.abs(data0[ld:]) + cp.abs(data0[:-ld])
+        # data2 = data.copy()
+        # data2[cp.argmax(cp.abs(data)) - 2000 :cp.argmax(cp.abs(data)) + 2000 ]= 0
+        # print(cp.max(cp.abs(data2)), cp.argmax(cp.abs(data2)))
+        fdowns.append(cp.argmax(cp.abs(data)).get() - (Config.fft_n // 2))
+        # plt.plot(cp.abs(data0[::100]).get())
+        # plt.title(f"down {pidx}")
+        # plt.show() # TODO
 
-        Config.fft_downs[pidx] = myfft(sig2, n=Config.fft_n, plan=Config.plan)
-        print('c1',cp.argmax(cp.abs(Config.fft_downs[pidx][:Config.fft_n // 2])) )  # rate, [0, 1)
-        print('c11',cp.argmax(cp.abs(Config.fft_downs[pidx])) )  # rate, [0, 1)
-        if plotflag:
-            plt.plot(cp.abs(Config.fft_downs[pidx]).get())
-            # plt.plot((cp.abs(Config.fft_ups[pidx][:Config.fft_n // 2]) + cp.abs(Config.fft_ups[pidx][Config.fft_n // 2:])).get())
-            plt.title(str(pidx))
-            plt.savefig(str(pidx) + 'd.png')
-            plt.clf()
 
 
-    if not phaseFlag:
-        fft_ups2 = cp.abs(Config.fft_ups) ** 2
-        fft_downs2 = cp.abs(Config.fft_downs) ** 2
-    else:
-        fft_ups2 = Config.fft_ups
-        fft_downs2 = Config.fft_downs
+
 
     skip_preambles = 8
     midx = 0
-    y_values = [cp.argmax(cp.abs(Config.fft_ups[pidx][Config.fft_n // 2:])).get() for pidx in range(midx, Config.preamble_len + midx)][skip_preambles:]
+    y_values = fups[skip_preambles:]#[cp.argmax(cp.abs(Config.fft_ups[pidx])).get() - (Config.fft_n//2-ld) for pidx in range(midx, Config.preamble_len + midx)][skip_preambles:] # length: 0.5fft_n, delta_t>0
     x_values = np.arange(len(y_values)) + skip_preambles  # x values from 1 to n
     degree = 1
     coefficients = np.polyfit(x_values, y_values, degree)
     print('c',coefficients)
     polynomial = np.poly1d(coefficients)
-    fft_val_up = polynomial(Config.sfdpos) / Config.fft_n + 0.5  # rate, [0, 1)  #!!! because previous +0.5
-
-    skip_preambles = 0
-    y_values = [cp.argmax(cp.abs(Config.fft_ups[pidx][Config.fft_n // 2:])).get() for pidx in range(midx, Config.preamble_len + midx)][skip_preambles:]
-    x_values = np.arange(len(y_values)) + skip_preambles  # x values from 1 to n
-    predicted_y = polynomial(x_values)
-    plt.figure(figsize=(10, 6))
-    plt.plot(x_values, y_values, 'o', label='Original y values')
-    plt.plot(x_values, predicted_y, '-', label='Fitted polynomial')
-    plt.xlabel('x values')
-    plt.ylabel('y values')
-    plt.title('Polynomial Fit to y values')
-    plt.legend()
-    plt.show()
+    fft_val_up = polynomial(Config.sfdpos + 1) / ld # rate, [-0.5, )  #!!! because previous +0.5
 
 
-    # skip_preambles = 8
-    # midx = 0
-    # y_values = [cp.argmax(cp.abs(Config.fft_ups[pidx][:Config.fft_n // 2])).get() for pidx in range(midx, Config.preamble_len + midx)][skip_preambles:]
-    # x_values = np.arange(len(y_values)) + skip_preambles  # x values from 1 to n
-    # degree = 1
-    # coefficients = np.polyfit(x_values, y_values, degree)
-    # print('c', coefficients)
-    # polynomial = np.poly1d(coefficients)
-    # fft_val_up = polynomial(Config.sfdpos) / Config.fft_n + 0.5  # rate, [0, 1)  #!!! because previous +0.5
-    #
-    # skip_preambles = 1
-    # y_values = [cp.argmax(cp.abs(Config.fft_ups[pidx][:Config.fft_n // 2])).get() for pidx in range(midx, Config.preamble_len + midx)][skip_preambles:]
-    # x_values = np.arange(len(y_values)) + skip_preambles  # x values from 1 to n
-    # predicted_y = polynomial(x_values)
-    # plt.figure(figsize=(10, 6))
-    # plt.plot(x_values, y_values, 'o', label='Original y values')
-    # plt.plot(x_values, predicted_y, '-', label='Fitted polynomial')
-    # plt.xlabel('x values')
-    # plt.ylabel('y values')
-    # plt.title('Polynomial Fit to y values')
-    # plt.legend()
-    # plt.show()
-
-
-    # down get the first part, lower sig
-    fft_val_down = cp.argmax(cp.abs(Config.fft_downs[1][:Config.fft_n // 2])) / Config.fft_n  # rate, [0, 1)
+    fft_val_down = fdowns[1] / ld # cp.argmax(cp.abs(Config.fft_downs[1])).get() - (Config.fft_n//2-ld) / Config.fft_n  # rate, [0, 1)
     pidx = 0
     print('fup fdown',fft_val_up, fft_val_down)
 
-    est_cfo_r = (fft_val_up + fft_val_down) / 2
-    est_to_r = (fft_val_down - fft_val_up) / 2
-    print('est',est_cfo_r, est_to_r)
-    if abs(est_cfo_r - 1 / 2) <= 1 / 4:  # abs(cfo) > 1/4
-        est_cfo_r += 1 / 2
-        est_to_r += 1 / 2
+    f0 = ((fft_val_up + fft_val_down) / 2) % 1 - 0.5
+    print(f0)
+    f = Config.bw * f0
+    t = (f0 - fft_val_up) % 1 * Config.tsig
 
-    est_cfo_r %= 1  # [0, 1)
-    est_to_r %= 1  # [0, 1)
-    if est_cfo_r > 1 / 2: est_cfo_r -= 1  # [-1/2, 1/2)
-    if est_to_r > 1 / 2:
-        est_to_r -= 1  # [-1/2, 1/2)
-        # if pidx == 0: fft_val_abs *= 0  # shift left is nothing!
-    est_cfo_f = est_cfo_r * Config.fs
-    est_to_s = (est_to_r * 8 + pidx) * Config.nsamp  # add detect packet pos TODO
-    if abs(est_to_r) > 1 / 8:
-        logger.error(
-            f"E07_LARGE_TIME_OFFSET: {fft_val_up=} {fft_val_down=} {est_cfo_r=} {est_to_r=} {est_cfo_f=} {est_to_s=} {pidx=}")
-    if abs(est_cfo_f) >= Config.fs / 8:
-        logger.warning(
-            f"E07_LARGE_CFO: {fft_val_up=} {fft_val_down=} {est_cfo_r=} {est_to_r=} {est_cfo_f=} {est_to_s=} {pidx=}")
-    print("EST", est_cfo_f, est_to_s)
-    # plt.figure(figsize=(10, 6))
-    # plt.plot(x_values, y_values, 'o', label='Original y values')
-    # plt.plot(x_values, predicted_y, '-', label='Fitted polynomial')
-    # plt.xlabel('x values')
-    # plt.ylabel('y values')
-    # plt.title('Polynomial Fit to y values')
-    # plt.legend()
-    # plt.show()
+    # Compute t
+    # t = Config.tsig * ((fft_val_up - fft_val_down) * Config.fs / (2 * Config.bw)) % Config.tsig
+    print('estnew', f, t)
 
+    draw_fit(0, pktdata_in, f, t)
 
-    sys.exit(0)
-
-    fft_vals = cp.zeros((Config.detect_range_pkts, 3), dtype=cp.float32)
-    for pidx in range(Config.detect_range_pkts):
-        fft_val_up = cp.argmax(cp.abs(cp.sum(fft_ups2[pidx: pidx + Config.preamble_len], axis=0)))
-        if fft_val_up > Config.fft_n / 2: fft_val_up -= Config.fft_n
-        fft_val_down = cp.argmax(cp.abs(cp.sum(fft_downs2[pidx: pidx + 2], axis=0)))  # + fft_down_lst[pidx]))
-        if fft_val_down > Config.fft_n / 2: fft_val_down -= Config.fft_n
-        fft_val_abs = cp.max(cp.abs(cp.sum(fft_ups2[pidx: pidx + Config.preamble_len], axis=0))) \
-                      + cp.max(cp.abs(cp.sum(fft_downs2[pidx: pidx + 2], axis=0)))  # + fft_down_lst[pidx]))
-        # logger.info(f"{fft_val_up=} {fft_val_down=} {Config.fft_n=}")
-        est_cfo_r = (fft_val_up + fft_val_down) / 2 / Config.fft_n  # rate, [0, 1)
-        est_to_r = (fft_val_down - fft_val_up) / 2 / Config.fft_n  # rate, [0, 1)
-        if abs(est_cfo_r - 1 / 2) <= 1 / 4:  # abs(cfo) > 1/4
-            est_cfo_r += 1 / 2
-            est_to_r += 1 / 2
-        est_cfo_r %= 1  # [0, 1)
-        est_to_r %= 1  # [0, 1)
-        if est_cfo_r > 1 / 2: est_cfo_r -= 1  # [-1/2, 1/2)
-        if est_to_r > 1 / 2:
-            est_to_r -= 1  # [-1/2, 1/2)
-            if pidx == 0: fft_val_abs *= 0  # shift left is nothing!
-        est_cfo_f = est_cfo_r * Config.fs
-        est_to_s = (est_to_r * 8 + pidx) * Config.nsamp  # add detect packet pos TODO
-        if abs(est_to_r) > 1/8:
-            logger.error(f"E07_LARGE_TIME_OFFSET: {fft_val_up=} {fft_val_down=} {est_cfo_r=} {est_to_r=} {est_cfo_f=} {est_to_s=} {pidx=}")
-        if abs(est_cfo_f) >= Config.fs / 8:
-            logger.warning(f"E07_LARGE_CFO: {fft_val_up=} {fft_val_down=} {est_cfo_r=} {est_to_r=} {est_cfo_f=} {est_to_s=} {pidx=}")
-        fft_vals[pidx] = cp.array((est_cfo_f, est_to_s, fft_val_abs), dtype=cp.float32)
-        # fig = go.Figure()
-        # fig.add_trace(go.Scatter(y=fft_ups2[idx].get(), mode='lines', name='Ours'))
-        # fig.add_trace(go.Scatter(y=fft_downs2[idx].get(), mode='lines', name='Ours'))
-        # fig.update_layout(title=f"{idx=} {fft_val_up=} {fft_val_down=}")
-        # fig.show()
-    # sys.exit(0)
-    bestidx = cp.argmax(fft_vals[:, 2])
-    # print(fft_vals[:, 2])
-    # if bestidx != 0:
-    #     logger.warning(f"E08_BESTIDX_NOT_ZERO: {bestidx=}")
-    #     logger.warning(f"E08_BESTIDX_NOT_ZERO: fft_ups2={cp_str(cp.argmax(cp.abs(fft_ups2), axis=1)/Config.fft_n)}")
-    #     logger.warning(f"E08_BESTIDX_NOT_ZERO: fft_dns={cp_str(cp.argmax(cp.abs(fft_downs2), axis=1)/Config.fft_n)}")
-    #     logger.warning(f"E08_BESTIDX_NOT_ZERO: fft_lls={cp_str(cp.argmax(cp.abs(fft_down_lst), axis=1)/Config.fft_n)}")
-    # logger.info(cp.argmax(fft_vals[:, 2]))
-    return fft_vals[bestidx][0].item(), fft_vals[bestidx][1].item()
 
 
 # read packets from file
