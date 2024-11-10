@@ -4,10 +4,11 @@ import os
 import random
 import sys
 import time
+import itertools
 import pickle
 import cmath
 import math
-import matplotlib.pyplot as plt, mpld3
+import matplotlib.pyplot as plt
 import plotly.express as px
 import plotly.graph_objects as go
 # import pandas as pd
@@ -131,7 +132,7 @@ class Config:
     preamble_len = 16  # TODO!!!!
 
     thresh = None# 0.03
-    file_paths = ['/data/djl/temp/OptimalPkt/fingerprint_data/data0_test_3']
+    file_paths = ['/data/djl/temp/OptimalPkt/fingerprint_data/data0_test_3',]# '/data/djl/temp/OptimalPkt/fingerprint_data/data1_test_3']
 
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples
@@ -398,7 +399,7 @@ def draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error):
         ))
         fig.update_layout(title=f'{pktidx} f={cfo_freq_est:.3f} t={time_error:.3f} obj={objective_core(cfo_freq_est, time_error, pktdata2a):.5f}', legend=dict(x=0.1, y=1.1))
         if not parse_opts.noplot: fig.show()
-    if False:
+    if True:
         fig = go.Figure()  # px.line(tocpu(yval1[xval] - yval2[xval])[:3 * Config.nsamp])
         fig.add_vline(Config.nsamp)
         fig.add_vline(Config.nsamp*Config.preamble_len)
@@ -562,16 +563,31 @@ def read_large_file(file_path_in):
             yield rawdata
 
 
-def read_pkt(file_path_in, threshold, min_length=20):
-    current_sequence = []
-    for rawdata in read_large_file(file_path_in):
-        number = cp.max(cp.abs(rawdata))
-        if number > threshold:
-            current_sequence.append(rawdata)
+
+def read_pkt(file_path_in1, file_path_in2, threshold, min_length=20):
+    current_sequence1 = []
+    current_sequence2 = []
+
+    for rawdata1, rawdata2 in itertools.zip_longest(read_large_file(file_path_in1), read_large_file(file_path_in2)):
+        if rawdata1 is None or rawdata2 is None:
+            break  # Both files are done
+
+        number1 = cp.max(cp.abs(rawdata1)) if rawdata1 is not None else 0
+
+        # Check for threshold in both files
+        if number1 > threshold:
+            current_sequence1.append(rawdata1)
+            current_sequence2.append(rawdata2)
         else:
-            if len(current_sequence) > min_length:
-                yield cp.concatenate(current_sequence)
-            current_sequence = []
+            if len(current_sequence1) > min_length:
+                yield cp.concatenate(current_sequence1), cp.concatenate(current_sequence2)
+            current_sequence1 = []
+            current_sequence2 = []
+
+    # Yield any remaining sequences after the loop
+    if len(current_sequence1) > min_length:
+        yield cp.concatenate(current_sequence1), cp.concatenate(current_sequence2)
+
 
 def add_freq(pktdata_in, est_cfo_freq):
     cfosymb = cp.exp(2j * cp.pi * est_cfo_freq * cp.linspace(0, (len(pktdata_in) - 1) / Config.fs, num=len(pktdata_in)))
@@ -579,15 +595,16 @@ def add_freq(pktdata_in, est_cfo_freq):
     pktdata2a = pktdata_in * cfosymb
     return pktdata2a
 
-def coarse_work_fast(pktdata_in):
+def coarse_work_fast(pktdata_in, retpflag = False):
     # pktdata_in = cp.roll(pktdata_in, 1000) #this makes t - 1000
     # pktdata_in = add_freq(pktdata_in, 1000) #this makes f + 1000
-    t = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
-    upchirp = mychirp(t, f0=-Config.bw / 2, f1=Config.bw / 2, t1=2 ** Config.sf / Config.bw)
-    downchirp = mychirp(t, f0=Config.bw / 2, f1=-Config.bw / 2, t1=2 ** Config.sf / Config.bw)
+    est_to_s = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
+    upchirp = mychirp(est_to_s, f0=-Config.bw / 2, f1=Config.bw / 2, t1=2 ** Config.sf / Config.bw)
+    downchirp = mychirp(est_to_s, f0=Config.bw / 2, f1=-Config.bw / 2, t1=2 ** Config.sf / Config.bw)
     plotflag = False
     ld = round(Config.bw / Config.fs * Config.fft_n)
     fups = []
+    fret = []
     fdowns = []
     for pidx in range(Config.preamble_len + Config.detect_range_pkts):
         sig1 = pktdata_in[Config.nsamp * pidx: Config.nsamp * (pidx + 1)]
@@ -597,10 +614,40 @@ def coarse_work_fast(pktdata_in):
         # data2 = data.copy()
         # data2[cp.argmax(cp.abs(data)) - 2000 :cp.argmax(cp.abs(data)) + 2000 ]= 0
         # print(cp.max(cp.abs(data2)), cp.argmax(cp.abs(data2)))
-        fups.append(cp.argmax(cp.abs(data)).get() - (Config.fft_n // 2 ))
-        # plt.plot(data[::100].get())
-        # plt.title(f"up {pidx}")
-        # plt.show() # TODO
+        amax = cp.argmax(cp.abs(data))
+        fups.append(amax.get() - (Config.fft_n // 2 ))
+        fret.append(cp.angle(data0[ld:][amax]).get())
+        fret.append(cp.angle(data0[-ld:][amax]).get())
+
+
+        if False:
+            y_values = cp.unwrap(cp.angle(sig1)).get()[3000:]
+            x_values = np.arange(len(y_values)) + 3000  # x values from 1 to n
+            degree = 2
+            coefficients = np.polyfit(x_values, y_values, degree)
+            print('c', pidx, coefficients)
+            # plt.plot(cp.unwrap(cp.angle(sig1)).get())
+            # plt.plot(cp.unwrap(cp.angle(upchirp)).get())
+            # polynomial = np.poly1d(coefficients)
+            # predicted_y = polynomial(x_values)
+            # plt.figure(figsize=(10, 6))
+            # plt.plot(x_values, y_values, '-', label='Original y values')
+            # plt.plot(x_values, predicted_y, '--', label='Fitted polynomial')
+            # plt.xlabel('x values')
+            # plt.ylabel('y values')
+            # plt.title('Polynomial Fit to y values')
+            # plt.legend()
+            # plt.grid(True)
+            # plt.show()
+            #
+            # plt.title(str(pidx) + 'pa')
+            # plt.savefig(str(pidx) + 'p.png')
+            # plt.clf()
+
+        if False:#pidx == 8:
+            plt.plot(data[cp.argmax(cp.abs(data)) - 5000: cp.argmax(cp.abs(data)) + 5000].get())
+            plt.title(f"up {pidx}")
+            plt.show() # TODO
 
     for pidx in range(0, 2 + Config.detect_range_pkts):
         sig1 = pktdata_in[Config.nsamp * (pidx + Config.sfdpos): Config.nsamp * (pidx + Config.sfdpos + 1)]
@@ -610,11 +657,17 @@ def coarse_work_fast(pktdata_in):
         # data2 = data.copy()
         # data2[cp.argmax(cp.abs(data)) - 2000 :cp.argmax(cp.abs(data)) + 2000 ]= 0
         # print(cp.max(cp.abs(data2)), cp.argmax(cp.abs(data2)))
+        amax = cp.argmax(cp.abs(data))
         fdowns.append(cp.argmax(cp.abs(data)).get() - (Config.fft_n // 2))
+        fret.append(cp.angle(data[amax]).get())
+        if False:#pidx == 1:
+            plt.plot(data[cp.argmax(cp.abs(data)) - 5000: cp.argmax(cp.abs(data)) + 5000].get())
+            plt.title(f"down {pidx}")
+            plt.show() # TODO
         # plt.plot(cp.abs(data0[::100]).get())
         # plt.title(f"down {pidx}")
         # plt.show() # TODO
-
+    if retpflag: return fret
 
 
 
@@ -625,26 +678,38 @@ def coarse_work_fast(pktdata_in):
     x_values = np.arange(len(y_values)) + skip_preambles  # x values from 1 to n
     degree = 1
     coefficients = np.polyfit(x_values, y_values, degree)
-    print('c',coefficients)
+    # print('c',coefficients)
     polynomial = np.poly1d(coefficients)
     fft_val_up = polynomial(Config.sfdpos + 1) / ld # rate, [-0.5, )  #!!! because previous +0.5
 
 
     fft_val_down = fdowns[1] / ld # cp.argmax(cp.abs(Config.fft_downs[1])).get() - (Config.fft_n//2-ld) / Config.fft_n  # rate, [0, 1)
     pidx = 0
-    print('fup fdown',fft_val_up, fft_val_down)
+    # print('fup fdown',fft_val_up, fft_val_down)
 
     f0 = ((fft_val_up + fft_val_down) / 2) % 1 - 0.5
-    print(f0)
-    f = Config.bw * f0
-    t = (f0 - fft_val_up) % 1 * Config.tsig
+    # print(f0)
+    est_cfo_f = Config.bw * f0
+    est_to_s = (f0 - fft_val_up) % 1 * Config.tsig
 
     # Compute t
     # t = Config.tsig * ((fft_val_up - fft_val_down) * Config.fs / (2 * Config.bw)) % Config.tsig
-    print('estnew', f, t)
+    # print('estnew', est_cfo_f, est_to_s)
 
-    draw_fit(0, pktdata_in, f, t)
+    # draw_fit(0, pktdata_in, est_cfo_f, est_to_s)
 
+    return est_cfo_f, est_to_s
+
+
+def fix_cfo_to(est_cfo_f, est_to_s, pktdata_in):
+    est_cfo_slope = est_cfo_f / Config.sig_freq * Config.bw / Config.tsig * Config.fs
+    sig_time = len(pktdata_in) / Config.fs
+    # print(est_cfo_slope * sig_time)
+    # logger.info(f'I03_3: SFO {est_cfo_f=} Hz, {est_cfo_slope=} Hz/s, {sig_time=} s')
+    estt = cp.linspace(0, sig_time, len(pktdata_in) + 1)[:-1]
+    est_cfo_symbol = mychirp(estt, f0=-est_cfo_f, f1=-est_cfo_f + est_cfo_slope * sig_time, t1=sig_time)
+    pktdata_fix = pktdata_in * est_cfo_symbol
+    return cp.roll(pktdata_fix, -round(est_to_s))
 
 
 # read packets from file
@@ -681,19 +746,32 @@ if __name__ == "__main__":
                 legend=dict(x=0.1, y=1.1))
             fig.show()
 
-        pkt_totcnt = 0
-        pktdata_lst = []
-        tstart_lst = []
-        cfo_freq_est = []
-        for pkt_idx, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=30)):
+        ps = []
+        ps2 = []
+        for pkt_idx, pkt_data in enumerate(read_pkt(file_path, file_path.replace("data0", "data1"), thresh, min_length=30)):
             if pkt_idx < 1: continue
-            # pkt_data = pkt_data[Config.nsamp*2:] #!!!
-            # if cp.max(cp.abs(pkt_data)) > 0.072: continue
-            logger.info(f"Prework {pkt_idx=} {len(pkt_data)=}")
-            # fine_work_new(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
-            coarse_work_fast(pkt_data / cp.mean(cp.abs(pkt_data)))
-            break
-            # p, t, c = fine_work_new(pkt_idx, pkt_data / cp.mean(cp.abs(pkt_data)))
+            data1, data2 = pkt_data
+            # data1 = data1[Config.nsamp*2:] #!!!
+            # if cp.max(cp.abs(data1)) > 0.072: continue
+            logger.info(f"Prework {pkt_idx=} {len(data1)=}")
+            # fine_work_new(pkt_idx, data1 / cp.mean(cp.abs(data1)))
+            est_cfo_f, est_to_s = coarse_work_fast(data1 / cp.mean(cp.abs(data1)))
+            d1 = fix_cfo_to(est_cfo_f, est_to_s, data1)
+            print('f', objective_core(est_cfo_f, est_to_s, data1))
+            for i in range(5):
+                f, t = coarse_work_fast(d1)
+                est_cfo_f += f
+                est_to_s += t
+                d1 = fix_cfo_to(est_cfo_f, est_to_s, data1)
+                print('f', objective_core(est_cfo_f, est_to_s, data1))
+            ps.extend(coarse_work_fast(d1, True))
+            d2 = fix_cfo_to(est_cfo_f, est_to_s, data2)
+            ps2.extend(coarse_work_fast(d2, True))
+            plt.axvline(len(ps))
+        plt.plot(np.angle(np.exp(1j * np.array(ps))/np.exp(1j * np.array(ps2))))
+        # plt.plot(ps2)
+        plt.show()
+            # p, t, c = fine_work_new(pkt_idx, data1 / cp.mean(cp.abs(data1)))
             # pktdata_lst.append(p)
             # tstart_lst.append(t)
             # cfo_freq_est.append(c)
