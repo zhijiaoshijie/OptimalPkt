@@ -171,7 +171,7 @@ class Config:
     if not os.path.exists(figpath): os.mkdir(figpath)
 
     fft_upsamp = 1024
-    detect_range_pkts = 0
+    detect_range_pkts = 3
     fft_n = nsamp * fft_upsamp
     plan = fft.get_fft_plan(cp.zeros(fft_n, dtype=cp.complex64))
     fft_ups = cp.zeros((preamble_len + detect_range_pkts, fft_n), dtype=cp.complex64)
@@ -210,7 +210,9 @@ def objective(params, pktdata2a):
 
 
 def objective_core(cfofreq, time_error, pktdata2a):
-    pktdata2a_roll = cp.roll(pktdata2a, -math.ceil(time_error))
+    assert pktdata2a.ndim == 1
+    assert cp.mean(cp.abs(pktdata2a)).ndim == 0
+    pktdata2a_roll = cp.roll(pktdata2a / cp.mean(cp.abs(pktdata2a)), -math.ceil(time_error))
     detect_symb = gen_refchirp(cfofreq, time_error - math.ceil(time_error), deadzone=Config.gen_refchirp_deadzone)
     res = cp.zeros(len(detect_symb), dtype=cp.complex64)
     ddx = 0  # TODO
@@ -376,20 +378,20 @@ def draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error):
         fig.add_trace(go.Scatter(x=tocpu(xval2), y=tocpu(yval1[xval2]), mode='lines', name='input', line=dict(color='blue')))
         fig.add_trace(
             go.Scatter(x=tocpu(xval), y=tocpu(yval2), mode='lines', name='fit', line=dict(dash='dash', color='red')))
-        fig.add_trace(go.Scatter(
-            x=[math.ceil(time_error), math.ceil(time_error) + len(detect_symb_plt)],
-            y=[0, Config.f_lower * 2 * np.pi / Config.fs * len(detect_symb_plt)],
-            mode='lines',
-            line=dict(color='gray', dash='dash'),
-            showlegend=False
-        ))
-        fig.add_trace(go.Scatter(
-            x=[math.ceil(time_error), math.ceil(time_error) + len(detect_symb_plt)],
-            y=[0, Config.f_upper * 2 * np.pi / Config.fs * len(detect_symb_plt)],
-            mode='lines',
-            line=dict(color='gray', dash='dash'),
-            showlegend=False
-        ))
+        # fig.add_trace(go.Scatter(
+        #     x=[math.ceil(time_error), math.ceil(time_error) + len(detect_symb_plt)],
+        #     y=[0, Config.f_lower * 2 * np.pi / Config.fs * len(detect_symb_plt)],
+        #     mode='lines',
+        #     line=dict(color='gray', dash='dash'),
+        #     showlegend=False
+        # ))
+        # fig.add_trace(go.Scatter(
+        #     x=[math.ceil(time_error), math.ceil(time_error) + len(detect_symb_plt)],
+        #     y=[0, Config.f_upper * 2 * np.pi / Config.fs * len(detect_symb_plt)],
+        #     mode='lines',
+        #     line=dict(color='gray', dash='dash'),
+        #     showlegend=False
+        # ))
         fig.add_trace(go.Scatter(
             x=[math.ceil(time_error), math.ceil(time_error) + len(detect_symb_plt)],
             y=[0, tocpu(cfo_freq_est) * 2 * np.pi / Config.fs * len(detect_symb_plt)],
@@ -409,7 +411,7 @@ def draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error):
         print(pktdata2a.shape, detect_symb_plt.shape)
         y = tocpu(cp.unwrap(cp.angle(pktdata2a[math.ceil(time_error):length + math.ceil(time_error)] * detect_symb_plt[:length].conj())))
         # y[abs(y)>2000] = 0
-        x = np.arange(0, len(y), 100)
+        x = np.arange(0, len(y), 1)
         fig.add_trace(
             go.Scatter(x=x, y=y[x], mode="lines", #marker=dict(symbol='circle', size=0.5),
                        showlegend=False))
@@ -610,12 +612,13 @@ def coarse_work_fast(pktdata_in, retpflag = False):
         sig1 = pktdata_in[Config.nsamp * pidx: Config.nsamp * (pidx + 1)]
         sig2 = sig1 * downchirp
         data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
-        data = cp.abs(data0[ld:]) + cp.abs(data0[:-ld])
+        data = cp.abs(data0) + cp.abs(cp.roll(data0, -ld))
+        Config.fft_ups[pidx] = data
         # data2 = data.copy()
         # data2[cp.argmax(cp.abs(data)) - 2000 :cp.argmax(cp.abs(data)) + 2000 ]= 0
         # print(cp.max(cp.abs(data2)), cp.argmax(cp.abs(data2)))
         amax = cp.argmax(cp.abs(data))
-        fups.append(amax.get() - (Config.fft_n // 2 ))
+        fups.append(amax.get())
         fret.append(cp.angle(data0[ld:][amax]).get())
         fret.append(cp.angle(data0[-ld:][amax]).get())
 
@@ -645,7 +648,9 @@ def coarse_work_fast(pktdata_in, retpflag = False):
             # plt.clf()
 
         if False:#pidx == 8:
-            plt.plot(data[cp.argmax(cp.abs(data)) - 5000: cp.argmax(cp.abs(data)) + 5000].get())
+            # xrange = cp.arange(cp.argmax(cp.abs(data0)).item() - 5000,cp.argmax(cp.abs(data0)).item() + 5000)
+            # plt.plot(xrange.get(), cp.abs(data0[xrange]).get())
+            plt.plot(cp.abs(data0).get())
             plt.title(f"up {pidx}")
             plt.show() # TODO
 
@@ -653,51 +658,81 @@ def coarse_work_fast(pktdata_in, retpflag = False):
         sig1 = pktdata_in[Config.nsamp * (pidx + Config.sfdpos): Config.nsamp * (pidx + Config.sfdpos + 1)]
         sig2 =  sig1 * upchirp
         data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
-        data = cp.abs(data0[ld:]) + cp.abs(data0[:-ld])
+        data = cp.abs(data0) + cp.abs(cp.roll(data0, -ld))
+        Config.fft_downs[pidx] = data
         # data2 = data.copy()
         # data2[cp.argmax(cp.abs(data)) - 2000 :cp.argmax(cp.abs(data)) + 2000 ]= 0
         # print(cp.max(cp.abs(data2)), cp.argmax(cp.abs(data2)))
         amax = cp.argmax(cp.abs(data))
-        fdowns.append(cp.argmax(cp.abs(data)).get() - (Config.fft_n // 2))
+        fdowns.append(cp.argmax(cp.abs(data)).get() )
         fret.append(cp.angle(data[amax]).get())
         if False:#pidx == 1:
-            plt.plot(data[cp.argmax(cp.abs(data)) - 5000: cp.argmax(cp.abs(data)) + 5000].get())
+            # xrange = cp.arange(cp.argmax(cp.abs(data0)).item() - 5000,cp.argmax(cp.abs(data0)).item() + 5000)
+            # plt.plot(xrange.get(), cp.abs(data0[xrange]).get())
+            plt.plot(cp.abs(data0).get())
             plt.title(f"down {pidx}")
             plt.show() # TODO
         # plt.plot(cp.abs(data0[::100]).get())
         # plt.title(f"down {pidx}")
         # plt.show() # TODO
-    if retpflag: return fret
+    if retpflag:
+        draw_fit(0, pktdata_in, 0, 0)
+        return fret
 
 
+    detect_vals = np.zeros((Config.detect_range_pkts, 3))
+    for detect_pkt in range(Config.detect_range_pkts):
+        skip_preambles = 8
+        y_values = fups[skip_preambles + detect_pkt: Config.preamble_len + detect_pkt]#[cp.argmax(cp.abs(Config.fft_ups[pidx])).get() - (Config.fft_n//2-ld) for pidx in range(midx, Config.preamble_len + midx)][skip_preambles:] # length: 0.5fft_n, delta_t>0
+        x_values = np.arange(len(y_values)) + skip_preambles  # x values from 1 to n
+        degree = 1
+        coefficients = np.polyfit(x_values, y_values, degree)
+        plt.scatter(x_values, y_values)
+        plt.plot(x_values, np.poly1d(coefficients)(x_values))
+        plt.show()
+        # print('c',coefficients)
+        polynomial = np.poly1d(coefficients)
+        fft_val_up = (polynomial(Config.sfdpos + 1) - (Config.fft_n//2)) / ld # rate, [-0.5, )  #!!! because previous +0.5
+        # print(polynomial(np.array(range(Config.sfdpos + 2))))
+        # print(x_values, y_values)
+        fft_val_down = (fdowns[1 + detect_pkt]-(Config.fft_n//2)) / ld # cp.argmax(cp.abs(Config.fft_downs[1])).get() - (Config.fft_n//2-ld) / Config.fft_n  # rate, [0, 1)
+        print(fdowns[1 + detect_pkt], fft_val_down)
+        dvals = 0
+        for pidx in range(skip_preambles, Config.preamble_len):
+            dvals += cp.abs(Config.fft_ups[pidx][round(polynomial(pidx))]).get()
+            print(pidx, cp.abs(Config.fft_ups[pidx][round(polynomial(pidx))]).get(), cp.max(cp.abs(Config.fft_ups[pidx])), ld, cp.argmax(cp.abs(Config.fft_ups[pidx])), round(polynomial(pidx)))
+        dvals += cp.abs(Config.fft_downs[1 + detect_pkt][fdowns[1 + detect_pkt]]).get()
+        print(cp.abs(Config.fft_downs[1 + detect_pkt][fdowns[1 + detect_pkt]]).get())
+        # pidx = 1
+        # print(pidx, cp.abs(Config.fft_downs[pidx][round(polynomial(pidx))]).get(),
+        #       cp.max(cp.abs(Config.fft_downs[pidx])), ld, cp.argmax(cp.abs(Config.fft_downs[pidx])), round(polynomial(pidx)))
+        # print(cp.abs(Config.fft_downs[1][fdowns[1]]).get(), cp.argmax(cp.abs(Config.fft_downs[1])), fdowns[1])
+        # newdown = fdowns[1] - coefficients[0]
+        # print(cp.abs(Config.fft_downs[0][newdown]).get(), cp.argmax(cp.abs(Config.fft_downs[0])),  cp.max(cp.abs(Config.fft_downs[0])), newdown)
+        # newdown = fdowns[1] + coefficients[0]
+        # print(coefficients)
+        # print(cp.abs(Config.fft_downs[2][newdown]).get(), cp.argmax(cp.abs(Config.fft_downs[2])), cp.max(cp.abs(Config.fft_downs[2])),  newdown)
 
+        pidx = 0
+        # print('fup fdown',fft_val_up, fft_val_down)
 
-    skip_preambles = 8
-    midx = 0
-    y_values = fups[skip_preambles:]#[cp.argmax(cp.abs(Config.fft_ups[pidx])).get() - (Config.fft_n//2-ld) for pidx in range(midx, Config.preamble_len + midx)][skip_preambles:] # length: 0.5fft_n, delta_t>0
-    x_values = np.arange(len(y_values)) + skip_preambles  # x values from 1 to n
-    degree = 1
-    coefficients = np.polyfit(x_values, y_values, degree)
-    # print('c',coefficients)
-    polynomial = np.poly1d(coefficients)
-    fft_val_up = polynomial(Config.sfdpos + 1) / ld # rate, [-0.5, )  #!!! because previous +0.5
+        f0 = ((fft_val_up + fft_val_down) / 2) % 1 - 0.5
+        # print(f0)
+        est_cfo_f = Config.bw * f0
+        est_to_s = (f0 - fft_val_up) % 1 * Config.tsig
+        draw_fit(0, pktdata_in, est_cfo_f, est_to_s)
 
+        # Compute t
+        # t = Config.tsig * ((fft_val_up - fft_val_down) * Config.fs / (2 * Config.bw)) % Config.tsig
+        # print('estnew', est_cfo_f, est_to_s)
 
-    fft_val_down = fdowns[1] / ld # cp.argmax(cp.abs(Config.fft_downs[1])).get() - (Config.fft_n//2-ld) / Config.fft_n  # rate, [0, 1)
-    pidx = 0
-    # print('fup fdown',fft_val_up, fft_val_down)
-
-    f0 = ((fft_val_up + fft_val_down) / 2) % 1 - 0.5
-    # print(f0)
-    est_cfo_f = Config.bw * f0
-    est_to_s = (f0 - fft_val_up) % 1 * Config.tsig
-
-    # Compute t
-    # t = Config.tsig * ((fft_val_up - fft_val_down) * Config.fs / (2 * Config.bw)) % Config.tsig
-    # print('estnew', est_cfo_f, est_to_s)
-
-    # draw_fit(0, pktdata_in, est_cfo_f, est_to_s)
-
+        # draw_fit(0, pktdata_in, est_cfo_f, est_to_s)
+        detect_vals[detect_pkt] = (dvals, est_cfo_f, est_to_s)
+        print(fft_val_up, fft_val_down, est_cfo_f, est_to_s, f0)
+        sys.exit(0)
+    detect_pkt_max = np.argmax(detect_vals[:, 0])
+    est_cfo_f, est_to_s = detect_vals[detect_pkt_max, 1], detect_vals[detect_pkt_max, 2]
+    est_to_s += detect_pkt_max * Config.nsamp
     return est_cfo_f, est_to_s
 
 
@@ -751,24 +786,38 @@ if __name__ == "__main__":
         for pkt_idx, pkt_data in enumerate(read_pkt(file_path, file_path.replace("data0", "data1"), thresh, min_length=30)):
             if pkt_idx < 1: continue
             data1, data2 = pkt_data
+            # rolx= 1761.6459319296052 + 100
+            # data1 = cp.roll(data1, -round(rolx))
             # data1 = data1[Config.nsamp*2:] #!!!
             # if cp.max(cp.abs(data1)) > 0.072: continue
             logger.info(f"Prework {pkt_idx=} {len(data1)=}")
             # fine_work_new(pkt_idx, data1 / cp.mean(cp.abs(data1)))
-            est_cfo_f, est_to_s = coarse_work_fast(data1 / cp.mean(cp.abs(data1)))
-            d1 = fix_cfo_to(est_cfo_f, est_to_s, data1)
-            print('f', objective_core(est_cfo_f, est_to_s, data1))
+            # est_cfo_f, est_to_s = coarse_work_fast(
+            # draw_fit(0, data1, est_cfo_f, est_to_s)
+            d1 = data1 #/ cp.mean(cp.abs(data1))#fix_cfo_to(est_cfo_f, est_to_s, data1)
+            est_cfo_f = 0
+            est_to_s = 0
+            # print('f', objective_core(est_cfo_f, est_to_s, data1))
             for i in range(5):
                 f, t = coarse_work_fast(d1)
+                tchoice = [-1, 0, 1, 2]
+                ychoice = [objective_core(est_cfo_f, est_to_s + Config.nsamp * x, data1) for x in tchoice]
+                tbest = tchoice[np.argmax(np.array(ychoice))]
+                t += tbest * Config.nsamp
+
+                # if i>0: t = (t + Config.nsamp // 2) % Config.nsamp - Config.nsamp // 2 # [0, 1) to (-0.5, 0.5) TODO
                 est_cfo_f += f
                 est_to_s += t
-                d1 = fix_cfo_to(est_cfo_f, est_to_s, data1)
-                print('f', objective_core(est_cfo_f, est_to_s, data1))
+                # d1 = fix_cfo_to(est_cfo_f, est_to_s, data1)
+                d1 = cp.roll(data1, -round(est_to_s))
+                # draw_fit(0, data1, est_cfo_f, est_to_s)
+                print('f',f, t, est_cfo_f, est_to_s,  objective_core(est_cfo_f, est_to_s, data1))
+            sys.exit(0)
             ps.extend(coarse_work_fast(d1, True))
             d2 = fix_cfo_to(est_cfo_f, est_to_s, data2)
             ps2.extend(coarse_work_fast(d2, True))
             plt.axvline(len(ps))
-        plt.plot(np.angle(np.exp(1j * np.array(ps))/np.exp(1j * np.array(ps2))))
+        plt.plot(np.angle(np.exp(1j * (np.array(ps) - np.array(ps2)))))
         # plt.plot(ps2)
         plt.show()
             # p, t, c = fine_work_new(pkt_idx, data1 / cp.mean(cp.abs(data1)))
