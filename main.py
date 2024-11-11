@@ -170,7 +170,7 @@ class Config:
     figpath = "fig"
     if not os.path.exists(figpath): os.mkdir(figpath)
 
-    fft_upsamp = 1024
+    fft_upsamp = 1#1024
     detect_range_pkts = 3
     fft_n = nsamp * fft_upsamp
     plan = fft.get_fft_plan(cp.zeros(fft_n, dtype=cp.complex64))
@@ -597,7 +597,9 @@ def add_freq(pktdata_in, est_cfo_freq):
     pktdata2a = pktdata_in * cfosymb
     return pktdata2a
 
-def coarse_work_fast(pktdata_in, retpflag = False):
+def coarse_work_fast(pkt_idx, pktdata_in, retpflag = False):
+    # plt.plot(cp.unwrap(cp.angle(pktdata_in[:Config.nsamp])).get())
+    # plt.show()
     # pktdata_in = cp.roll(pktdata_in, 1000) #this makes t - 1000
     # pktdata_in = add_freq(pktdata_in, 1000) #this makes f + 1000
     est_to_s = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
@@ -605,9 +607,14 @@ def coarse_work_fast(pktdata_in, retpflag = False):
     downchirp = mychirp(est_to_s, f0=Config.bw / 2, f1=-Config.bw / 2, t1=2 ** Config.sf / Config.bw)
     plotflag = False
     ld = round(Config.bw / Config.fs * Config.fft_n)
+    print(f"{Config.fft_n=} {ld=}")
     fups = []
     fret = []
     fdowns = []
+    fupsdiff = []
+    fdownsdiff = []
+    powups = []
+    powdowns = []
     for pidx in range(Config.preamble_len + Config.detect_range_pkts):
         sig1 = pktdata_in[Config.nsamp * pidx: Config.nsamp * (pidx + 1)]
         sig2 = sig1 * downchirp
@@ -618,7 +625,16 @@ def coarse_work_fast(pktdata_in, retpflag = False):
         # data2[cp.argmax(cp.abs(data)) - 2000 :cp.argmax(cp.abs(data)) + 2000 ]= 0
         # print(cp.max(cp.abs(data2)), cp.argmax(cp.abs(data2)))
         amax = cp.argmax(cp.abs(data))
+        powups.append(data[amax])
+        adiff = cp.abs(data0[amax]) - cp.abs(data0[amax+ld])
+        if adiff > 0:
+            amax -= ld
+            adiff *= -1
         fups.append(amax.get())
+        fupsdiff.append(adiff)
+        # / | ///: + breakpoint at front: +
+        # /// | /: -
+
         fret.append(cp.angle(data0[ld:][amax]).get())
         fret.append(cp.angle(data0[-ld:][amax]).get())
 
@@ -647,7 +663,7 @@ def coarse_work_fast(pktdata_in, retpflag = False):
             # plt.savefig(str(pidx) + 'p.png')
             # plt.clf()
 
-        if False:#pidx == 8:
+        if pkt_idx==1:#pidx == 8:
             # xrange = cp.arange(cp.argmax(cp.abs(data0)).item() - 5000,cp.argmax(cp.abs(data0)).item() + 5000)
             # plt.plot(xrange.get(), cp.abs(data0[xrange]).get())
             plt.plot(cp.abs(data0).get())
@@ -665,8 +681,11 @@ def coarse_work_fast(pktdata_in, retpflag = False):
         # print(cp.max(cp.abs(data2)), cp.argmax(cp.abs(data2)))
         amax = cp.argmax(cp.abs(data))
         fdowns.append(cp.argmax(cp.abs(data)).get() )
+        fdownsdiff.append(cp.abs(data0[amax]) - cp.abs(data0[amax+ld]))
+        # \ | \\\: - breakpoint at front: -
+        # \\\ | \: +
         fret.append(cp.angle(data[amax]).get())
-        if False:#pidx == 1:
+        if pkt_idx==1:#pidx == 1:
             # xrange = cp.arange(cp.argmax(cp.abs(data0)).item() - 5000,cp.argmax(cp.abs(data0)).item() + 5000)
             # plt.plot(xrange.get(), cp.abs(data0[xrange]).get())
             plt.plot(cp.abs(data0).get())
@@ -687,22 +706,28 @@ def coarse_work_fast(pktdata_in, retpflag = False):
         x_values = np.arange(len(y_values)) + skip_preambles  # x values from 1 to n
         degree = 1
         coefficients = np.polyfit(x_values, y_values, degree)
-        plt.scatter(x_values, y_values)
-        plt.plot(x_values, np.poly1d(coefficients)(x_values))
-        plt.show()
+        if pkt_idx == 1:
+            plt.scatter(x_values, y_values)
+            plt.plot(x_values, np.poly1d(coefficients)(x_values))
+            plt.show()
         # print('c',coefficients)
         polynomial = np.poly1d(coefficients)
         fft_val_up = (polynomial(Config.sfdpos + 1) - (Config.fft_n//2)) / ld # rate, [-0.5, )  #!!! because previous +0.5
         # print(polynomial(np.array(range(Config.sfdpos + 2))))
         # print(x_values, y_values)
         fft_val_down = (fdowns[1 + detect_pkt]-(Config.fft_n//2)) / ld # cp.argmax(cp.abs(Config.fft_downs[1])).get() - (Config.fft_n//2-ld) / Config.fft_n  # rate, [0, 1)
-        print(fdowns[1 + detect_pkt], fft_val_down)
+        # print(fdowns[1 + detect_pkt], fft_val_down)
         dvals = 0
         for pidx in range(skip_preambles, Config.preamble_len):
             dvals += cp.abs(Config.fft_ups[pidx][round(polynomial(pidx))]).get()
-            print(pidx, cp.abs(Config.fft_ups[pidx][round(polynomial(pidx))]).get(), cp.max(cp.abs(Config.fft_ups[pidx])), ld, cp.argmax(cp.abs(Config.fft_ups[pidx])), round(polynomial(pidx)))
+            # print(pidx, cp.abs(Config.fft_ups[pidx][round(polynomial(pidx))]).get(), cp.max(cp.abs(Config.fft_ups[pidx])), ld, cp.argmax(cp.abs(Config.fft_ups[pidx])), round(polynomial(pidx)))
         dvals += cp.abs(Config.fft_downs[1 + detect_pkt][fdowns[1 + detect_pkt]]).get()
-        print(cp.abs(Config.fft_downs[1 + detect_pkt][fdowns[1 + detect_pkt]]).get())
+        print('d',fups[skip_preambles + detect_pkt: Config.preamble_len + detect_pkt], fupsdiff[skip_preambles + detect_pkt: Config.preamble_len + detect_pkt])
+        print(fdowns[1], fdownsdiff[1])
+
+        if sum(fupsdiff[skip_preambles + detect_pkt: Config.preamble_len + detect_pkt]) < 0: fft_val_up += 1
+        if fdownsdiff[1 + detect_pkt] > 0: fft_val_down += 1
+        # print(cp.abs(Config.fft_downs[1 + detect_pkt][fdowns[1 + detect_pkt]]).get())
         # pidx = 1
         # print(pidx, cp.abs(Config.fft_downs[pidx][round(polynomial(pidx))]).get(),
         #       cp.max(cp.abs(Config.fft_downs[pidx])), ld, cp.argmax(cp.abs(Config.fft_downs[pidx])), round(polynomial(pidx)))
@@ -720,7 +745,6 @@ def coarse_work_fast(pktdata_in, retpflag = False):
         # print(f0)
         est_cfo_f = Config.bw * f0
         est_to_s = (f0 - fft_val_up) % 1 * Config.tsig
-        draw_fit(0, pktdata_in, est_cfo_f, est_to_s)
 
         # Compute t
         # t = Config.tsig * ((fft_val_up - fft_val_down) * Config.fs / (2 * Config.bw)) % Config.tsig
@@ -728,8 +752,7 @@ def coarse_work_fast(pktdata_in, retpflag = False):
 
         # draw_fit(0, pktdata_in, est_cfo_f, est_to_s)
         detect_vals[detect_pkt] = (dvals, est_cfo_f, est_to_s)
-        print(fft_val_up, fft_val_down, est_cfo_f, est_to_s, f0)
-        sys.exit(0)
+        # print(fft_val_up, fft_val_down, est_cfo_f, est_to_s, f0)
     detect_pkt_max = np.argmax(detect_vals[:, 0])
     est_cfo_f, est_to_s = detect_vals[detect_pkt_max, 1], detect_vals[detect_pkt_max, 2]
     est_to_s += detect_pkt_max * Config.nsamp
@@ -799,23 +822,24 @@ if __name__ == "__main__":
             est_to_s = 0
             # print('f', objective_core(est_cfo_f, est_to_s, data1))
             for i in range(5):
-                f, t = coarse_work_fast(d1)
+                f, t = coarse_work_fast(i, d1)
                 tchoice = [-1, 0, 1, 2]
                 ychoice = [objective_core(est_cfo_f, est_to_s + Config.nsamp * x, data1) for x in tchoice]
                 tbest = tchoice[np.argmax(np.array(ychoice))]
                 t += tbest * Config.nsamp
 
                 # if i>0: t = (t + Config.nsamp // 2) % Config.nsamp - Config.nsamp // 2 # [0, 1) to (-0.5, 0.5) TODO
-                est_cfo_f += f
+                est_cfo_f = f #!!!
                 est_to_s += t
                 # d1 = fix_cfo_to(est_cfo_f, est_to_s, data1)
                 d1 = cp.roll(data1, -round(est_to_s))
                 # draw_fit(0, data1, est_cfo_f, est_to_s)
                 print('f',f, t, est_cfo_f, est_to_s,  objective_core(est_cfo_f, est_to_s, data1))
+            # draw_fit(0, pktdata_in, est_cfo_f, est_to_s)
             sys.exit(0)
-            ps.extend(coarse_work_fast(d1, True))
+            ps.extend(coarse_work_fast(0,d1, True))
             d2 = fix_cfo_to(est_cfo_f, est_to_s, data2)
-            ps2.extend(coarse_work_fast(d2, True))
+            ps2.extend(coarse_work_fast(0,d2, True))
             plt.axvline(len(ps))
         plt.plot(np.angle(np.exp(1j * (np.array(ps) - np.array(ps2)))))
         # plt.plot(ps2)
