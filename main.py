@@ -5,6 +5,7 @@ import random
 import sys
 import time
 import itertools
+from functools import partial
 import pickle
 import cmath
 import math
@@ -210,21 +211,40 @@ def objective(params, pktdata2a):
 
 
 def objective_core(cfofreq, time_error, pktdata2a):
+    if time_error < 0:
+        # print('ret', cfofreq, time_error, 0)
+        return 0
     assert pktdata2a.ndim == 1
     assert cp.mean(cp.abs(pktdata2a)).ndim == 0
     pktdata2a_roll = cp.roll(pktdata2a / cp.mean(cp.abs(pktdata2a)), -math.ceil(time_error))
     detect_symb = gen_refchirp(cfofreq, time_error - math.ceil(time_error), deadzone=Config.gen_refchirp_deadzone)
     res = cp.zeros(len(detect_symb), dtype=cp.complex64)
     ddx = 0  # TODO
+    ress2 = []
     for sidx, ssymb in enumerate(detect_symb):
         ress = cp.conj(ssymb).dot(pktdata2a_roll[ddx: ddx + len(ssymb)])
         ddx += len(ssymb)
-        res[sidx] = ress / len(ssymb)
+        res[sidx] = ress / len(ssymb) # !!! abs: not all add up TODO!!
+        # res[sidx] = cp.abs(ress) / len(ssymb) # !!! abs: not all add up
+        ress2.extend(cp.conj(ssymb) * (pktdata2a_roll[ddx: ddx + len(ssymb)]))
+    cumulative_sums = cp.cumsum(cp.array(ress2))
+    # result_gpu = cp.abs(cumulative_sums[:Config.nsamp*2])
+    result_gpu = cp.abs(cumulative_sums)
+    result_cpu = result_gpu.get()
+    plt.plot(result_cpu)
+    plt.axvline(Config.nsamp)
+    plt.show()
+
+    # plt.plot(cp.abs(cp.array(ress2)).get())
+    # plt.show()
+    # print(ress, - tocpu(cp.abs(cp.sum(res))))
     # print(cp.mean(cp.abs(pktdata2a[:ddx])))  # Negative because we use a minimizer
     # TODO qian zhui he plot
     # TODO remove **2 because res[sidx] is sum not sumofsquare
     # TODO phase consistency?
-    return - tocpu(cp.abs(cp.sum(res)) / len(res))
+    ret =  - tocpu(cp.abs(cp.sum(res)) / len(res))
+    # print('ret', cfofreq, time_error, ret)
+    return ret
 
 def fine_work_new(pktidx, pktdata2a):
     pktdata2a = togpu(pktdata2a)
@@ -597,19 +617,21 @@ def add_freq(pktdata_in, est_cfo_freq):
     pktdata2a = pktdata_in * cfosymb
     return pktdata2a
 
-def coarse_work_fast(pktdata_in, retpflag = False):
+def coarse_work_fast(pktdata_in, tstart, retpflag = False):
+
     # pktdata_in = cp.roll(pktdata_in, 1000) #this makes t - 1000
     # pktdata_in = add_freq(pktdata_in, 1000) #this makes f + 1000
     est_to_s = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
     upchirp = mychirp(est_to_s, f0=-Config.bw / 2, f1=Config.bw / 2, t1=2 ** Config.sf / Config.bw)
     downchirp = mychirp(est_to_s, f0=Config.bw / 2, f1=-Config.bw / 2, t1=2 ** Config.sf / Config.bw)
     plotflag = False
-    ld = round(Config.bw / Config.fs * Config.fft_n)
+    ld = round(Config.bw / Config.fs * Config.fft_n) # 4096 fft_n=nsamp*fft_upsamp, nsamp=t*fs=2**sf/bw*fs, ld=2**sf * fft_upsamp
     fups = []
     fret = []
     fdowns = []
     for pidx in range(Config.preamble_len + Config.detect_range_pkts):
-        sig1 = pktdata_in[Config.nsamp * pidx: Config.nsamp * (pidx + 1)]
+        print(len(pktdata_in), Config.nsamp * (pidx + 1)  + tstart, pidx, tstart)
+        sig1 = pktdata_in[Config.nsamp * pidx + tstart: Config.nsamp * (pidx + 1)  + tstart]
         sig2 = sig1 * downchirp
         data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
         data = cp.abs(data0) + cp.abs(cp.roll(data0, -ld))
@@ -648,14 +670,15 @@ def coarse_work_fast(pktdata_in, retpflag = False):
             # plt.clf()
 
         if False:#pidx == 8:
-            # xrange = cp.arange(cp.argmax(cp.abs(data0)).item() - 5000,cp.argmax(cp.abs(data0)).item() + 5000)
-            # plt.plot(xrange.get(), cp.abs(data0[xrange]).get())
-            plt.plot(cp.abs(data0).get())
+            xrange = cp.arange(cp.argmax(cp.abs(data0)).item() - 5000,cp.argmax(cp.abs(data0)).item() + 5000)
+            plt.plot(xrange.get(), cp.abs(data0[xrange]).get())
+            plt.plot(xrange.get(), cp.abs(data0[xrange + ld]).get())
+            # plt.plot(cp.abs(data0).get())
             plt.title(f"up {pidx}")
             plt.show() # TODO
 
     for pidx in range(0, 2 + Config.detect_range_pkts):
-        sig1 = pktdata_in[Config.nsamp * (pidx + Config.sfdpos): Config.nsamp * (pidx + Config.sfdpos + 1)]
+        sig1 = pktdata_in[Config.nsamp * (pidx + Config.sfdpos) + tstart: Config.nsamp * (pidx + Config.sfdpos + 1) + tstart]
         sig2 =  sig1 * upchirp
         data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
         data = cp.abs(data0) + cp.abs(cp.roll(data0, -ld))
@@ -676,7 +699,7 @@ def coarse_work_fast(pktdata_in, retpflag = False):
         # plt.title(f"down {pidx}")
         # plt.show() # TODO
     if retpflag:
-        draw_fit(0, pktdata_in, 0, 0)
+        draw_fit(0, pktdata_in, 0, tstart)
         return fret
 
 
@@ -684,25 +707,28 @@ def coarse_work_fast(pktdata_in, retpflag = False):
     for detect_pkt in range(Config.detect_range_pkts):
         skip_preambles = 8
         y_values = fups[skip_preambles + detect_pkt: Config.preamble_len + detect_pkt]#[cp.argmax(cp.abs(Config.fft_ups[pidx])).get() - (Config.fft_n//2-ld) for pidx in range(midx, Config.preamble_len + midx)][skip_preambles:] # length: 0.5fft_n, delta_t>0
+        print(detect_pkt, y_values)
         x_values = np.arange(len(y_values)) + skip_preambles  # x values from 1 to n
         degree = 1
         coefficients = np.polyfit(x_values, y_values, degree)
-        plt.scatter(x_values, y_values)
-        plt.plot(x_values, np.poly1d(coefficients)(x_values))
-        plt.show()
+        # plt.scatter(x_values, y_values)
+        # plt.plot(x_values, np.poly1d(coefficients)(x_values))
+        # plt.show()
         # print('c',coefficients)
         polynomial = np.poly1d(coefficients)
-        fft_val_up = (polynomial(Config.sfdpos + 1) - (Config.fft_n//2)) / ld # rate, [-0.5, )  #!!! because previous +0.5
+        fft_val_up = (polynomial(Config.sfdpos + 1) - (Config.fft_n//2)) / ld # rate, [-0.5, 0.5) if no cfo and to it should be zero  #!!! because previous +0.5
+        fft_val_up = (fft_val_up + 0.5) % 1 - 0.5 # remove all ">0 <0 stuff, just [-0.5, 0.5)
         # print(polynomial(np.array(range(Config.sfdpos + 2))))
         # print(x_values, y_values)
         fft_val_down = (fdowns[1 + detect_pkt]-(Config.fft_n//2)) / ld # cp.argmax(cp.abs(Config.fft_downs[1])).get() - (Config.fft_n//2-ld) / Config.fft_n  # rate, [0, 1)
-        print(fdowns[1 + detect_pkt], fft_val_down)
-        dvals = 0
-        for pidx in range(skip_preambles, Config.preamble_len):
-            dvals += cp.abs(Config.fft_ups[pidx][round(polynomial(pidx))]).get()
-            print(pidx, cp.abs(Config.fft_ups[pidx][round(polynomial(pidx))]).get(), cp.max(cp.abs(Config.fft_ups[pidx])), ld, cp.argmax(cp.abs(Config.fft_ups[pidx])), round(polynomial(pidx)))
-        dvals += cp.abs(Config.fft_downs[1 + detect_pkt][fdowns[1 + detect_pkt]]).get()
-        print(cp.abs(Config.fft_downs[1 + detect_pkt][fdowns[1 + detect_pkt]]).get())
+        fft_val_down = (fft_val_down + 0.5) % 1 - 0.5 # remove all ">0 <0 stuff, just [-0.5, 0.5)
+        # print(fdowns[1 + detect_pkt], fft_val_down)
+        # dvals = 0
+        # for pidx in range(skip_preambles, Config.preamble_len):
+        #     dvals += cp.abs(Config.fft_ups[pidx][round(polynomial(pidx))]).get()
+        #     print(pidx, cp.abs(Config.fft_ups[pidx][round(polynomial(pidx))]).get(), cp.max(cp.abs(Config.fft_ups[pidx])), ld, cp.argmax(cp.abs(Config.fft_ups[pidx])), round(polynomial(pidx)))
+        # dvals += cp.abs(Config.fft_downs[1 + detect_pkt][fdowns[1 + detect_pkt]]).get()
+        # print(cp.abs(Config.fft_downs[1 + detect_pkt][fdowns[1 + detect_pkt]]).get())
         # pidx = 1
         # print(pidx, cp.abs(Config.fft_downs[pidx][round(polynomial(pidx))]).get(),
         #       cp.max(cp.abs(Config.fft_downs[pidx])), ld, cp.argmax(cp.abs(Config.fft_downs[pidx])), round(polynomial(pidx)))
@@ -716,11 +742,22 @@ def coarse_work_fast(pktdata_in, retpflag = False):
         pidx = 0
         # print('fup fdown',fft_val_up, fft_val_down)
 
-        f0 = ((fft_val_up + fft_val_down) / 2) % 1 - 0.5
-        # print(f0)
-        est_cfo_f = Config.bw * f0
-        est_to_s = (f0 - fft_val_up) % 1 * Config.tsig
-        draw_fit(0, pktdata_in, est_cfo_f, est_to_s)
+        f0 = ((fft_val_up + fft_val_down) / 2) % 1
+        t0 = (f0 - fft_val_up) % 1
+        deltaf, deltat = np.meshgrid((np.arange(-1, 2)+f0)*Config.bw, (np.arange(-1, 2)+t0)*Config.tsig + tstart + detect_pkt*Config.nsamp)
+        print("start", detect_pkt, deltat)
+        values = np.zeros_like(deltaf).astype(float)
+        for i in range(deltaf.shape[0]):
+            for j in range(deltaf.shape[1]):
+                values[i][j] = objective_core(deltaf[i,j], deltat[i,j], pktdata_in)
+        # values = np.vectorize(partial(objective_core,pktdata2a=pktdata_in))(deltaf, deltat)# + detect_pkt * Config.nsamp)
+        np.set_printoptions(formatter={'float': lambda x: "{:0.5f}".format(x)})
+        # print(deltaf, deltat, values)
+        best_idx = np.argmin(values)
+        est_cfo_f = deltaf.flat[best_idx]
+        est_to_s = deltat.flat[best_idx]
+        dvals = -np.min(values)
+
 
         # Compute t
         # t = Config.tsig * ((fft_val_up - fft_val_down) * Config.fs / (2 * Config.bw)) % Config.tsig
@@ -728,11 +765,11 @@ def coarse_work_fast(pktdata_in, retpflag = False):
 
         # draw_fit(0, pktdata_in, est_cfo_f, est_to_s)
         detect_vals[detect_pkt] = (dvals, est_cfo_f, est_to_s)
-        print(fft_val_up, fft_val_down, est_cfo_f, est_to_s, f0)
-        sys.exit(0)
+        print(fft_val_up, fft_val_down, est_cfo_f, est_to_s, dvals)
     detect_pkt_max = np.argmax(detect_vals[:, 0])
     est_cfo_f, est_to_s = detect_vals[detect_pkt_max, 1], detect_vals[detect_pkt_max, 2]
-    est_to_s += detect_pkt_max * Config.nsamp
+    draw_fit(0, pktdata_in, est_cfo_f, est_to_s)
+    # est_to_s += detect_pkt_max * Config.nsamp
     return est_cfo_f, est_to_s
 
 
@@ -786,6 +823,16 @@ if __name__ == "__main__":
         for pkt_idx, pkt_data in enumerate(read_pkt(file_path, file_path.replace("data0", "data1"), thresh, min_length=30)):
             if pkt_idx < 1: continue
             data1, data2 = pkt_data
+            data1 /= cp.mean(cp.abs(data1))
+            data2 /= cp.mean(cp.abs(data1))
+            # cfo_freq_est=-39977.48238699784-100
+            # time_error=1754.79120879121
+            # cfo_freq_est=-40278.57099260601
+            # time_error=1762.4395604395622
+            # cfo_freq_est = -40030.616
+            # time_error = 1743
+            # objective_core(cfo_freq_est, time_error, data1)
+            # sys.exit(0)
             # rolx= 1761.6459319296052 + 100
             # data1 = cp.roll(data1, -round(rolx))
             # data1 = data1[Config.nsamp*2:] #!!!
@@ -799,23 +846,23 @@ if __name__ == "__main__":
             est_to_s = 0
             # print('f', objective_core(est_cfo_f, est_to_s, data1))
             for i in range(5):
-                f, t = coarse_work_fast(d1)
-                tchoice = [-1, 0, 1, 2]
-                ychoice = [objective_core(est_cfo_f, est_to_s + Config.nsamp * x, data1) for x in tchoice]
-                tbest = tchoice[np.argmax(np.array(ychoice))]
-                t += tbest * Config.nsamp
+                f, t = coarse_work_fast(d1, est_to_s)
+                # tchoice = [-1, 0, 1, 2]
+                # ychoice = [objective_core(est_cfo_f, est_to_s + Config.nsamp * x, data1) for x in tchoice]
+                # tbest = tchoice[np.argmin(np.array(ychoice))]
+                # t += tbest * Config.nsamp
 
                 # if i>0: t = (t + Config.nsamp // 2) % Config.nsamp - Config.nsamp // 2 # [0, 1) to (-0.5, 0.5) TODO
                 est_cfo_f += f
                 est_to_s += t
                 # d1 = fix_cfo_to(est_cfo_f, est_to_s, data1)
-                d1 = cp.roll(data1, -round(est_to_s))
+                # d1 = cp.roll(data1, -round(est_to_s))
                 # draw_fit(0, data1, est_cfo_f, est_to_s)
                 print('f',f, t, est_cfo_f, est_to_s,  objective_core(est_cfo_f, est_to_s, data1))
             sys.exit(0)
-            ps.extend(coarse_work_fast(d1, True))
+            ps.extend(coarse_work_fast(d1, est_to_s, True))
             d2 = fix_cfo_to(est_cfo_f, est_to_s, data2)
-            ps2.extend(coarse_work_fast(d2, True))
+            ps2.extend(coarse_work_fast(d2, est_to_s, True))
             plt.axvline(len(ps))
         plt.plot(np.angle(np.exp(1j * (np.array(ps) - np.array(ps2)))))
         # plt.plot(ps2)
