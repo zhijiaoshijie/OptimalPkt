@@ -133,7 +133,7 @@ class Config:
     preamble_len = 16  # TODO!!!!
 
     thresh = None# 0.03
-    file_paths = ['/data/djl/temp/OptimalPkt/fingerprint_data/data0_test_3',]# '/data/djl/temp/OptimalPkt/fingerprint_data/data1_test_3']
+    file_paths = ['/data/djl/temp/OptimalPkt/fingerprint_data/data0_test_3',]
 
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples
@@ -210,11 +210,12 @@ def objective(params, pktdata2a):
     cfofreq, time_error = converter_up(*params)
     return objective_core(cfofreq, time_error, pktdata2a)
 
-
+    
 def objective_core(cfofreq, time_error, pktdata2a):
     if time_error < 0 or time_error > Config.detect_to_max: # TODO!!!
-        # print('ret', cfofreq, time_error, 0)
+        print('ret', cfofreq, time_error, 0)
         return 0
+    if abs(cfofreq + 40000) > 20000: return 0
     assert pktdata2a.ndim == 1
     assert cp.mean(cp.abs(pktdata2a)).ndim == 0
     pktdata2a_roll = cp.roll(pktdata2a / cp.mean(cp.abs(pktdata2a)), -math.ceil(time_error))
@@ -244,7 +245,7 @@ def objective_core(cfofreq, time_error, pktdata2a):
     # TODO remove **2 because res[sidx] is sum not sumofsquare
     # TODO phase consistency?
     ret =  - tocpu(cp.abs(cp.sum(res)) / len(res))
-    # print('ret', cfofreq, time_error, ret)
+    print('ret', cfofreq, time_error, ret)
     return ret
 
 def fine_work_new(pktidx, pktdata2a):
@@ -596,15 +597,21 @@ def gen_refchirp(cfofreq, tstart, deadzone=0):
 
 def read_large_file(file_path_in):
     with open(file_path_in, 'rb') as file:
+        # t = 1.45e6
         while True:
             try:
                 rawdata = cp.fromfile(file, dtype=cp.complex64, count=Config.nsamp)
+                # t-=len(rawdata)
             except EOFError:
                 logger.warning("file complete with EOF")
                 break
             if len(rawdata) < Config.nsamp:
                 logger.warning(f"file complete, {len(rawdata)=}")
                 break
+            # if t<0:
+            #     plt.scatter(x=np.arange(Config.nsamp - 1),
+            #                 y=cp.diff(cp.unwrap(cp.angle(rawdata[:Config.nsamp]))).get(), s=0.2)
+            #     plt.show()
             yield rawdata
 
 
@@ -641,7 +648,6 @@ def add_freq(pktdata_in, est_cfo_freq):
     return pktdata2a
 
 def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False):
-
     # pktdata_in = cp.roll(pktdata_in, 1000) #this makes t - 1000
     # pktdata_in = add_freq(pktdata_in, 1000) #this makes f + 1000
     est_to_s = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
@@ -850,46 +856,20 @@ if __name__ == "__main__":
             data1, data2 = pkt_data
             data1 /= cp.mean(cp.abs(data1))
             data2 /= cp.mean(cp.abs(data1))
-            # cfo_freq_est=-39977.48238699784-100
-            # time_error=1754.79120879121
-            # cfo_freq_est=-40278.57099260601
-            # time_error=1762.4395604395622
-            # cfo_freq_est = -40030.616
-            # time_error = 1743
-            # objective_core(cfo_freq_est, time_error, data1)
-            # sys.exit(0)
-            # rolx= 1761.6459319296052 + 100
-            # data1 = cp.roll(data1, -round(rolx))
-            # data1 = data1[Config.nsamp*2:] #!!!
-            # if cp.max(cp.abs(data1)) > 0.072: continue
+
             logger.info(f"Prework {pkt_idx=} {len(data1)=}")
-            # fine_work_new(pkt_idx, data1 / cp.mean(cp.abs(data1)))
-            # est_cfo_f, est_to_s = coarse_work_fast(
-            # draw_fit(0, data1, est_cfo_f, est_to_s)
             d1 = data1 #/ cp.mean(cp.abs(data1))#fix_cfo_to(est_cfo_f, est_to_s, data1)
             est_cfo_f = 0
             est_to_s = 0
-            # print('f', objective_core(est_cfo_f, est_to_s, data1))
             trytimes = 5
             vals = np.zeros((trytimes, 3))
             for i in range(trytimes):
                 f, t = coarse_work_fast(d1, est_cfo_f, est_to_s,)
-                # tchoice = [-1, 0, 1, 2]
-                # ychoice = [objective_core(est_cfo_f, est_to_s + Config.nsamp * x, data1) for x in tchoice]
-                # tbest = tchoice[np.argmin(np.array(ychoice))]
-                # t += tbest * Config.nsamp
-
-                # if i>0: t = (t + Config.nsamp // 2) % Config.nsamp - Config.nsamp // 2 # [0, 1) to (-0.5, 0.5) TODO
                 est_cfo_f = f
                 est_to_s = t
                 objval=objective_core(est_cfo_f, est_to_s, data1)
                 print(f"try{i} {est_cfo_f=} {est_to_s=} obj={objval}")
                 vals[i] = (objval, est_cfo_f, est_to_s)
-                # d1 = fix_cfo_to(est_cfo_f, est_to_s, data1)
-                # d1 = cp.roll(data1, -round(est_to_s))
-                # draw_fit(0, data1, est_cfo_f, est_to_s)
-                # print('f',f, t, est_cfo_f, est_to_s,  objective_core(est_cfo_f, est_to_s, data1))
-            # sys.exit(0)
             _, est_cfo_f, est_to_s = vals[np.argmin(vals[:, 0])]
 
             pktdata2a = d1
@@ -902,16 +882,11 @@ if __name__ == "__main__":
             bestobj = objective_core(Config.fguess, Config.tguess, pktdata2a)
             logger.info(
                 f"trystart cfo_freq_est = {Config.fguess:.3f}, time_error = {Config.tguess:.3f} {bestobj=} {Config.f_lower=} {Config.f_upper=} {Config.t_lower=} {Config.t_upper=}")
-            # draw_fit(pktidx, pktdata2a, Config.fguess, Config.tguess)
-            # for tryidx in tqdm(range(parse_opts.searchphase_step), disable=True):
             tryidx = 0
             if True:
                 tryidx += 1
                 start_t = est_to_s#random.uniform(Config.t_lower, Config.t_upper)
                 start_f = est_cfo_f#random.uniform(Config.f_lower, Config.f_upper)
-                # noinspection PyTypeChecker
-                # print([(converter_down(Config.f_lower, 0)[0], converter_down(Config.f_upper, 0)[0]),
-                #           (converter_down(0, Config.t_lower)[1], converter_down(0, Config.t_upper)[1])], converter_down(start_f, start_t), objective(converter_down(start_f, start_t), pktdata2a), objective_core(start_f, start_t, pktdata2a))
                 result = opt.minimize(objective, converter_down(start_f, start_t), args=(pktdata2a,),
                                       bounds=[
                                           (converter_down(Config.f_lower, 0)[0], converter_down(Config.f_upper, 0)[0]),
@@ -929,19 +904,21 @@ if __name__ == "__main__":
                     if tryidx > 100: draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error)
                 if tryidx == 100: draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error)
             logger.info(f"Optimized parameters:\n{cfo_freq_est=}\n{time_error=} obj={objective_core(cfo_freq_est, time_error, data1)}")
-            draw_fit(0, pktdata2a, cfo_freq_est, time_error)
+            # draw_fit(0, pktdata2a, cfo_freq_est, time_error)
 
-            ps.extend(coarse_work_fast(d1, est_cfo_f, est_to_s, True))
-            d2 = fix_cfo_to(est_cfo_f, est_to_s, data2)
-            ps2.extend(coarse_work_fast(d2, est_cfo_f, est_to_s, True))
+            tstart = est_to_s
+            for pidx in range(Config.sfdend):
+                sig1 = data1[Config.nsamp * pidx + tstart: Config.nsamp * (pidx + 1) + tstart]
+                sig2 = data2[Config.nsamp * pidx + tstart: Config.nsamp * (pidx + 1) + tstart]
+                ps.extend(sig1.dot(sig2.conj()))
+            # ps.extend(coarse_work_fast(d1, est_cfo_f, est_to_s, True))
+            # d2 = fix_cfo_to(est_cfo_f, est_to_s, data2)
+            # ps2.extend(coarse_work_fast(d2, est_cfo_f, est_to_s, True))
             plt.axvline(len(ps))
             print(f"{est_cfo_f=} {est_to_s=}")
-        plt.plot(np.angle(np.exp(1j * (np.array(ps) - np.array(ps2)))))
-        # plt.plot(ps2)
+        plt.plot(np.angle(np.array(ps)))
+        # plt.plot(np.angle(np.exp(1j * (np.array(ps)- np.array(ps2)))))
         plt.show()
-            # p, t, c = fine_work_new(pkt_idx, data1 / cp.mean(cp.abs(data1)))
-            # pktdata_lst.append(p)
-            # tstart_lst.append(t)
-            # cfo_freq_est.append(c)
-            # with open(f"dataout{parse_opts.searchphase_step}.pkl","wb") as f:
-            #     pickle.dump((pktdata_lst, tstart_lst, cfo_freq_est),f)
+        plt.plot(np.abs(np.array(ps)))
+        # plt.plot(np.angle(np.exp(1j * (np.array(ps)- np.array(ps2)))))
+        plt.show()
