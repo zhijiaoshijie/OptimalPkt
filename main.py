@@ -25,14 +25,15 @@ from tqdm import tqdm
 import cupyx.scipy.fft as fft
 
 logger = logging.getLogger('my_logger')
-level = logging.DEBUG
+level = logging.INFO
 logger.setLevel(level)
 console_handler = logging.StreamHandler()
 console_handler.setLevel(level)  # Set the console handler level
-file_handler = logging.FileHandler('my_log_file.log')
+file_handler = logging.FileHandler('run_241115_2.log')
 file_handler.setLevel(level)  # Set the file handler level
-formatter = logging.Formatter('%(message)s')
+# formatter = logging.Formatter('%(message)s')
 # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 # formatter = logging.Formatter('%(levelname)s - %(message)s')
 console_handler.setFormatter(formatter)
 file_handler.setFormatter(formatter)
@@ -131,9 +132,10 @@ class Config:
     sig_freq = 2.4e9
     # sig_freq = 2400000030.517578#-52e6/(2**18)
     preamble_len = 16  # TODO!!!!
-
+    total_len = 89
     thresh = None# 0.03
-    file_paths = ['/data/djl/temp/OptimalPkt/fingerprint_data/data0_test_3',]
+    # file_paths = ['/data/djl/temp/OptimalPkt/fingerprint_data/data0_test_3',]
+    base_path = '/data/djl/temp/OptimalPkt/fingerprint_data/'
 
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples
@@ -150,7 +152,7 @@ class Config:
 
     time_r = time_error / tsig
     cfo_r = cfo_freq_est / bw
-    print(time_r + cfo_r, cfo_r - time_r)
+    # print(time_r + cfo_r, cfo_r - time_r)
 
 
     fguess = cfo_freq_est
@@ -183,6 +185,9 @@ class Config:
 if use_gpu:
     cp.cuda.Device(0).use()
 Config = Config()
+file_paths = [os.path.join(Config.base_path, x) for x in os.listdir(Config.base_path) if 'data0' in x]
+Config.file_paths = sorted(file_paths, key=lambda x: int(x.split('_')[-1])) # TODO!
+
 
 
 def gen_upchirp(t0, td, f0, beta):
@@ -212,8 +217,8 @@ def objective(params, pktdata2a):
 
     
 def objective_core(cfofreq, time_error, pktdata2a):
-    if time_error < 0 or time_error > Config.detect_to_max: # TODO!!!
-        print('ret', cfofreq, time_error, 0)
+    if time_error < 0:# or time_error > Config.detect_to_max: # TODO!!!
+        # print('ret', cfofreq, time_error, 0)
         return 0
     if abs(cfofreq + 40000) > 20000: return 0
     assert pktdata2a.ndim == 1
@@ -245,7 +250,7 @@ def objective_core(cfofreq, time_error, pktdata2a):
     # TODO remove **2 because res[sidx] is sum not sumofsquare
     # TODO phase consistency?
     ret =  - tocpu(cp.abs(cp.sum(res)) / len(res))
-    print('ret', cfofreq, time_error, ret)
+    # print('ret', cfofreq, time_error, ret)
     return ret
 
 def fine_work_new(pktidx, pktdata2a):
@@ -603,10 +608,10 @@ def read_large_file(file_path_in):
                 rawdata = cp.fromfile(file, dtype=cp.complex64, count=Config.nsamp)
                 # t-=len(rawdata)
             except EOFError:
-                logger.warning("file complete with EOF")
+                logger.warning(f"file complete with EOF {file_path_in=}")
                 break
             if len(rawdata) < Config.nsamp:
-                logger.warning(f"file complete, {len(rawdata)=}")
+                logger.warning(f"file complete{file_path_in=}, {len(rawdata)=}")
                 break
             # if t<0:
             #     plt.scatter(x=np.arange(Config.nsamp - 1),
@@ -620,9 +625,11 @@ def read_pkt(file_path_in1, file_path_in2, threshold, min_length=20):
     current_sequence1 = []
     current_sequence2 = []
 
+    read_idx = -1
     for rawdata1, rawdata2 in itertools.zip_longest(read_large_file(file_path_in1), read_large_file(file_path_in2)):
         if rawdata1 is None or rawdata2 is None:
             break  # Both files are done
+        read_idx += 1
 
         number1 = cp.max(cp.abs(rawdata1)) if rawdata1 is not None else 0
 
@@ -632,13 +639,13 @@ def read_pkt(file_path_in1, file_path_in2, threshold, min_length=20):
             current_sequence2.append(rawdata2)
         else:
             if len(current_sequence1) > min_length:
-                yield cp.concatenate(current_sequence1), cp.concatenate(current_sequence2)
+                yield read_idx, cp.concatenate(current_sequence1), cp.concatenate(current_sequence2)
             current_sequence1 = []
             current_sequence2 = []
 
     # Yield any remaining sequences after the loop
     if len(current_sequence1) > min_length:
-        yield cp.concatenate(current_sequence1), cp.concatenate(current_sequence2)
+        yield read_idx, cp.concatenate(current_sequence1), cp.concatenate(current_sequence2)
 
 
 def add_freq(pktdata_in, est_cfo_freq):
@@ -648,10 +655,14 @@ def add_freq(pktdata_in, est_cfo_freq):
     return pktdata2a
 
 def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False):
+    tstart = round(tstart) # !!!!! TODO tstart rounded !!!!!
+    # print(tstart)
+    # plt.plot(cp.unwrap(cp.angle(pktdata_in)).get()[tstart:tstart+Config.nsamp*20])
+    # plt.show()
     # pktdata_in = cp.roll(pktdata_in, 1000) #this makes t - 1000
     # pktdata_in = add_freq(pktdata_in, 1000) #this makes f + 1000
     est_to_s = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
-    cfoppm = fstart / Config.tsig
+    cfoppm = fstart / Config.sig_freq
     t1 = 2 ** Config.sf / Config.bw * (1 - cfoppm)
     upchirp = mychirp(est_to_s, f0=-Config.bw / 2, f1=Config.bw / 2, t1=t1)
     downchirp = mychirp(est_to_s, f0=Config.bw / 2, f1=-Config.bw / 2, t1=t1)
@@ -659,11 +670,19 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False):
     ld = round(Config.bw / Config.fs * Config.fft_n) # 4096 fft_n=nsamp*fft_upsamp, nsamp=t*fs=2**sf/bw*fs, ld=2**sf * fft_upsamp
     fups = []
     fret = []
-    fdowns = []
+    # fdowns = []
     for pidx in range(Config.preamble_len + Config.detect_range_pkts):
         # print(len(pktdata_in), Config.nsamp * (pidx + 1)  + tstart, pidx, tstart)
+        # print("AAAA", tstart, Config.nsamp * pidx + tstart,pktdata_in[Config.nsamp * pidx + tstart])
+        assert Config.nsamp * pidx + tstart >= 0
         sig1 = pktdata_in[Config.nsamp * pidx + tstart: Config.nsamp * (pidx + 1)  + tstart]
         sig2 = sig1 * downchirp
+        # plt.plot(cp.unwrap(cp.angle(sig1)).get())
+        # plt.show()
+        # plt.plot(cp.unwrap(cp.angle(downchirp)).get())
+        # plt.show()
+        # plt.plot(cp.unwrap(cp.angle(sig2)).get())
+        # plt.show()
         data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
         data = cp.abs(data0) + cp.abs(cp.roll(data0, -ld))
         Config.fft_ups[pidx] = data
@@ -700,8 +719,9 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False):
             # plt.savefig(str(pidx) + 'p.png')
             # plt.clf()
 
-        if False:#pidx == 8:
-            xrange = cp.arange(cp.argmax(cp.abs(data0)).item() - 5000,cp.argmax(cp.abs(data0)).item() + 5000)
+        if False:#tstart != 0:#pidx == 8:
+            xrange = cp.arange(cp.argmax(cp.abs(data0)).item() - 50000,cp.argmax(cp.abs(data0)).item() + 50000)[::100]
+            xrange = cp.arange(len(data0))[::100]
             plt.plot(xrange.get(), cp.abs(data0[xrange]).get())
             plt.plot(xrange.get(), cp.abs(data0[xrange + ld]).get())
             # plt.plot(cp.abs(data0).get())
@@ -714,13 +734,18 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False):
         data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
         data = cp.abs(data0) + cp.abs(cp.roll(data0, -ld))
         Config.fft_downs[pidx] = data
+
         # data2 = data.copy()
         # data2[cp.argmax(cp.abs(data)) - 2000 :cp.argmax(cp.abs(data)) + 2000 ]= 0
         # print(cp.max(cp.abs(data2)), cp.argmax(cp.abs(data2)))
-        amax = cp.argmax(cp.abs(data))
-        fdowns.append(cp.argmax(cp.abs(data)).get() )
-        fret.append(cp.angle(data[amax]).get())
-        if False:#pidx == 1:
+    fdown_pos, fdown = cp.unravel_index(cp.argmax(cp.abs(Config.fft_downs)), Config.fft_downs.shape)
+    fdown_pos = fdown_pos.item()
+    fdown= fdown.item()
+
+
+        # fdowns.append(cp.argmax(cp.abs(data)).get() )
+        # fret.append(cp.angle(data[amax]).get())
+    if False:#pidx == 1:
             # xrange = cp.arange(cp.argmax(cp.abs(data0)).item() - 5000,cp.argmax(cp.abs(data0)).item() + 5000)
             # plt.plot(xrange.get(), cp.abs(data0[xrange]).get())
             plt.plot(cp.abs(data0).get())
@@ -738,6 +763,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False):
     for detect_pkt in range(Config.detect_range_pkts):
         skip_preambles = 8
         y_values = fups[skip_preambles + detect_pkt: Config.preamble_len + detect_pkt]#[cp.argmax(cp.abs(Config.fft_ups[pidx])).get() - (Config.fft_n//2-ld) for pidx in range(midx, Config.preamble_len + midx)][skip_preambles:] # length: 0.5fft_n, delta_t>0
+        y_values = [(x + ld//2) % ld - ld//2 for x in y_values]
         # print(detect_pkt, y_values)
         x_values = np.arange(len(y_values)) + skip_preambles  # x values from 1 to n
         degree = 1
@@ -747,12 +773,13 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False):
         # plt.show()
         # print('c',coefficients)
         polynomial = np.poly1d(coefficients)
-        fft_val_up = (polynomial(Config.sfdpos + 1) - (Config.fft_n//2)) / ld # rate, [-0.5, 0.5) if no cfo and to it should be zero  #!!! because previous +0.5
+        fft_val_up = (polynomial(Config.sfdpos + fdown_pos) - (Config.fft_n//2)) / ld # rate, [-0.5, 0.5) if no cfo and to it should be zero  #!!! because previous +0.5
         fft_val_up = (fft_val_up + 0.5) % 1 - 0.5 # remove all ">0 <0 stuff, just [-0.5, 0.5)
         # print(polynomial(np.array(range(Config.sfdpos + 2))))
         # print(x_values, y_values)
-        fft_val_down = (fdowns[1 + detect_pkt]-(Config.fft_n//2)) / ld # cp.argmax(cp.abs(Config.fft_downs[1])).get() - (Config.fft_n//2-ld) / Config.fft_n  # rate, [0, 1)
+        fft_val_down = (fdown-(Config.fft_n//2)) / ld # cp.argmax(cp.abs(Config.fft_downs[1])).get() - (Config.fft_n//2-ld) / Config.fft_n  # rate, [0, 1)
         fft_val_down = (fft_val_down + 0.5) % 1 - 0.5 # remove all ">0 <0 stuff, just [-0.5, 0.5)
+        # print(f"FUPDOWN fups={fups[skip_preambles + detect_pkt: Config.preamble_len + detect_pkt]} {coefficients=} {fft_val_up=} {fdown=}")
         # print(fdowns[1 + detect_pkt], fft_val_down)
         # dvals = 0
         # for pidx in range(skip_preambles, Config.preamble_len):
@@ -775,7 +802,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False):
 
         f0 = ((fft_val_up + fft_val_down) / 2) % 1
         t0 = (f0 - fft_val_up) % 1
-        deltaf, deltat = np.meshgrid((np.arange(-1, 2)+f0)*Config.bw, (np.arange(-1, 2)+t0)*Config.tsig + tstart + detect_pkt*Config.nsamp)
+        deltaf, deltat = np.meshgrid((np.arange(-1, 1.5, 0.5)+f0)*Config.bw, (np.arange(-1, 1.5, 0.5)+t0)*Config.tsig + tstart + detect_pkt*Config.nsamp)
         # print("start", detect_pkt, deltat)
         values = np.zeros_like(deltaf).astype(float)
         for i in range(deltaf.shape[0]):
@@ -817,7 +844,16 @@ def fix_cfo_to(est_cfo_f, est_to_s, pktdata_in):
 
 # read packets from file
 if __name__ == "__main__":
+    ps = []
+    ps2 = []
+    psa1 = []
+    psa2 = []
+    ps3 = []
+    fulldata = []
     for file_path in Config.file_paths:
+        file_path_id = int(file_path.split('_')[-1])
+
+        logger.info(f"FILEPATH { file_path}")
         pkt_cnt = 0
         pktdata = []
         fsize = int(os.stat(file_path).st_size / (Config.nsamp * 4 * 2))
@@ -828,13 +864,49 @@ if __name__ == "__main__":
         for idx, rawdata in enumerate(read_large_file(file_path)):
             nmaxs.append(cp.max(cp.abs(rawdata)))
             if idx == power_eval_len - 1: break
-        nmaxs = cp.array(nmaxs)
-        kmeans = KMeans(n_clusters=2, random_state=0, n_init=10)
-        kmeans.fit(tocpu(nmaxs.reshape(-1, 1)))
-        if Config.thresh:
-            thresh = Config.thresh
-        else:
-            thresh = cp.mean(kmeans.cluster_centers_)
+        nmaxs = cp.array(nmaxs).get()
+
+        import numpy as np
+        from sklearn.mixture import GaussianMixture
+
+        # Sample list of numbers
+        data = nmaxs.reshape(-1, 1)
+
+        # Fit Gaussian Mixture Model
+        gmm = GaussianMixture(n_components=2)
+        gmm.fit(data)
+
+        # Get the means of the clusters
+        means = gmm.means_.flatten()
+        covariances = gmm.covariances_.flatten()
+        weights = gmm.weights_.flatten()
+
+        # Sort the means to find the threshold
+        sorted_indices = np.argsort(means)
+        mean1, mean2 = means[sorted_indices]
+        covariance1, covariance2 = covariances[sorted_indices]
+        # covariance1 = np.sqrt(covariance1)
+        # covariance2 = np.sqrt(covariance2)
+        weight1, weight2 = weights[sorted_indices]
+        # print(covariance1, covariance2, weight1, weight2)
+
+        # Find the threshold as the midpoint between the two means
+        thresh = (mean1 * covariance2 + mean2 * covariance1) / (covariance1 + covariance2)
+
+        # print(f"Means: {means}")
+        # print(f"Threshold: {thresh}")
+
+        # kmeans = KMeans(n_clusters=2, random_state=0, n_init=10)
+        # kmeans.fit(tocpu(nmaxs.reshape(-1, 1)))
+        # if Config.thresh:
+        #     thresh = Config.thresh
+        # else:
+        #     thresh = (cp.min(kmeans.cluster_centers_) * 2 + cp.max(kmeans.cluster_centers_)) / 3
+        #     thresh = thresh.item()
+        # plt.plot([x.item() for x in nmaxs])
+        # plt.axhline(thresh, linestyle='--')
+        # plt.title(file_path)
+        # plt.show()
         if False:
             counts, bins = cp.histogram(nmaxs, bins=100)
             # logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
@@ -849,11 +921,14 @@ if __name__ == "__main__":
                 legend=dict(x=0.1, y=1.1))
             fig.show()
 
-        ps = []
-        ps2 = []
+
         for pkt_idx, pkt_data in enumerate(read_pkt(file_path, file_path.replace("data0", "data1"), thresh, min_length=30)):
-            if pkt_idx < 1: continue
-            data1, data2 = pkt_data
+
+            # if pkt_idx < 1: continue
+            read_idx, data1, data2 = pkt_data
+            # print(read_idx, len(data1) // Config.nsamp)
+            if read_idx == len(data1) // Config.nsamp: continue
+
             data1 /= cp.mean(cp.abs(data1))
             data2 /= cp.mean(cp.abs(data1))
 
@@ -864,12 +939,44 @@ if __name__ == "__main__":
             trytimes = 5
             vals = np.zeros((trytimes, 3))
             for i in range(trytimes):
-                f, t = coarse_work_fast(d1, est_cfo_f, est_to_s,)
-                est_cfo_f = f
-                est_to_s = t
-                objval=objective_core(est_cfo_f, est_to_s, data1)
-                print(f"try{i} {est_cfo_f=} {est_to_s=} obj={objval}")
-                vals[i] = (objval, est_cfo_f, est_to_s)
+                # while True:
+                    f, t = coarse_work_fast(d1, est_cfo_f, est_to_s,)
+                    if t < 0:
+                        logger.error(f"ERROR in {est_cfo_f=} {est_to_s=} out {f=} {t=} {file_path=} {pkt_idx=}")
+                        plt.plot(cp.unwrap(cp.angle(d1)).get()[:Config.nsamp*20])
+                        plt.show()
+
+                        # Create the range for indices to exclude
+                        xrange1 = np.arange(read_idx - len(data1) // Config.nsamp, read_idx)
+
+                        # Filter x and y to exclude the points in xrange1
+                        filtered_x = [x for x in range(len(nmaxs)) if x not in xrange1]
+                        filtered_y = [nmaxs[x] for x in filtered_x]
+
+                        # Create the scatter plot with the filtered data
+                        fig = px.scatter(x=filtered_x, y=filtered_y, title=file_path)
+
+                        # Add a horizontal line for the threshold
+                        fig.add_hline(y=thresh, line=dict(dash='dash'))
+
+                        # Show the plot
+
+                        fig.add_trace(go.Scatter(x=xrange1, y=[nmaxs[x] for x in xrange1], mode="markers",line=dict(color='red'),marker=dict(size=3),
+                                                 name='Data Range'))
+                        fig.update_traces(marker=dict(size=3))
+
+                        # Show the plot
+                        fig.show()
+
+                        est_cfo_f = -40000
+                        est_to_s = random.randint(0, Config.nsamp - 1)
+                        break
+                    # else: break
+                    est_cfo_f = f
+                    est_to_s = t
+                    objval=objective_core(est_cfo_f, est_to_s, data1)
+                    logger.info(f"try{i} {est_cfo_f=} {est_to_s=} obj={objval}")
+                    vals[i] = (objval, est_cfo_f, est_to_s)
             _, est_cfo_f, est_to_s = vals[np.argmin(vals[:, 0])]
 
             pktdata2a = d1
@@ -880,10 +987,11 @@ if __name__ == "__main__":
             Config.t_lower = Config.tguess - 50
             Config.t_upper = Config.tguess + 50
             bestobj = objective_core(Config.fguess, Config.tguess, pktdata2a)
-            logger.info(
-                f"trystart cfo_freq_est = {Config.fguess:.3f}, time_error = {Config.tguess:.3f} {bestobj=} {Config.f_lower=} {Config.f_upper=} {Config.t_lower=} {Config.t_upper=}")
+            # logger.info(
+            #     f"trystart cfo_freq_est = {Config.fguess:.3f}, time_error = {Config.tguess:.3f} {bestobj=} {Config.f_lower=} {Config.f_upper=} {Config.t_lower=} {Config.t_upper=}")
             tryidx = 0
-            if True:
+            cfo_freq_est, time_error = est_cfo_f, est_to_s
+            if False:
                 tryidx += 1
                 start_t = est_to_s#random.uniform(Config.t_lower, Config.t_upper)
                 start_f = est_cfo_f#random.uniform(Config.f_lower, Config.f_upper)
@@ -903,22 +1011,117 @@ if __name__ == "__main__":
                     bestobj = result.fun
                     if tryidx > 100: draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error)
                 if tryidx == 100: draw_fit(pktidx, pktdata2a, cfo_freq_est, time_error)
-            logger.info(f"Optimized parameters:\n{cfo_freq_est=}\n{time_error=} obj={objective_core(cfo_freq_est, time_error, data1)}")
+            # logger.info(f"Optimized parameters:\n{cfo_freq_est=}\n{time_error=} obj={objective_core(cfo_freq_est, time_error, data1)}")
             # draw_fit(0, pktdata2a, cfo_freq_est, time_error)
 
             tstart = est_to_s
-            for pidx in range(Config.sfdend):
+            data_angles = []
+            for pidx in range(Config.total_len):#Config.sfdend):
                 sig1 = data1[Config.nsamp * pidx + tstart: Config.nsamp * (pidx + 1) + tstart]
                 sig2 = data2[Config.nsamp * pidx + tstart: Config.nsamp * (pidx + 1) + tstart]
-                ps.extend(sig1.dot(sig2.conj()))
+                data_angles.append((sig1.dot(sig2.conj())).item())
+            ps.extend(data_angles)
+            fulldata.append([file_path_id, cfo_freq_est, time_error, *(np.angle(np.array(data_angles))), *(np.abs(np.array(data_angles))) ])
             # ps.extend(coarse_work_fast(d1, est_cfo_f, est_to_s, True))
             # d2 = fix_cfo_to(est_cfo_f, est_to_s, data2)
             # ps2.extend(coarse_work_fast(d2, est_cfo_f, est_to_s, True))
-            plt.axvline(len(ps))
-            print(f"{est_cfo_f=} {est_to_s=}")
-        plt.plot(np.angle(np.array(ps)))
-        # plt.plot(np.angle(np.exp(1j * (np.array(ps)- np.array(ps2)))))
-        plt.show()
-        plt.plot(np.abs(np.array(ps)))
-        # plt.plot(np.angle(np.exp(1j * (np.array(ps)- np.array(ps2)))))
-        plt.show()
+            # plt.axvline(len(ps), linestyle='--', color='b')
+            psa1.append(len(ps))
+            ps2.append(cfo_freq_est)
+            ps3.append(time_error)
+            logger.info(f"{est_cfo_f=} {est_to_s=}")
+        # plt.axvline(len(ps), linestyle='-', color='k')
+        psa1 = psa1[:-1]
+        psa2.append(len(ps))
+
+        # Assuming ps, ps2, and ps3 are numpy arrays
+        # And psa1, psa2 are lists of indices
+
+    # Plot for the angle of ps
+        if True:
+            # fulldata.append([file_path_id, cfo_freq_est, time_error, *(np.angle(np.array(ps))), *(np.abs(np.array(ps))) ])
+            import numpy as np
+            import csv
+
+            # Sample 2D array of x * 3
+
+            # Define the header and CSV file path
+            header = ["fileID", "CFO", "Time offset"]
+            header.extend([f"Angle{x}" for x in range(Config.total_len)])
+            header.extend([f"Abs{x}" for x in range(Config.total_len)])
+            csv_file_path = 'output_with_header.csv'
+
+            # Write the array to CSV with header
+            with open(csv_file_path, 'w', newline='') as csvfile:
+                csvwriter = csv.writer(csvfile)
+                csvwriter.writerow(header)  # Write the header
+                for row in fulldata:
+                    csvwriter.writerow(row)
+
+            # print(f"2D array with header has been written to {csv_file_path}")
+        if False:
+            fig1 = go.Figure()
+
+            fig1.add_trace(go.Scatter(
+                x=np.arange(len(np.angle(np.array(ps)))),
+                y=np.angle(np.array(ps)),
+                mode='lines',
+                name='Angle of ps'
+            ))
+
+            # Add vertical lines for psa1 (blue dashed) and psa2 (black solid)
+            for i in psa1:
+                fig1.add_vline(x=i, line=dict(color="blue", dash="dash"))
+
+            for i in psa2:
+                fig1.add_vline(x=i, line=dict(color="black", dash="solid"))
+
+            # Save the figure
+            fig1.write_html("angles.html")
+
+            # Plot for the magnitude of ps
+            fig2 = go.Figure()
+
+            fig2.add_trace(go.Scatter(
+                x=np.arange(len(np.abs(np.array(ps)))),
+                y=np.abs(np.array(ps)),
+                mode='lines',
+                name='Magnitude of ps'
+            ))
+
+            # Add vertical lines for psa1 (blue dashed) and psa2 (black solid)
+            for i in psa1:
+                fig2.add_vline(x=i, line=dict(color="blue", dash="dash"))
+
+            for i in psa2:
+                fig2.add_vline(x=i, line=dict(color="black", dash="solid"))
+
+            # Save the figure
+            fig2.write_html("signal amplitudes.html")
+
+            # Plot for the magnitude of ps2
+            fig3 = go.Figure()
+
+            fig3.add_trace(go.Scatter(
+                x=np.arange(len(np.abs(np.array(ps2)))),
+                y=np.abs(np.array(ps2)),
+                mode='lines',
+                name='Magnitude of ps2'
+            ))
+
+            # Save the figure
+            fig3.write_html("estimated cfo.html")
+
+            # Plot for the magnitude of ps3 as a scatter plot
+            fig4 = go.Figure()
+
+            fig4.add_trace(go.Scatter(
+                x=np.arange(len(np.abs(np.array(ps3)))),
+                y=np.abs(np.array(ps3)),
+                mode='markers',
+                name='Magnitude of ps3'
+            ))
+
+            # Save the figure
+            fig4.write_html("estimated time offsets.html")
+
