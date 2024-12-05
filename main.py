@@ -177,9 +177,9 @@ class Config:
     if not os.path.exists(figpath): os.mkdir(figpath)
 
     fft_upsamp = 1024
-    detect_range_pkts = 5
+    detect_range_pkts = 1
     detect_to_max = nsamp * 2
-    fft_n = nsamp * fft_upsamp
+    fft_n = int(fs) #nsamp * fft_upsamp
     plan = fft.get_fft_plan(cp.zeros(fft_n, dtype=cp.complex64))
     fft_ups = cp.zeros((preamble_len + detect_range_pkts, fft_n), dtype=cp.complex64)
     fft_downs = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.complex64)
@@ -220,40 +220,77 @@ def objective(params, pktdata2a):
 
     
 def objective_core(cfofreq, time_error, pktdata2a):
+    # print('input', cfofreq, time_error, 0)
     if time_error < 0:# or time_error > Config.detect_to_max: # TODO!!!
         # print('ret', cfofreq, time_error, 0)
         return 0
-    if abs(cfofreq + 40000) > 20000: return 0 # TODO !!!
+    if abs(cfofreq + 20000) > 20000: return 0 # TODO !!!
     assert pktdata2a.ndim == 1
     assert cp.mean(cp.abs(pktdata2a)).ndim == 0
     pktdata2a_roll = cp.roll(pktdata2a / cp.mean(cp.abs(pktdata2a)), -math.ceil(time_error))
     detect_symb = gen_refchirp(cfofreq, time_error - math.ceil(time_error), deadzone=Config.gen_refchirp_deadzone)
-    res = cp.zeros(len(detect_symb), dtype=cp.complex64)
+    res = cp.zeros(len(detect_symb), dtype=cp.float32)#complex64)
     ddx = 0  # TODO
     ress2 = []
+
+
+
+
     for sidx, ssymb in enumerate(detect_symb):
-        ress = cp.conj(ssymb).dot(pktdata2a_roll[ddx: ddx + len(ssymb)])
+        a1 = 0.23
+        a2 = -0.13
+        f1 = -a1 * Config.fs / 2 / np.pi
+        f2 = -a2 * Config.fs / 2 / np.pi
+        sigt = 2 ** Config.sf / Config.bw * Config.fs
+        fixchirp = gen_upchirp(0, sigt * 2, f1 * 2, (f2 - f1) / sigt) # not fix length TODO
+        symbdata = pktdata2a_roll[ddx: ddx + len(ssymb)] #* fixchirp[:len(ssymb)]
+        ress = cp.conj(ssymb).dot(symbdata)
         ddx += len(ssymb)
         # res[sidx] = ress / len(ssymb) # !!! abs: not all add up TODO!!
         res[sidx] = cp.abs(ress) / len(ssymb) # !!! abs: not all add up
-        # ress2.extend(cp.conj(ssymb) * (pktdata2a_roll[ddx: ddx + len(ssymb)]))
-    # cumulative_sums = cp.cumsum(cp.array(ress2))
-    # result_gpu = cp.abs(cumulative_sums[:Config.nsamp*2])
-    # result_gpu = cp.abs(cumulative_sums)
-    # result_cpu = result_gpu.get()
-    # plt.plot(result_cpu)
-    # plt.axvline(Config.nsamp)
-    # plt.show()
+        ress2.extend(cp.conj(ssymb) * symbdata)
+    print(res)
+    ret =  - tocpu(cp.abs(cp.sum(res)) / len(res-2)) # two zero codes
+    print('ret', cfofreq, time_error, ret)
+    if ret<-0.08:
+        cumulative_sums = cp.cumsum(cp.array(ress2))
+        result_gpu = cp.abs(cumulative_sums)
+        result_cpu = result_gpu.get()
+        plt.plot(result_cpu)
+        plt.axvline(Config.nsamp)
+        plt.title(f"{cfofreq:.2f} Hz {time_error:.2f} sps {ret=}")
+        plt.show()
+        # phasediff = cp.diff(cp.angle(cp.array(ress2)))
+        # fig = px.scatter(y=phasediff[:Config.nsamp*2].get())
+        # fig.update_traces(marker=dict(size=2))
+        # fig.add_vline(x=Config.nsamp, line=dict(color="black", dash="dash"))
+        # fig.show()
 
-    # plt.plot(cp.abs(cp.array(ress2)).get())
-    # plt.show()
-    # print(ress, - tocpu(cp.abs(cp.sum(res))))
-    # print(cp.mean(cp.abs(pktdata2a[:ddx])))  # Negative because we use a minimizer
-    # TODO qian zhui he plot
-    # TODO remove **2 because res[sidx] is sum not sumofsquare
-    # TODO phase consistency?
-    ret =  - tocpu(cp.abs(cp.sum(res)) / len(res))
-    # print('ret', cfofreq, time_error, ret)
+
+
+        phasediff = cp.unwrap(cp.angle(cp.array(ress2)))
+        fig = px.scatter(y=phasediff[:Config.nsamp*5].get())
+        fig.update_traces(marker=dict(size=2))
+        fig.add_vline(x=Config.nsamp, line=dict(color="black", dash="dash"))
+
+        y_values = phasediff[:Config.nsamp - 50].get()
+        x_values = np.arange(len(y_values))
+        coefficients = np.polyfit(x_values, y_values, 1)
+        print(coefficients)
+        fig.add_trace(go.Scatter(x=x_values, y=np.poly1d(coefficients)(x_values), mode="lines"))
+        fig.update_layout(title = f"{cfofreq:.2f} Hz {time_error:.2f} sps {ret=}")
+        fig.show()
+
+
+        # sys.exit(0)
+
+        # plt.plot(cp.abs(cp.array(ress2)).get())
+        # plt.show()
+        # print(ress, - tocpu(cp.abs(cp.sum(res))))
+        # print(cp.mean(cp.abs(pktdata2a[:ddx])))  # Negative because we use a minimizer
+        # TODO qian zhui he plot
+        # TODO remove **2 because res[sidx] is sum not sumofsquare
+        # TODO phase consistency?
     return ret
 
 
@@ -343,29 +380,37 @@ def add_freq(pktdata_in, est_cfo_freq):
     return pktdata2a
 
 def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False):
-    
-    tstart = round(tstart) # !!!!! TODO tstart rounded !!!!!
-    
-    # plot angle of input 
-    # plt.plot(cp.unwrap(cp.angle(pktdata_in)).get()[tstart:tstart+Config.nsamp*20])
-    # plt.show()
-    
+
+    # tstart = round(tstart) # !!!!! TODO tstart rounded !!!!!
+
+    # plot angle of input
+    plt.plot(cp.unwrap(cp.angle(pktdata_in)).get()[round(tstart):round(tstart)+Config.nsamp*20])
+    plt.axvline(Config.nsamp)
+    plt.axvline(Config.nsamp*2)
+    plt.show()
+
     est_to_s = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
     cfoppm = fstart / Config.sig_freq
     t1 = 2 ** Config.sf / Config.bw * (1 - cfoppm)
     upchirp = mychirp(est_to_s, f0=-Config.bw / 2, f1=Config.bw / 2, t1=t1)
     downchirp = mychirp(est_to_s, f0=Config.bw / 2, f1=-Config.bw / 2, t1=t1)
-    
-    fft_sig_n = round(Config.bw / Config.fs * Config.fft_n) # 4096 fft_n=nsamp*fft_upsamp, nsamp=t*fs=2**sf/bw*fs, fft_sig_n=2**sf * fft_upsamp
+
+    fft_sig_n = Config.bw#  round(Config.bw / Config.fs * Config.fft_n) # 4096 fft_n=nsamp*fft_upsamp, nsamp=t*fs=2**sf/bw*fs, fft_sig_n=2**sf * fft_upsamp
     fups = [] # max upchirp positions
     fret = [] # return phase of two peaks
 
     # upchirp dechirp
+    nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
+    fdiff = []
     for pidx in range(Config.preamble_len + Config.detect_range_pkts): # assume chirp start at one in [0, Config.detect_range_pkts) possible windows
         # print(len(pktdata_in), Config.nsamp * (pidx + 1)  + tstart, pidx, tstart)
         # print("AAAA", tstart, Config.nsamp * pidx + tstart,pktdata_in[Config.nsamp * pidx + tstart])
         assert Config.nsamp * pidx + tstart >= 0
-        sig1 = pktdata_in[Config.nsamp * pidx + tstart: Config.nsamp * (pidx + 1)  + tstart]
+        start_pos_all = nsamp_small * pidx + tstart
+        start_pos = round(start_pos_all)
+        start_pos_d = start_pos_all - start_pos
+        fdiff.append(start_pos_d)
+        sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
         sig2 = sig1 * downchirp
         # plt.plot(cp.unwrap(cp.angle(sig1)).get())
         # plt.show()
@@ -381,8 +426,8 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False):
         # print(cp.max(cp.abs(data2)), cp.argmax(cp.abs(data2)))
         amax = cp.argmax(cp.abs(data))
         fups.append(amax.get())
-        fret.append(cp.angle(data0[fft_sig_n:][amax]).get())
-        fret.append(cp.angle(data0[-fft_sig_n:][amax]).get())
+        # fret.append(cp.angle(data0[fft_sig_n:][amax]).get())
+        # fret.append(cp.angle(data0[-fft_sig_n:][amax]).get())
 
         # try polyfitting the input, use if suspect packet detection wrong
         if False:
@@ -414,7 +459,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False):
             # xrange = cp.arange(cp.argmax(cp.abs(data0)).item() - 50000,cp.argmax(cp.abs(data0)).item() + 50000)[::100]
             xrange = cp.arange(len(data0))[::100]
             fig = px.line(x=xrange.get(), y=cp.abs(data0[xrange]).get())
-            # plt.plot(xrange.get(), cp.abs(data0[xrange + fft_sig_n]).get())
+            fig.add_trace(go.Scatter(x=xrange.get(), y=cp.abs(data0[xrange + int(fft_sig_n)]).get(), mode="lines"))
             # plt.plot(cp.abs(data0).get())
             # plt.title(f"up {pidx}")
             fig.show() # TODO
@@ -457,16 +502,20 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False):
 
 
         # linear fit fups
-        y_values = fups[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt]
+        fdiff = np.array(fdiff)
+        y_values = fups[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt] + fdiff[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt] / nsamp_small * Config.bw / Config.fs * Config.fft_n
         y_values = [(x + fft_sig_n//2) % fft_sig_n - fft_sig_n//2 for x in y_values]  # move into [-fft_sig_n//2, fft_sig_n//2] range
+        # print(f"{fft_sig_n=}")
+        # y_values = y_values % Config.bw
         x_values = np.arange(len(y_values)) + Config.skip_preambles
         coefficients = np.polyfit(x_values, y_values, 1)
 
         # plot fitted result
-        # plt.scatter(x_values, y_values)
-        # plt.plot(x_values, np.poly1d(coefficients)(x_values))
-        # plt.show()
-        # print('c',coefficients)
+        plt.scatter(x_values, y_values)
+        plt.plot(x_values, np.poly1d(coefficients)(x_values))
+        plt.title("linear")
+        plt.show()
+        print('c',coefficients[0]/Config.bw*Config.fs)
 
         polynomial = np.poly1d(coefficients)
 
@@ -486,6 +535,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False):
         t0 = (f0 - fft_val_up) % 1
 
         # try all possible variations (unwrap f0, t0 if their real value exceed [-0.5, 0.5))
+        print(f0, t0)
         deltaf, deltat = np.meshgrid((np.arange(-1, 1.5, 0.5)+f0)*Config.bw, (np.arange(-1, 1.5, 0.5)+t0)*Config.tsig + tstart + detect_pkt*Config.nsamp)
         values = np.zeros_like(deltaf).astype(float)
         for i in range(deltaf.shape[0]):
@@ -526,9 +576,10 @@ if __name__ == "__main__":
 
     # Main loop read files
     for file_path in Config.file_paths:
+        file_path = "hou2"
 
         #  read file and count size
-        file_path_id = int(file_path.split('_')[-1])
+        file_path_id = 0# int(file_path.split('_')[-1])
 
         logger.info(f"FILEPATH { file_path}")
         pkt_cnt = 0
@@ -578,7 +629,7 @@ if __name__ == "__main__":
 
         # loop for demodulating all decoded packets: iterate over pkts with energy>thresh and length>min_length
         for pkt_idx, pkt_data in enumerate(read_pkt(file_path, file_path.replace("data0", "data1"), thresh, min_length=30)):
-            
+
             # read data: read_idx is the index of packet end window in the file
             read_idx, data1, data2 = pkt_data
             # (Optional) skip the first pkt because it may be half a pkt. read_idx == len(data1) means this pkt start from start of file
@@ -600,7 +651,7 @@ if __name__ == "__main__":
 
                     # main detection function with up-down
                     f, t = coarse_work_fast(data1, est_cfo_f, est_to_s,)
-                
+
                     # plot error
                     if t < 0:
                         # plot unwrapped phases of the pkt
