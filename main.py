@@ -144,7 +144,7 @@ class Config:
     tsig = 2 ** sf / bw * fs  # in samples
     nsamp = round(n_classes * fs / bw)
     # f_lower, f_upper = -50000, -30000
-    f_lower, f_upper = -41000, -38000
+    f_lower, f_upper = -38000, -34000
     t_lower, t_upper = 0, nsamp
     fguess = (f_lower + f_upper) / 2
     tguess = nsamp / 2
@@ -219,7 +219,7 @@ def objective(params, pktdata2a):
     return objective_core(cfofreq, time_error, pktdata2a)
 
     
-def objective_core(cfofreq, time_error, pktdata2a):
+def objective_core(cfofreq, time_error, pktdata2a, drawflag = False, calctime=10):
     # print('input', cfofreq, time_error, 0)
     if time_error < 0:# or time_error > Config.detect_to_max: # TODO!!!
         # print('ret', cfofreq, time_error, 0)
@@ -228,14 +228,12 @@ def objective_core(cfofreq, time_error, pktdata2a):
     assert pktdata2a.ndim == 1
     assert cp.mean(cp.abs(pktdata2a)).ndim == 0
     pktdata2a_roll = cp.roll(pktdata2a / cp.mean(cp.abs(pktdata2a)), -math.ceil(time_error))
-    detect_symb = gen_refchirp(cfofreq, time_error - math.ceil(time_error), deadzone=Config.gen_refchirp_deadzone)
+    detect_symb = gen_refchirp(cfofreq, time_error - math.ceil(time_error), deadzone=Config.gen_refchirp_deadzone, calctime=calctime)
     res = cp.zeros(len(detect_symb), dtype=cp.float32)#complex64)
     ddx = 0  # TODO
     ress2 = []
 
-
-
-
+    res2 = []
     for sidx, ssymb in enumerate(detect_symb):
         a1 = 0.23
         a2 = -0.13
@@ -248,16 +246,38 @@ def objective_core(cfofreq, time_error, pktdata2a):
         ddx += len(ssymb)
         # res[sidx] = ress / len(ssymb) # !!! abs: not all add up TODO!!
         res[sidx] = cp.abs(ress) / len(ssymb) # !!! abs: not all add up
+        res2.append(cp.angle(ress).get())
         ress2.extend(cp.conj(ssymb) * symbdata)
-    print(res)
+    # print(res)
+    res2 = np.array(res2)
+
+    beta = Config.bw / ( 2 ** Config.sf / Config.bw )
     ret =  - tocpu(cp.abs(cp.sum(res)) / len(res-2)) # two zero codes
-    print('ret', cfofreq, time_error, ret)
-    if ret<-0.08:
+    # print('ret', cfofreq, time_error, ret)
+    if drawflag :#ret<-0.08:
+        plt.plot(res2)
+        plt.title(f"nounwrap {calctime} {cfofreq:.2f} Hz {time_error:.2f} sps")
+        plt.show()
+
+        plt.plot(np.unwrap(res2))
+
+        x_values = np.arange(Config.skip_preambles, Config.preamble_len)
+        y_values = np.unwrap(res2[x_values])
+        coefficients = np.polyfit(x_values, y_values, 1)
+        plt.plot(x_values, np.poly1d(coefficients)(x_values))
+        coef = coefficients[0]
+        coef_estcfo = coefficients[0] / Config.bw / (2 ** Config.sf / Config.bw) * Config.sig_freq
+        plt.title(f"{calctime} {cfofreq:.2f} Hz {time_error:.2f} sps {coef:.5e} {coef_estcfo:.2e}")
+        logger.info(f"{calctime} {cfofreq:.2f} Hz {time_error:.2f} sps {coef=} {coef_estcfo=}")
+        plt.show()
+    if False and calctime > 0:
+
+
         cumulative_sums = cp.cumsum(cp.array(ress2))
         result_gpu = cp.abs(cumulative_sums)
         result_cpu = result_gpu.get()
         plt.plot(result_cpu)
-        plt.axvline(Config.nsamp)
+        for i in range(16): plt.axvline(Config.nsamp * i)
         plt.title(f"{cfofreq:.2f} Hz {time_error:.2f} sps {ret=}")
         plt.show()
         # phasediff = cp.diff(cp.angle(cp.array(ress2)))
@@ -269,17 +289,20 @@ def objective_core(cfofreq, time_error, pktdata2a):
 
 
         phasediff = cp.unwrap(cp.angle(cp.array(ress2)))
-        fig = px.scatter(y=phasediff[:Config.nsamp*5].get())
+        x_values = np.arange(Config.nsamp * (Config.skip_preambles - 2), Config.nsamp * (Config.skip_preambles + 2))
+        fig = px.scatter(x=x_values, y=phasediff[x_values].get())
         fig.update_traces(marker=dict(size=2))
         fig.add_vline(x=Config.nsamp, line=dict(color="black", dash="dash"))
 
-        y_values = phasediff[:Config.nsamp - 50].get()
-        x_values = np.arange(len(y_values))
+        x_values = np.arange(Config.nsamp * Config.skip_preambles + 50, Config.nsamp * (Config.skip_preambles + 1) - 50)
+        y_values = phasediff[x_values].get()
         coefficients = np.polyfit(x_values, y_values, 1)
-        print(coefficients)
+        est_dfreq = coefficients[0] * Config.fs
+        print(f"fitted curve {est_dfreq=:.2f} Hz")
         fig.add_trace(go.Scatter(x=x_values, y=np.poly1d(coefficients)(x_values), mode="lines"))
-        fig.update_layout(title = f"{cfofreq:.2f} Hz {time_error:.2f} sps {ret=}")
+        fig.update_layout(title = f"{cfofreq:.2f} Hz {time_error:.2f} sps {ret=:.3f} {calctime=} {est_dfreq=:.2f} Hz")
         fig.show()
+        objective_core(cfofreq + est_dfreq / 10, time_error, pktdata2a, True, calctime-1)
 
 
         # sys.exit(0)
@@ -295,11 +318,12 @@ def objective_core(cfofreq, time_error, pktdata2a):
 
 
 
-def gen_refchirp(cfofreq, tstart, deadzone=0):
+def gen_refchirp(cfofreq, tstart, deadzone=0, calctime=0):
     detect_symb = []
     bw = Config.bw * (1 + cfofreq / Config.sig_freq)
     sigt = 2 ** Config.sf / bw * Config.fs #* (1 - cfofreq / Config.sig_freq)
     beta = bw / sigt
+    sigt *= (1 + 1e-6 * calctime)# (1 + cfofreq / Config.sig_freq)
     # print(Config.bw / Config.tsig * (1 + cfofreq / Config.sig_freq) / (1 - cfofreq / Config.sig_freq))
     # print(Config.bw / Config.tsig * (1 + cfofreq / Config.sig_freq) )
     # print(Config.bw / Config.tsig )
@@ -535,7 +559,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False):
         t0 = (f0 - fft_val_up) % 1
 
         # try all possible variations (unwrap f0, t0 if their real value exceed [-0.5, 0.5))
-        print(f0, t0)
+        # print(f0, t0)
         deltaf, deltat = np.meshgrid((np.arange(-1, 1.5, 0.5)+f0)*Config.bw, (np.arange(-1, 1.5, 0.5)+t0)*Config.tsig + tstart + detect_pkt*Config.nsamp)
         values = np.zeros_like(deltaf).astype(float)
         for i in range(deltaf.shape[0]):
@@ -682,61 +706,75 @@ if __name__ == "__main__":
                     logger.info(f"try{i} {est_cfo_f=} {est_to_s=} obj={objval}")
                     vals[i] = (objval, est_cfo_f, est_to_s)
 
-            # the best result among trytimes
-            _, est_cfo_f, est_to_s = vals[np.argmin(vals[:, 0])]
+                    # the best result among trytimes
+                    _, est_cfo_f, est_to_s = vals[np.argmin(vals[:, 0])]
 
-            # fine grained optimization, search around the up-down result towards the local minima
-            Config.fguess = est_cfo_f
-            Config.tguess = est_to_s
-            Config.f_lower = Config.fguess - 500
-            Config.f_upper = Config.fguess + 500
-            Config.t_lower = Config.tguess - 50
-            Config.t_upper = Config.tguess + 50
-            bestobj = objective_core(Config.fguess, Config.tguess, data1)
+                    # fine grained optimization, search around the up-down result towards the local minima
+                    Config.fguess = est_cfo_f
+                    Config.tguess = est_to_s
+                    Config.f_lower = Config.fguess - 500
+                    Config.f_upper = Config.fguess + 500
+                    Config.t_lower = Config.tguess - 50
+                    Config.t_upper = Config.tguess + 50
+                    bestobj = objective_core(Config.fguess, Config.tguess, data1)
 
-            tryidx = 0
+                    tryidx = 0
 
-            # alternative method for optimization (doesn't always get good results, don't know why)
-            if False:
-                cfo_freq_est, time_error = est_cfo_f, est_to_s
-                tryidx += 1
-                start_t = est_to_s#random.uniform(Config.t_lower, Config.t_upper)
-                start_f = est_cfo_f#random.uniform(Config.f_lower, Config.f_upper)
-                result = opt.minimize(objective, converter_down(start_f, start_t), args=(data1,),
-                                      bounds=[
-                                          (converter_down(Config.f_lower, 0)[0], converter_down(Config.f_upper, 0)[0]),
-                                          (converter_down(0, Config.t_lower)[1], converter_down(0, Config.t_upper)[1])],
-                                      method='L-BFGS-B',
-                                      options={'gtol': 1e-12, 'disp': False}
-                                      )
+                    # alternative method for optimization (doesn't always get good results, don't know why)
 
-                if result.fun < bestobj:
-                    cfo_freq_est, time_error = converter_up(*result.x)
-                    logger.debug(
-                        f"{tryidx=: 6d} cfo_freq_est = {cfo_freq_est:.3f}, time_error = {time_error:.3f} {result.fun=:.5f}")
-                    # Config.fguess, Config.tguess = result.x
-                    bestobj = result.fun
-                    if tryidx > 100: draw_fit(pktidx, data1, cfo_freq_est, time_error)
-                if tryidx == 100: draw_fit(pktidx, data1, cfo_freq_est, time_error)
-                logger.info(f"Optimized parameters:\n{cfo_freq_est=}\n{time_error=} obj={objective_core(cfo_freq_est, time_error, data1)}")
-                # draw_fit(0, data1, cfo_freq_est, time_error)
-                est_cfo_f, est_to_s = cfo_freq_est, time_error
+                    cfo_freq_est, time_error = est_cfo_f, est_to_s
+                    logger.info(
+                        f"updown parameters:{cfo_freq_est=} {time_error=} obj={objective_core(cfo_freq_est, time_error, data1, True)}")
+                    xv = np.linspace(-20, 20, 100)
+                    yv = [objective_core(cfo_freq_est, time_error, data1, False, i) for i in xv]
+                    plt.plot(xv, yv)
+                    plt.title("xv yv")
+                    plt.show()
 
-            # skip fine_grained optimization
+                    # cfo_freq_est = 4.60472836e+02
+                    # logger.info(
+                    #     f"updown parameters:\n{cfo_freq_est=}\n{time_error=} obj={objective_core(cfo_freq_est, time_error, data1, True)}")
 
-            # compute angles
-            data_angles = []
-            for pidx in range(Config.total_len):
-                sig1 = data1[Config.nsamp * pidx + est_to_s: Config.nsamp * (pidx + 1) + est_to_s]
-                sig2 = data2[Config.nsamp * pidx + est_to_s: Config.nsamp * (pidx + 1) + est_to_s]
-                data_angles.append((sig1.dot(sig2.conj())).item())
-            # save data for output line
-            fulldata.append([file_path_id, est_cfo_f, est_to_s, *(np.angle(np.array(data_angles))), *(np.abs(np.array(data_angles))) ])
-            # save data for plotting
-            ps.extend(data_angles)
-            psa1.append(len(ps))
-            ps2.append(est_cfo_f)
-            ps3.append(est_to_s)
+                    if False:
+                        cfo_freq_est, time_error = est_cfo_f, est_to_s
+                        tryidx += 1
+                        start_t = est_to_s#random.uniform(Config.t_lower, Config.t_upper)
+                        start_f = est_cfo_f#random.uniform(Config.f_lower, Config.f_upper)
+                        result = opt.minimize(objective, converter_down(start_f, start_t), args=(data1,),
+                                              bounds=[
+                                                  (converter_down(Config.f_lower, 0)[0], converter_down(Config.f_upper, 0)[0]),
+                                                  (converter_down(0, Config.t_lower)[1], converter_down(0, Config.t_upper)[1])],
+                                              method='L-BFGS-B',
+                                              options={'gtol': 1e-12, 'disp': False}
+                                              )
+
+                        if result.fun < bestobj:
+                            cfo_freq_est, time_error = converter_up(*result.x)
+                            logger.debug(
+                                f"{tryidx=: 6d} cfo_freq_est = {cfo_freq_est:.3f}, time_error = {time_error:.3f} {result.fun=:.5f}")
+                            # Config.fguess, Config.tguess = result.x
+                            bestobj = result.fun
+                            if tryidx > 100: draw_fit(pktidx, data1, cfo_freq_est, time_error)
+                        if tryidx == 100: draw_fit(pktidx, data1, cfo_freq_est, time_error)
+                        logger.info(f"Optimized parameters:\n{cfo_freq_est=}\n{time_error=} obj={objective_core(cfo_freq_est, time_error, data1, True)}")
+                        # draw_fit(0, data1, cfo_freq_est, time_error)
+                        est_cfo_f, est_to_s = cfo_freq_est, time_error
+
+                    # skip fine_grained optimization
+
+                    # compute angles
+                    data_angles = []
+                    for pidx in range(Config.total_len):
+                        sig1 = data1[Config.nsamp * pidx + est_to_s: Config.nsamp * (pidx + 1) + est_to_s]
+                        sig2 = data2[Config.nsamp * pidx + est_to_s: Config.nsamp * (pidx + 1) + est_to_s]
+                        data_angles.append((sig1.dot(sig2.conj())).item())
+                    # save data for output line
+                    fulldata.append([file_path_id, est_cfo_f, est_to_s, *(np.angle(np.array(data_angles))), *(np.abs(np.array(data_angles))) ])
+                    # save data for plotting
+                    ps.extend(data_angles)
+                    psa1.append(len(ps))
+                    ps2.append(est_cfo_f)
+                    ps3.append(est_to_s)
 
         # the length of each pkt (for plotting)
         psa1 = psa1[:-1]
