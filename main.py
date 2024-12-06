@@ -218,7 +218,45 @@ def objective(params, pktdata2a):
     cfofreq, time_error = converter_up(*params)
     return objective_core(cfofreq, time_error, pktdata2a)
 
-    
+
+
+def objective_linear(cfofreq, time_error, pktdata2a):
+    detect_symb = gen_refchirp(cfofreq, time_error - math.ceil(time_error), deadzone=Config.gen_refchirp_deadzone,
+                               calctime=0)
+    detect_symb_concat = cp.concatenate(detect_symb, axis=0)
+    res = cp.zeros(len(detect_symb), dtype=cp.float32)  # complex64)
+    ddx = 0  # TODO
+    tint = math.ceil(time_error)
+    # ress2 = cp.conj(pktdata2a[tint:tint + len(detect_symb_concat)]) * detect_symb_concat
+    ress2 = -cp.unwrap(cp.angle(pktdata2a[tint:tint + len(detect_symb_concat)])) + cp.unwrap(cp.angle(detect_symb_concat))
+    # plt.plot(cp.unwrap(cp.angle(pktdata2a[tint:tint + len(detect_symb_concat)])).get())
+    # plt.plot(cp.unwrap(cp.angle(detect_symb_concat)).get())
+    # fig = px.scatter(y=ress2[:150000].get())
+    # fig.show()
+
+
+    phasediff = ress2#cp.unwrap(cp.angle(cp.array(ress2)))
+    est_dfreqs = []
+    fig = px.scatter(y=phasediff[:Config.preamble_len * Config.nsamp].get())
+    fig.update_traces(marker=dict(size=2))
+    for fit_symbidx in range(0, Config.preamble_len):
+        x_values = np.arange(Config.nsamp * fit_symbidx + 50, Config.nsamp * (fit_symbidx + 1) - 50)
+        y_values = phasediff[x_values].get()
+        coefficients = np.polyfit(x_values, y_values, 1)
+        est_dfreq = coefficients[0] * Config.fs / 2 / np.pi
+        est_dfreqs.append(est_dfreq)
+        print(f"fitted curve {est_dfreq=:.2f} Hz")
+        fig.add_trace(go.Scatter(x=x_values, y=np.poly1d(coefficients)(x_values), mode="lines"))
+    fig.update_layout(title = f"{cfofreq:.2f} Hz {time_error:.2f} sps")
+    fig.show()
+    fig = px.scatter(y=est_dfreqs)
+    ret_dfreq = np.mean(est_dfreqs[Config.skip_preambles:])
+    fig.add_hline(y=ret_dfreq)
+    fig.show()
+    return ret_dfreq
+        # objective_core(cfofreq + est_dfreq / 10, time_error, pktdata2a, True, calctime-1)
+
+
 def objective_core(cfofreq, time_error, pktdata2a, drawflag = False, calctime=10):
     # print('input', cfofreq, time_error, 0)
     if time_error < 0:# or time_error > Config.detect_to_max: # TODO!!!
@@ -227,31 +265,35 @@ def objective_core(cfofreq, time_error, pktdata2a, drawflag = False, calctime=10
     if abs(cfofreq + 20000) > 20000: return 0 # TODO !!!
     assert pktdata2a.ndim == 1
     assert cp.mean(cp.abs(pktdata2a)).ndim == 0
-    pktdata2a_roll = cp.roll(pktdata2a / cp.mean(cp.abs(pktdata2a)), -math.ceil(time_error))
+    # pktdata2a_roll = cp.roll(pktdata2a / cp.mean(cp.abs(pktdata2a)), -math.ceil(time_error))
     detect_symb = gen_refchirp(cfofreq, time_error - math.ceil(time_error), deadzone=Config.gen_refchirp_deadzone, calctime=calctime)
+    detect_symb_concat = cp.concatenate(detect_symb, axis=0)
+    if not drawflag:
+        res = cp.abs(cp.conj(pktdata2a[math.ceil(time_error):math.ceil(time_error)+len(detect_symb_concat)]).dot(detect_symb_concat)) / len(detect_symb_concat)
+        return -res.get()
+
     res = cp.zeros(len(detect_symb), dtype=cp.float32)#complex64)
     ddx = 0  # TODO
-    ress2 = []
+    ress2 = cp.conj(pktdata2a[math.ceil(time_error):math.ceil(time_error) + len(detect_symb_concat)]) * detect_symb_concat
 
     res2 = []
     for sidx, ssymb in enumerate(detect_symb):
-        a1 = 0.23
-        a2 = -0.13
-        f1 = -a1 * Config.fs / 2 / np.pi
-        f2 = -a2 * Config.fs / 2 / np.pi
-        sigt = 2 ** Config.sf / Config.bw * Config.fs
-        fixchirp = gen_upchirp(0, sigt * 2, f1 * 2, (f2 - f1) / sigt) # not fix length TODO
-        symbdata = pktdata2a_roll[ddx: ddx + len(ssymb)] #* fixchirp[:len(ssymb)]
+        # a1 = 0.23
+        # a2 = -0.13
+        # f1 = -a1 * Config.fs / 2 / np.pi
+        # f2 = -a2 * Config.fs / 2 / np.pi
+        # sigt = 2 ** Config.sf / Config.bw * Config.fs
+        # fixchirp = gen_upchirp(0, sigt * 2, f1 * 2, (f2 - f1) / sigt) # not fix length TODO
+        symbdata = pktdata2a[ddx + math.ceil(time_error): math.ceil(time_error) + ddx + len(ssymb)] #* fixchirp[:len(ssymb)]
         ress = cp.conj(ssymb).dot(symbdata)
         ddx += len(ssymb)
         # res[sidx] = ress / len(ssymb) # !!! abs: not all add up TODO!!
         res[sidx] = cp.abs(ress) / len(ssymb) # !!! abs: not all add up
         res2.append(cp.angle(ress).get())
-        ress2.extend(cp.conj(ssymb) * symbdata)
     # print(res)
     res2 = np.array(res2)
 
-    beta = Config.bw / ( 2 ** Config.sf / Config.bw )
+    # beta = Config.bw / ( 2 ** Config.sf / Config.bw )
     ret =  - tocpu(cp.abs(cp.sum(res)) / len(res-2)) # two zero codes
     # print('ret', cfofreq, time_error, ret)
     if drawflag :#ret<-0.08:
@@ -270,7 +312,7 @@ def objective_core(cfofreq, time_error, pktdata2a, drawflag = False, calctime=10
         plt.title(f"{calctime} {cfofreq:.2f} Hz {time_error:.2f} sps {coef:.5e} {coef_estcfo:.2e}")
         logger.info(f"{calctime} {cfofreq:.2f} Hz {time_error:.2f} sps {coef=} {coef_estcfo=}")
         plt.show()
-    if False and calctime > 0:
+    if drawflag:# and calctime > 0:
 
 
         cumulative_sums = cp.cumsum(cp.array(ress2))
@@ -286,7 +328,7 @@ def objective_core(cfofreq, time_error, pktdata2a, drawflag = False, calctime=10
         # fig.add_vline(x=Config.nsamp, line=dict(color="black", dash="dash"))
         # fig.show()
 
-
+    if False:
 
         phasediff = cp.unwrap(cp.angle(cp.array(ress2)))
         x_values = np.arange(Config.nsamp * (Config.skip_preambles - 2), Config.nsamp * (Config.skip_preambles + 2))
@@ -302,7 +344,7 @@ def objective_core(cfofreq, time_error, pktdata2a, drawflag = False, calctime=10
         fig.add_trace(go.Scatter(x=x_values, y=np.poly1d(coefficients)(x_values), mode="lines"))
         fig.update_layout(title = f"{cfofreq:.2f} Hz {time_error:.2f} sps {ret=:.3f} {calctime=} {est_dfreq=:.2f} Hz")
         fig.show()
-        objective_core(cfofreq + est_dfreq / 10, time_error, pktdata2a, True, calctime-1)
+        # objective_core(cfofreq + est_dfreq / 10, time_error, pktdata2a, True, calctime-1)
 
 
         # sys.exit(0)
@@ -408,10 +450,10 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False):
     # tstart = round(tstart) # !!!!! TODO tstart rounded !!!!!
 
     # plot angle of input
-    plt.plot(cp.unwrap(cp.angle(pktdata_in)).get()[round(tstart):round(tstart)+Config.nsamp*20])
-    plt.axvline(Config.nsamp)
-    plt.axvline(Config.nsamp*2)
-    plt.show()
+    # plt.plot(cp.unwrap(cp.angle(pktdata_in)).get()[round(tstart):round(tstart)+Config.nsamp*20])
+    # plt.axvline(Config.nsamp)
+    # plt.axvline(Config.nsamp*2)
+    # plt.show()
 
     est_to_s = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
     cfoppm = fstart / Config.sig_freq
@@ -535,10 +577,10 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False):
         coefficients = np.polyfit(x_values, y_values, 1)
 
         # plot fitted result
-        plt.scatter(x_values, y_values)
-        plt.plot(x_values, np.poly1d(coefficients)(x_values))
-        plt.title("linear")
-        plt.show()
+        # plt.scatter(x_values, y_values)
+        # plt.plot(x_values, np.poly1d(coefficients)(x_values))
+        # plt.title("linear")
+        # plt.show()
         print('c',coefficients[0]/Config.bw*Config.fs)
 
         polynomial = np.poly1d(coefficients)
@@ -725,11 +767,26 @@ if __name__ == "__main__":
                     cfo_freq_est, time_error = est_cfo_f, est_to_s
                     logger.info(
                         f"updown parameters:{cfo_freq_est=} {time_error=} obj={objective_core(cfo_freq_est, time_error, data1, True)}")
-                    xv = np.linspace(-20, 20, 100)
-                    yv = [objective_core(cfo_freq_est, time_error, data1, False, i) for i in xv]
+                    linear_dfreq = objective_linear(cfo_freq_est, time_error, data1)
+                    logger.info(f"{linear_dfreq=}")
+                    cfo_freq_est -= linear_dfreq
+                    objective_core(cfo_freq_est, time_error, data1, True)
+                    print(objective_linear(cfo_freq_est, time_error, data1))
+                    # cfo_freq_est -= 2 * linear_dfreq
+                    # objective_core(cfo_freq_est, time_error, data1, True)
+
+
+
+
+                    xv = np.linspace(-100, 100, 1000)
+                    yv = np.array([objective_core(cfo_freq_est, time_error, data1, False, i) for i in xv])
                     plt.plot(xv, yv)
                     plt.title("xv yv")
+                    xva = xv[np.argmin(yv)]
+                    plt.axvline(xva)
                     plt.show()
+                    objective_core(cfo_freq_est, time_error, data1, True, xva)
+                    sys.exit(0)
 
                     # cfo_freq_est = 4.60472836e+02
                     # logger.info(
