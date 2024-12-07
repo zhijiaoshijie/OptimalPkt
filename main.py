@@ -237,23 +237,41 @@ def objective_linear(cfofreq, time_error, pktdata2a):
 
     phasediff = ress2#cp.unwrap(cp.angle(cp.array(ress2)))
     est_dfreqs = []
-    fig = px.scatter(y=phasediff[:Config.preamble_len * Config.nsamp].get())
-    fig.update_traces(marker=dict(size=2))
+    lflag = False
+    if lflag:
+        fig = px.scatter(y=phasediff[:Config.preamble_len * Config.nsamp].get())
+        fig.update_traces(marker=dict(size=2))
     for fit_symbidx in range(0, Config.preamble_len):
         x_values = np.arange(Config.nsamp * fit_symbidx + 50, Config.nsamp * (fit_symbidx + 1) - 50)
         y_values = phasediff[x_values].get()
         coefficients = np.polyfit(x_values, y_values, 1)
         est_dfreq = coefficients[0] * Config.fs / 2 / np.pi
         est_dfreqs.append(est_dfreq)
-        print(f"fitted curve {est_dfreq=:.2f} Hz")
-        fig.add_trace(go.Scatter(x=x_values, y=np.poly1d(coefficients)(x_values), mode="lines"))
-    fig.update_layout(title = f"{cfofreq:.2f} Hz {time_error:.2f} sps")
-    fig.show()
-    fig = px.scatter(y=est_dfreqs)
+        # print(f"fitted curve {est_dfreq=:.2f} Hz")
+        if lflag: fig.add_trace(go.Scatter(x=x_values, y=np.poly1d(coefficients)(x_values), mode="lines"))
+    if lflag:
+        fig.update_layout(title = f"{cfofreq:.2f} Hz {time_error:.2f} sps")
+        fig.show()
+
+    est_ups = []
+    for fit_symbidx in range(Config.sfdpos, Config.sfdpos + 2):
+        x_values = np.arange(Config.nsamp * fit_symbidx + 50, Config.nsamp * (fit_symbidx + 1) - 50)
+        y_values = phasediff[x_values].get()
+        coefficients = np.polyfit(x_values, y_values, 1)
+        est_ufreq = coefficients[0] * Config.fs / 2 / np.pi
+        est_ups.append(est_ufreq)
+        # print(f"fitted curve {est_ufreq=:.2f} Hz")
+    ret_ufreq = np.mean(est_ups)
+    # fig = px.scatter(y=est_dfreqs)
     ret_dfreq = np.mean(est_dfreqs[Config.skip_preambles:])
-    fig.add_hline(y=ret_dfreq)
-    fig.show()
-    return ret_dfreq
+    # fig.add_hline(y=ret_dfreq)
+    # fig.show()
+
+    beta = Config.bw / ((2 ** Config.sf) / Config.bw) / Config.fs
+    ret_freq = (ret_ufreq + ret_dfreq)/2
+    ret_tdiff = (ret_ufreq - ret_dfreq)/2 / beta
+
+    return ret_freq, ret_tdiff
         # objective_core(cfofreq + est_dfreq / 10, time_error, pktdata2a, True, calctime-1)
 
 
@@ -296,7 +314,7 @@ def objective_core(cfofreq, time_error, pktdata2a, drawflag = False, calctime=10
     # beta = Config.bw / ( 2 ** Config.sf / Config.bw )
     ret =  - tocpu(cp.abs(cp.sum(res)) / len(res-2)) # two zero codes
     # print('ret', cfofreq, time_error, ret)
-    if drawflag :#ret<-0.08:
+    if False :#ret<-0.08:
         plt.plot(res2)
         plt.title(f"nounwrap {calctime} {cfofreq:.2f} Hz {time_error:.2f} sps")
         plt.show()
@@ -319,7 +337,8 @@ def objective_core(cfofreq, time_error, pktdata2a, drawflag = False, calctime=10
         result_gpu = cp.abs(cumulative_sums)
         result_cpu = result_gpu.get()
         plt.plot(result_cpu)
-        for i in range(16): plt.axvline(Config.nsamp * i)
+        for i in range(Config.preamble_len): plt.axvline(Config.nsamp * i)
+        for i in range(Config.sfdpos, Config.sfdpos + 3): plt.axvline(Config.nsamp * i)
         plt.title(f"{cfofreq:.2f} Hz {time_error:.2f} sps {ret=}")
         plt.show()
         # phasediff = cp.diff(cp.angle(cp.array(ress2)))
@@ -581,7 +600,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False):
         # plt.plot(x_values, np.poly1d(coefficients)(x_values))
         # plt.title("linear")
         # plt.show()
-        print('c',coefficients[0]/Config.bw*Config.fs)
+        # print('c',coefficients[0]/Config.bw*Config.fs)
 
         polynomial = np.poly1d(coefficients)
 
@@ -612,6 +631,8 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False):
         est_to_s = deltat.flat[best_idx]
         dvals = -np.min(values)
         detect_vals[detect_pkt] = (dvals, est_cfo_f, est_to_s) # save result
+
+        print('c',coefficients[0], 'd', est_cfo_f/Config.sig_freq * Config.bw, fdiff / nsamp_small * Config.bw / Config.fs * Config.fft_n)
 
     # find max among all detect windows
     print(f"{detect_vals[:, 0]=}")
@@ -767,16 +788,16 @@ if __name__ == "__main__":
                     cfo_freq_est, time_error = est_cfo_f, est_to_s
                     logger.info(
                         f"updown parameters:{cfo_freq_est=} {time_error=} obj={objective_core(cfo_freq_est, time_error, data1, True)}")
-                    linear_dfreq = objective_linear(cfo_freq_est, time_error, data1)
-                    logger.info(f"{linear_dfreq=}")
-                    cfo_freq_est -= linear_dfreq
-                    objective_core(cfo_freq_est, time_error, data1, True)
-                    print(objective_linear(cfo_freq_est, time_error, data1))
+                    for i in range(3):
+                        linear_dfreq,linear_dtime = objective_linear(cfo_freq_est, time_error, data1)
+                        logger.info(f"{linear_dfreq=} {linear_dtime=}")
+                        cfo_freq_est -= linear_dfreq
+                        time_error -= linear_dtime
+                        objective_core(cfo_freq_est, time_error, data1, True)
                     # cfo_freq_est -= 2 * linear_dfreq
                     # objective_core(cfo_freq_est, time_error, data1, True)
 
-
-
+                    sys.exit(0)
 
                     xv = np.linspace(-100, 100, 1000)
                     yv = np.array([objective_core(cfo_freq_est, time_error, data1, False, i) for i in xv])
