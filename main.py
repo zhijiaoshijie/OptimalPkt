@@ -181,10 +181,10 @@ class Config:
     detect_to_max = nsamp * 2
     fft_n = int(fs) #nsamp * fft_upsamp
     plan = fft.get_fft_plan(cp.zeros(fft_n, dtype=cp.complex64))
-    # fft_ups = cp.zeros((preamble_len + detect_range_pkts, fft_n), dtype=cp.complex64)
-    # fft_downs = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.complex64)
-    fft_ups = cp.zeros( fft_n, dtype=cp.float32)
-    fft_downs = cp.zeros( fft_n, dtype=cp.float32)
+    fft_ups = cp.zeros((preamble_len + detect_range_pkts, fft_n), dtype=cp.float32)
+    fft_downs = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.float32)
+    # fft_ups = cp.zeros( fft_n, dtype=cp.float32)
+    # fft_downs = cp.zeros( fft_n, dtype=cp.float32)
 
 
 if use_gpu:
@@ -490,8 +490,6 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
     nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
     fdiff = []
     for pidx in range(Config.preamble_len + Config.detect_range_pkts): # assume chirp start at one in [0, Config.detect_range_pkts) possible windows
-        # print(len(pktdata_in), Config.nsamp * (pidx + 1)  + tstart, pidx, tstart)
-        # print("AAAA", tstart, Config.nsamp * pidx + tstart,pktdata_in[Config.nsamp * pidx + tstart])
         assert Config.nsamp * pidx + tstart >= 0
         start_pos_all = nsamp_small * pidx + tstart
         start_pos = round(start_pos_all)
@@ -501,88 +499,32 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
         sig2 = sig1 * downchirp
         if not linfit:
             # use input cfo for sfo
-            sig2 = add_freq(sig2, - fstart/Config.sig_freq * Config.bw * pidx - start_pos_d / nsamp_small * Config.bw / Config.fs * Config.fft_n)
-
-
-        # plt.plot(cp.unwrap(cp.angle(sig1)).get())
-        # plt.show()
-        # plt.plot(cp.unwrap(cp.angle(downchirp)).get())
-        # plt.show()
-        # plt.plot(cp.unwrap(cp.angle(sig2)).get())
-        # plt.show()
+            sig2 = add_freq(sig2, - fstart/Config.sig_freq * Config.bw * pidx + start_pos_d / nsamp_small * Config.bw / Config.fs * Config.fft_n)
+            # pass
         data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
         data = cp.abs(data0) + cp.abs(cp.roll(data0, -fft_sig_n))
-        Config.fft_ups += data
-        # data2 = data.copy()
-        # data2[cp.argmax(cp.abs(data)) - 2000 :cp.argmax(cp.abs(data)) + 2000 ]= 0
-        # print(cp.max(cp.abs(data2)), cp.argmax(cp.abs(data2)))
+        Config.fft_ups[pidx] = data
         amax = cp.argmax(cp.abs(data))
         fups.append(amax.get())
-        # fret.append(cp.angle(data0[fft_sig_n:][amax]).get())
-        # fret.append(cp.angle(data0[-fft_sig_n:][amax]).get())
-
-        # try polyfitting the input, use if suspect packet detection wrong
-        if False:
-            y_values = cp.unwrap(cp.angle(sig1)).get()[3000:]
-            x_values = np.arange(len(y_values)) + 3000  # x values from 1 to n
-            degree = 2
-            coefficients = np.polyfit(x_values, y_values, degree)
-            print('c', pidx, coefficients)
-            # plt.plot(cp.unwrap(cp.angle(sig1)).get())
-            # plt.plot(cp.unwrap(cp.angle(upchirp)).get())
-            # polynomial = np.poly1d(coefficients)
-            # predicted_y = polynomial(x_values)
-            # plt.figure(figsize=(10, 6))
-            # plt.plot(x_values, y_values, '-', label='Original y values')
-            # plt.plot(x_values, predicted_y, '--', label='Fitted polynomial')
-            # plt.xlabel('x values')
-            # plt.ylabel('y values')
-            # plt.title('Polynomial Fit to y values')
-            # plt.legend()
-            # plt.grid(True)
-            # plt.show()
-            #
-            # plt.title(str(pidx) + 'pa')
-            # plt.savefig(str(pidx) + 'p.png')
-            # plt.clf()
-
-        # plot the two power peaks
-        if False:#tstart != 0:#pidx == 8:
-            # xrange = cp.arange(cp.argmax(cp.abs(data0)).item() - 50000,cp.argmax(cp.abs(data0)).item() + 50000)[::100]
-            xrange = cp.arange(len(data0))[::100]
-            fig = px.line(x=xrange.get(), y=cp.abs(data0[xrange]).get())
-            fig.add_trace(go.Scatter(x=xrange.get(), y=cp.abs(data0[xrange + int(fft_sig_n)]).get(), mode="lines"))
-            # plt.plot(cp.abs(data0).get())
-            # plt.title(f"up {pidx}")
-            fig.show() # TODO
 
     # downchirp
-    for pidx in range(0, 2 + Config.detect_range_pkts):
-        sig1 = pktdata_in[Config.nsamp * (pidx + Config.sfdpos) + tstart: Config.nsamp * (pidx + Config.sfdpos + 1) + tstart]
-        sig2 =  sig1 * upchirp
+    for pidx in range(Config.sfdpos, Config.sfdpos + 2 + Config.detect_range_pkts):
+
+        assert Config.nsamp * pidx + tstart >= 0
+        start_pos_all = nsamp_small * pidx + tstart
+        start_pos = round(start_pos_all)
+        start_pos_d = start_pos_all - start_pos
+        fdiff.append(start_pos_d)
+        sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
+        sig2 = sig1 * upchirp
+        if not linfit:
+            # use input cfo for sfo
+            sig2 = add_freq(sig2,
+                             fstart / Config.sig_freq * Config.bw * pidx + start_pos_d / nsamp_small * Config.bw / Config.fs * Config.fft_n)
         data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
         data = cp.abs(data0) + cp.abs(cp.roll(data0, -fft_sig_n))
-        Config.fft_downs[pidx] = data
+        Config.fft_downs[pidx - Config.sfdpos] = data
 
-        # data2 = data.copy()
-        # data2[cp.argmax(cp.abs(data)) - 2000 :cp.argmax(cp.abs(data)) + 2000 ]= 0
-        # print(cp.max(cp.abs(data2)), cp.argmax(cp.abs(data2)))
-
-
-
-
-        # fdowns.append(cp.argmax(cp.abs(data)).get() )
-        # fret.append(cp.angle(data[amax]).get())
-    # plot down chirp
-    if False:#pidx == 1:
-            # xrange = cp.arange(cp.argmax(cp.abs(data0)).item() - 5000,cp.argmax(cp.abs(data0)).item() + 5000)
-            # plt.plot(xrange.get(), cp.abs(data0[xrange]).get())
-            plt.plot(cp.abs(data0).get())
-            plt.title(f"down {pidx}")
-            plt.show() # TODO
-        # plt.plot(cp.abs(data0[::100]).get())
-        # plt.title(f"down {pidx}")
-        # plt.show() # TODO
     if retpflag:
         # draw_fit(0, pktdata_in, 0, tstart)
         return fret
@@ -594,13 +536,13 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
 
 
         # linear fit fups
+        fdiff = np.array(fdiff)
         if linfit:
-            fdiff = np.array(fdiff)
             y_values = fups[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt] + fdiff[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt] / nsamp_small * Config.bw / Config.fs * Config.fft_n
             y_values = [(x + fft_sig_n//2) % fft_sig_n - fft_sig_n//2 for x in y_values]  # move into [-fft_sig_n//2, fft_sig_n//2] range
             # print(f"{fft_sig_n=}")
             # y_values = y_values % Config.bw
-            x_values = np.arange(len(y_values)) + Config.skip_preambles
+            x_values = np.arange(len(y_values)) + Config.skip_preambles + detect_pkt
             coefficients = np.polyfit(x_values, y_values, 1)
 
             # plot fitted result
@@ -612,17 +554,44 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
 
             polynomial = np.poly1d(coefficients)
         else:
-            y_value = cp.argmax(Config.fft_ups)
-            polynomial = np.poly1d(y_value, fstart/Config.sig_freq * Config.bw)
+            y_value_debug = cp.argmax(cp.sum(cp.abs(Config.fft_ups[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt, :fft_sig_n]), axis=0)).get()
+            # for i in range(Config.skip_preambles + detect_pkt, Config.preamble_len + detect_pkt):
+            #     plt.plot(Config.fft_ups[i].get())
+            # plt.show()
+            Config.fft_ups[:, fft_sig_n:] = 0 # !!!
+            fig = go.Figure()
+            for i in range(Config.skip_preambles + detect_pkt, Config.preamble_len + detect_pkt):
+                fig.add_trace(go.Scatter(y=Config.fft_ups[i, y_value_debug - 500: y_value_debug + 500].get(), mode="lines"))
+
+            fig.show()
+
+
+            y_value = cp.argmax(cp.sum(cp.abs(Config.fft_ups[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt]), axis=0)).get()
+            k = fstart/Config.sig_freq * Config.bw
+            coefficients = (k, y_value - (Config.skip_preambles + detect_pkt) * k)
+            polynomial = np.poly1d(coefficients)
+
+            y_values = fups[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt]
+            print('y ys', y_value, y_values, fft_sig_n)
+
+
+            y_values = [(x + fft_sig_n // 2) % fft_sig_n - fft_sig_n // 2 for x in y_values]  # move into [-fft_sig_n//2, fft_sig_n//2] range
+            x_values = np.arange(len(y_values)) + Config.skip_preambles + detect_pkt
+            plt.scatter(x_values, y_values)
+            plt.plot(x_values, polynomial(x_values))
+            plt.title("linear")
+            plt.show()
+            print('c-nolinear',k/Config.bw*Config.fs)
+
 
 
         # the fitted line intersect with the fft_val_down, compute the fft_val_up in the same window with fft_val_down (at fdown_pos)
         # find the best downchirp among all possible downchirp windows
         fdown_pos, fdown = cp.unravel_index(cp.argmax(cp.abs(Config.fft_downs[detect_pkt: detect_pkt + 2])), Config.fft_downs[detect_pkt: detect_pkt + 2].shape)
-        fdown_pos = fdown_pos.item() + detect_pkt  # position of best downchirp
+        fdown_pos = fdown_pos.item() + detect_pkt + Config.sfdpos  # position of best downchirp
         fdown = fdown.item()  # freq of best downchirp
 
-        fft_val_up = (polynomial(Config.sfdpos + fdown_pos) - (Config.fft_n//2)) / fft_sig_n # rate, [-0.5, 0.5) if no cfo and to it should be zero  #!!! because previous +0.5
+        fft_val_up = (polynomial(fdown_pos) - (Config.fft_n//2)) / fft_sig_n # rate, [-0.5, 0.5) if no cfo and to it should be zero  #!!! because previous +0.5
         fft_val_up = (fft_val_up + 0.5) % 1 - 0.5 # remove all ">0 <0 stuff, just [-0.5, 0.5)
 
         fft_val_down = (fdown-(Config.fft_n//2)) / fft_sig_n # [0, 1)
@@ -749,7 +718,7 @@ if __name__ == "__main__":
             for i in range(trytimes):
 
                     # main detection function with up-down
-                    f, t = coarse_work_fast(data1, est_cfo_f, est_to_s,)
+                    f, t = coarse_work_fast(data1, est_cfo_f, est_to_s, False, i == 0)
 
                     # plot error
                     if t < 0:
@@ -809,17 +778,16 @@ if __name__ == "__main__":
                     # cfo_freq_est -= 2 * linear_dfreq
                     # objective_core(cfo_freq_est, time_error, data1, True)
 
-                    sys.exit(0)
-
-                    xv = np.linspace(-100, 100, 1000)
-                    yv = np.array([objective_core(cfo_freq_est, time_error, data1, False, i) for i in xv])
-                    plt.plot(xv, yv)
-                    plt.title("xv yv")
-                    xva = xv[np.argmin(yv)]
-                    plt.axvline(xva)
-                    plt.show()
-                    objective_core(cfo_freq_est, time_error, data1, True, xva)
-                    sys.exit(0)
+                    # sys.exit(0)
+                    # xv = np.linspace(-100, 100, 1000)
+                    # yv = np.array([objective_core(cfo_freq_est, time_error, data1, False, i) for i in xv])
+                    # plt.plot(xv, yv)
+                    # plt.title("xv yv")
+                    # xva = xv[np.argmin(yv)]
+                    # plt.axvline(xva)
+                    # plt.show()
+                    # objective_core(cfo_freq_est, time_error, data1, True, xva)
+                    # sys.exit(0)
 
                     # cfo_freq_est = 4.60472836e+02
                     # logger.info(
