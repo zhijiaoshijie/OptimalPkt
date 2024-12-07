@@ -586,78 +586,44 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
             plt.plot(x_values, polynomial(x_values))
             plt.title("linear")
             plt.show()
-            print('c-nolinear',k/Config.bw*Config.fs)
 
             if sigD:
-                def dirichlet_kernel(frequency, f0, N, fs):
-                    f0 = f0.item()
-                    omega = 2 * cp.pi * (frequency - f0) / fs
-                    result = cp.sin(N * omega / 2) / cp.sin(omega / 2)
-                    result = result.astype(cp.complex64)
-                    result *= cp.exp(-1j * 2 * np.pi / (fs / N) * (frequency - f0))
-                    result[omega == 0] = N  # Handle the zero division case
-                    return result
+                fig = go.Figure()
+                phases = np.zeros((10, Config.preamble_len), dtype=np.float32)
+                for addidx in range(10):
+                    dphaselist = []
+                    # for pidx in range(Config.skip_preambles, Config.preamble_len):  # assume chirp start at one in [0, Config.detect_range_pkts) possible windows
+                    for pidx in range(Config.preamble_len):  # assume chirp start at one in [0, Config.detect_range_pkts) possible windows
+                        start_pos_all = nsamp_small * pidx + tstart
+                        start_pos = round(start_pos_all) + addidx
+                        start_pos_d = start_pos_all - start_pos
+                        sig1 = pktdata_in[start_pos : Config.nsamp + start_pos]
+                        sig2 = sig1 * downchirp
+                        if not linfit:
+                            # use input cfo for sfo
 
-                # Define the cost function (MSE)
-                def cost_function(params, frequency, fft_result, N, fs):
-                    f0 = params
-                    dirichlet = dirichlet_kernel(frequency, f0, N, fs)
-                    mse = - cp.abs(fft_result.dot(cp.conj(dirichlet))).get().item()
-                    return mse
+                            dfreq = - fstart / Config.sig_freq * Config.bw * pidx + start_pos_d / nsamp_small * Config.bw / Config.fs * Config.fft_n
+                            sig2 = add_freq(sig2, dfreq)
+                            # dtime = dfreq / Config.bw * nsamp_small
+                            # dphase = Config.bw * dtime
+                            # pass
+                        data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
+                        yval2 = cp.argmax(cp.abs(data0)).item()
+                        phases[addidx][pidx] = (cp.angle(data0[yval2]).get().item())
+                        dphaselist.append(cp.argmax(cp.abs(data0)).item())
+                    # plt.plot(np.unwrap(phases))
+                    # plt.plot(np.unwrap(dphaselist))
+                    # plt.title("add1")
+                    # plt.show()
+                    # plt.plot(phases)
+                    # res = np.unwrap((np.array(phases)- np.array(dphaselist))  % (2 * np.pi))
+                    # for i2 in range(8, len(res) - 1): res[i2:] += 2 * np.pi
 
-                for i in range(Config.skip_preambles + detect_pkt, Config.preamble_len + detect_pkt):
-                    y_value = cp.argmax( cp.abs(Config.fft_ups_x[i])).get() # use individual or same y-value
-                    initial_guess = y_value
-                    frequency_shifted = cp.fft.fftshift(cp.fft.fftfreq(Config.fft_n, d=1 / Config.fs))
-                    result = minimize(cost_function, initial_guess, args=(frequency_shifted, Config.fft_ups_x[i], Config.nsamp, Config.fs))
-                    estimated_f0 = result.x[0]
-
-
-                    # Plot the cost function over a range around y_value
-                    f_range = cp.linspace(y_value - 1000, y_value + 1000, 500)
-                    cost_values = cp.array([cost_function(f0, frequency_shifted, Config.fft_ups_x[i] , Config.nsamp, Config.fs) for f0 in f_range])
-
-                    # Convert to numpy for plotting
-                    estimated_f0 = f_range[cp.argmin(cost_values)].get()
-                    # estimated_f0 = y_value # TODO!!!
-
-                    dirichlet = dirichlet_kernel( cp.linspace(0, Config.fs, Config.fft_n, endpoint=False), estimated_f0, Config.nsamp, Config.fs)
-                    estimated_phase = cp.angle(cp.sum(Config.fft_ups_x[i] * dirichlet))
-
-                    dirichlet0 = dirichlet_kernel( cp.linspace(0, Config.fs, Config.fft_n, endpoint=False), y_value, Config.nsamp, Config.fs)
-                    if True:
-                        plt.figure(figsize=(12, 6))
-                        plt.plot(f_range.get(), cost_values.get())
-                        plt.title("Cost Function Over Frequency Range")
-                        plt.axvline(y_value, color='r')
-                        plt.axvline(estimated_f0, color='k')
-                        plt.xlabel("Frequency (Hz)")
-                        plt.ylabel("cost function")
-                        plt.grid(True)
-                        plt.show()
-
-                    if True:
-                        maxn = cp.max(cp.abs(Config.fft_ups_x[i])).get().item()
-                        fig = go.Figure()
-                        fig.add_trace( go.Scatter(y=np.abs(Config.fft_ups_x[i, y_value - 500: y_value + 500].get()), mode="markers"))
-                        fig.add_trace( go.Scatter(y=np.abs(dirichlet[y_value - 500: y_value + 500].get()), mode="markers"))
-                        # fig.add_trace( go.Scatter(y=np.abs(Config.fft_ups_x[i ].get()), mode="lines"))
-                        # fig.add_trace( go.Scatter(y=np.abs(dirichlet.get() ), mode="lines"))
-                        fig.show()
-
-
-                    # Display the results
-                    print(f"{i}th guess: {y_value} Estimated : {estimated_f0} Hz {estimated_phase} radians")
-                    # fig = go.Figure()
-                    # fig.add_trace(go.Scatter(y=np.unwrap(np.angle(Config.fft_ups_x[i, :].get())), mode="lines"))
-                    # fig.add_trace(go.Scatter(y=np.unwrap(np.angle(dirichlet.get() * np.exp(1j * estimated_phase.get()))), mode="lines"))
-                    # fig.show()
-                    plt.plot(np.unwrap(np.angle(Config.fft_ups_x[i, :].get())) - np.unwrap(np.angle(dirichlet0.get() * np.exp(1j * estimated_phase.get()))))
-                    # plt.plot(np.unwrap(np.angle(dirichlet0.get() * np.exp(1j * estimated_phase.get()))))
-                    plt.show()
-
-
-
+                for i in range(Config.preamble_len):
+                    fig.add_trace(go.Scatter(y=np.unwrap(phases[:, i]), mode="lines", name=f"phase{i}"))
+                    print(np.unwrap(phases[:, i])[-1] - np.unwrap(phases[:, i])[0])
+                    # fig.add_trace(go.Scatter(y=dphaselist, mode="lines", name=f"phase{addidx}"))
+                fig.show()
 
         # the fitted line intersect with the fft_val_down, compute the fft_val_up in the same window with fft_val_down (at fdown_pos)
         # find the best downchirp among all possible downchirp windows
@@ -820,6 +786,8 @@ if __name__ == "__main__":
                     # renew the result for next iteration
                     est_cfo_f = f
                     est_to_s = t
+                    continue # TODO !!!!!
+
                     objval=objective_core(est_cfo_f, est_to_s, data1)
                     logger.info(f"try{i} {est_cfo_f=} {est_to_s=} obj={objval}")
                     vals[i] = (objval, est_cfo_f, est_to_s)
@@ -841,8 +809,8 @@ if __name__ == "__main__":
                     # alternative method for optimization (doesn't always get good results, don't know why)
 
                     cfo_freq_est, time_error = est_cfo_f, est_to_s
-                    logger.info(
-                        f"updown parameters:{cfo_freq_est=} {time_error=} obj={objective_core(cfo_freq_est, time_error, data1, True)}")
+                    logger.info( f"updown parameters:{cfo_freq_est=} {time_error=} obj={objective_core(cfo_freq_est, time_error, data1, True)}")
+
                     # for i in range(3):
                     #     linear_dfreq,linear_dtime = objective_linear(cfo_freq_est, time_error, data1)
                     #     logger.info(f"{linear_dfreq=} {linear_dtime=}")
