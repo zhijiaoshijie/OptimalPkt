@@ -303,6 +303,7 @@ def objective_core(cfofreq, time_error, pktdata2a, drawflag = False, calctime=10
         # f1 = -a1 * Config.fs / 2 / np.pi
         # f2 = -a2 * Config.fs / 2 / np.pi
         # sigt = 2 ** Config.sf / Config.bw * Config.fs
+
         # fixchirp = gen_upchirp(0, sigt * 2, f1 * 2, (f2 - f1) / sigt) # not fix length TODO
         symbdata = pktdata2a[ddx + math.ceil(time_error): math.ceil(time_error) + ddx + len(ssymb)] #* fixchirp[:len(ssymb)]
         ress = cp.conj(ssymb).dot(symbdata)
@@ -316,7 +317,7 @@ def objective_core(cfofreq, time_error, pktdata2a, drawflag = False, calctime=10
     # beta = Config.bw / ( 2 ** Config.sf / Config.bw )
     ret =  - tocpu(cp.abs(cp.sum(res)) / len(res-2)) # two zero codes
     # print('ret', cfofreq, time_error, ret)
-    if False :#ret<-0.08:
+    if drawflag :#ret<-0.08:
         plt.plot(res2)
         plt.title(f"nounwrap {calctime} {cfofreq:.2f} Hz {time_error:.2f} sps")
         plt.show()
@@ -712,7 +713,7 @@ if __name__ == "__main__":
             logger.info(f"Prework {pkt_idx=} {len(data1)=}")
             est_cfo_f = 0
             est_to_s = 0
-            trytimes = 5
+            trytimes = 2
             vals = np.zeros((trytimes, 3))
             # iterate trytimes times to detect, each time based on estimations of the last time
             for i in range(trytimes):
@@ -769,12 +770,12 @@ if __name__ == "__main__":
                     cfo_freq_est, time_error = est_cfo_f, est_to_s
                     logger.info(
                         f"updown parameters:{cfo_freq_est=} {time_error=} obj={objective_core(cfo_freq_est, time_error, data1, True)}")
-                    for i in range(3):
-                        linear_dfreq,linear_dtime = objective_linear(cfo_freq_est, time_error, data1)
-                        logger.info(f"{linear_dfreq=} {linear_dtime=}")
-                        cfo_freq_est -= linear_dfreq
-                        time_error -= linear_dtime
-                        objective_core(cfo_freq_est, time_error, data1, True)
+                    # for i in range(3):
+                    #     linear_dfreq,linear_dtime = objective_linear(cfo_freq_est, time_error, data1)
+                    #     logger.info(f"{linear_dfreq=} {linear_dtime=}")
+                    #     cfo_freq_est -= linear_dfreq
+                    #     time_error -= linear_dtime
+                    #     objective_core(cfo_freq_est, time_error, data1, True)
                     # cfo_freq_est -= 2 * linear_dfreq
                     # objective_core(cfo_freq_est, time_error, data1, True)
 
@@ -833,7 +834,7 @@ if __name__ == "__main__":
                     psa1.append(len(ps))
                     ps2.append(est_cfo_f)
                     ps3.append(est_to_s)
-
+            sys.exit(0)
         # the length of each pkt (for plotting)
         psa1 = psa1[:-1]
         psa2.append(len(ps))
