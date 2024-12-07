@@ -590,40 +590,39 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
             if sigD:
                 fig = go.Figure()
                 phases = np.zeros((10, Config.preamble_len), dtype=np.float32)
-                for addidx in range(10):
-                    dphaselist = []
-                    # for pidx in range(Config.skip_preambles, Config.preamble_len):  # assume chirp start at one in [0, Config.detect_range_pkts) possible windows
-                    for pidx in range(Config.preamble_len):  # assume chirp start at one in [0, Config.detect_range_pkts) possible windows
-                        start_pos_all = nsamp_small * pidx + tstart
-                        start_pos = round(start_pos_all) + addidx
-                        start_pos_d = start_pos_all - start_pos
-                        sig1 = pktdata_in[start_pos : Config.nsamp + start_pos]
-                        sig2 = sig1 * downchirp
-                        if not linfit:
-                            # use input cfo for sfo
+                dphaselist = []
+                # for pidx in range(Config.skip_preambles, Config.preamble_len):  # assume chirp start at one in [0, Config.detect_range_pkts) possible windows
+                for pidx in range(Config.preamble_len):  # assume chirp start at one in [0, Config.detect_range_pkts) possible windows
+                    start_pos_all = nsamp_small * pidx + tstart
+                    start_pos = round(start_pos_all)
+                    start_pos_d = start_pos_all - start_pos
+                    sig1 = pktdata_in[start_pos : Config.nsamp + start_pos]
+                    sig2 = sig1 * downchirp
+                        # use input cfo for sfo
 
-                            dfreq = - fstart / Config.sig_freq * Config.bw * pidx + start_pos_d / nsamp_small * Config.bw / Config.fs * Config.fft_n
-                            sig2 = add_freq(sig2, dfreq)
-                            # dtime = dfreq / Config.bw * nsamp_small
-                            # dphase = Config.bw * dtime
-                            # pass
-                        data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
-                        yval2 = cp.argmax(cp.abs(data0)).item()
-                        phases[addidx][pidx] = (cp.angle(data0[yval2]).get().item())
-                        dphaselist.append(cp.argmax(cp.abs(data0)).item())
-                    # plt.plot(np.unwrap(phases))
-                    # plt.plot(np.unwrap(dphaselist))
-                    # plt.title("add1")
-                    # plt.show()
+                    dfreq = - fstart / Config.sig_freq * Config.bw * pidx + start_pos_d / nsamp_small * Config.bw / Config.fs * Config.fft_n
+                    sig2 = add_freq(sig2, dfreq)
+                    dtime = dfreq / Config.bw * nsamp_small
+                    dphase = np.pi/2 * dtime
+                        # pass
+                    data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
+                    yval2 = cp.argmax(cp.abs(data0)).item()
+                    dval2 = np.array(cp.angle(data0[yval2]).get().item()) - dphase
+                    print(dphase)
+                    dphaselist.append(dval2)
+                plt.plot(np.unwrap(dphaselist))
+                # plt.plot(np.unwrap(dphaselist))
+                plt.title("add1")
+                plt.show()
                     # plt.plot(phases)
                     # res = np.unwrap((np.array(phases)- np.array(dphaselist))  % (2 * np.pi))
                     # for i2 in range(8, len(res) - 1): res[i2:] += 2 * np.pi
 
-                for i in range(Config.preamble_len):
-                    fig.add_trace(go.Scatter(y=np.unwrap(phases[:, i]), mode="lines", name=f"phase{i}"))
-                    print(np.unwrap(phases[:, i])[-1] - np.unwrap(phases[:, i])[0])
+                # for i in range(Config.preamble_len):
+                #     fig.add_trace(go.Scatter(y=np.unwrap(phases[:, i]), mode="lines", name=f"phase{i}"))
+                #     print(np.unwrap(phases[:, i])[-1] - np.unwrap(phases[:, i])[0])
                     # fig.add_trace(go.Scatter(y=dphaselist, mode="lines", name=f"phase{addidx}"))
-                fig.show()
+                # fig.show()
 
         # the fitted line intersect with the fft_val_down, compute the fft_val_up in the same window with fft_val_down (at fdown_pos)
         # find the best downchirp among all possible downchirp windows
