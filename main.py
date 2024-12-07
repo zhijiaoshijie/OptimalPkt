@@ -718,7 +718,7 @@ if __name__ == "__main__":
             for i in range(trytimes):
 
                     # main detection function with up-down
-                    f, t = coarse_work_fast(data1, est_cfo_f, est_to_s, False, i == 0)
+                    f, t = coarse_work_fast(data1, est_cfo_f, est_to_s, False, False)# i == 0)
 
                     # plot error
                     if t < 0:
