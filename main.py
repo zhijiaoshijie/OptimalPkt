@@ -9,6 +9,7 @@ from functools import partial
 import pickle
 import cmath
 from sklearn.mixture import GaussianMixture
+from scipy.optimize import minimize
 import math
 import matplotlib.pyplot as plt
 import plotly.express as px
@@ -183,6 +184,8 @@ class Config:
     plan = fft.get_fft_plan(cp.zeros(fft_n, dtype=cp.complex64))
     fft_ups = cp.zeros((preamble_len + detect_range_pkts, fft_n), dtype=cp.float32)
     fft_downs = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.float32)
+    fft_ups_x = cp.zeros((preamble_len + detect_range_pkts, fft_n), dtype=cp.complex64)
+    fft_downs_x = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.complex64)
     # fft_ups = cp.zeros( fft_n, dtype=cp.float32)
     # fft_downs = cp.zeros( fft_n, dtype=cp.float32)
 
@@ -277,7 +280,7 @@ def objective_linear(cfofreq, time_error, pktdata2a):
         # objective_core(cfofreq + est_dfreq / 10, time_error, pktdata2a, True, calctime-1)
 
 
-def objective_core(cfofreq, time_error, pktdata2a, drawflag = False, calctime=10):
+def objective_core(cfofreq, time_error, pktdata2a, drawflag = False):
     # print('input', cfofreq, time_error, 0)
     if time_error < 0:# or time_error > Config.detect_to_max: # TODO!!!
         # print('ret', cfofreq, time_error, 0)
@@ -286,7 +289,7 @@ def objective_core(cfofreq, time_error, pktdata2a, drawflag = False, calctime=10
     assert pktdata2a.ndim == 1
     assert cp.mean(cp.abs(pktdata2a)).ndim == 0
     # pktdata2a_roll = cp.roll(pktdata2a / cp.mean(cp.abs(pktdata2a)), -math.ceil(time_error))
-    detect_symb = gen_refchirp(cfofreq, time_error - math.ceil(time_error), deadzone=Config.gen_refchirp_deadzone, calctime=calctime)
+    detect_symb = gen_refchirp(cfofreq, time_error - math.ceil(time_error), deadzone=Config.gen_refchirp_deadzone, calctime=0)
     detect_symb_concat = cp.concatenate(detect_symb, axis=0)
     if not drawflag:
         res = cp.abs(cp.conj(pktdata2a[math.ceil(time_error):math.ceil(time_error)+len(detect_symb_concat)]).dot(detect_symb_concat)) / len(detect_symb_concat)
@@ -319,7 +322,7 @@ def objective_core(cfofreq, time_error, pktdata2a, drawflag = False, calctime=10
     # print('ret', cfofreq, time_error, ret)
     if drawflag :#ret<-0.08:
         plt.plot(res2)
-        plt.title(f"nounwrap {calctime} {cfofreq:.2f} Hz {time_error:.2f} sps")
+        plt.title(f"nounwrap {cfofreq:.2f} Hz {time_error:.2f} sps")
         plt.show()
 
         plt.plot(np.unwrap(res2))
@@ -330,8 +333,8 @@ def objective_core(cfofreq, time_error, pktdata2a, drawflag = False, calctime=10
         plt.plot(x_values, np.poly1d(coefficients)(x_values))
         coef = coefficients[0]
         coef_estcfo = coefficients[0] / Config.bw / (2 ** Config.sf / Config.bw) * Config.sig_freq
-        plt.title(f"{calctime} {cfofreq:.2f} Hz {time_error:.2f} sps {coef:.5e} {coef_estcfo:.2e}")
-        logger.info(f"{calctime} {cfofreq:.2f} Hz {time_error:.2f} sps {coef=} {coef_estcfo=}")
+        plt.title(f"{cfofreq:.2f} Hz {time_error:.2f} sps {coef:.5e} {coef_estcfo:.2e}")
+        logger.info(f"{cfofreq:.2f} Hz {time_error:.2f} sps {coef=} {coef_estcfo=}")
         plt.show()
     if drawflag:# and calctime > 0:
 
@@ -467,7 +470,7 @@ def add_freq(pktdata_in, est_cfo_freq):
     pktdata2a = pktdata_in * cfosymb
     return pktdata2a
 
-def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = False):
+def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = False, sigD = False):
 
     # tstart = round(tstart) # !!!!! TODO tstart rounded !!!!!
 
@@ -505,6 +508,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
         data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
         data = cp.abs(data0) + cp.abs(cp.roll(data0, -fft_sig_n))
         Config.fft_ups[pidx] = data
+        Config.fft_ups_x[pidx] = data0
         amax = cp.argmax(cp.abs(data))
         fups.append(amax.get())
 
@@ -583,6 +587,75 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
             plt.title("linear")
             plt.show()
             print('c-nolinear',k/Config.bw*Config.fs)
+
+            if sigD:
+                def dirichlet_kernel(frequency, f0, N, fs):
+                    f0 = f0.item()
+                    omega = 2 * cp.pi * (frequency - f0) / fs
+                    result = cp.sin(N * omega / 2) / cp.sin(omega / 2)
+                    result = result.astype(cp.complex64)
+                    result *= cp.exp(-1j * 2 * np.pi / (fs / N) * (frequency - f0))
+                    result[omega == 0] = N  # Handle the zero division case
+                    return result
+
+                # Define the cost function (MSE)
+                def cost_function(params, frequency, fft_result, N, fs):
+                    f0 = params
+                    dirichlet = dirichlet_kernel(frequency, f0, N, fs)
+                    mse = - cp.abs(fft_result.dot(cp.conj(dirichlet))).get().item()
+                    return mse
+
+                for i in range(Config.skip_preambles + detect_pkt, Config.preamble_len + detect_pkt):
+                    y_value = cp.argmax( cp.abs(Config.fft_ups_x[i])).get() # use individual or same y-value
+                    initial_guess = y_value
+                    frequency_shifted = cp.fft.fftshift(cp.fft.fftfreq(Config.fft_n, d=1 / Config.fs))
+                    result = minimize(cost_function, initial_guess, args=(frequency_shifted, Config.fft_ups_x[i], Config.nsamp, Config.fs))
+                    estimated_f0 = result.x[0]
+
+
+                    # Plot the cost function over a range around y_value
+                    f_range = cp.linspace(y_value - 1000, y_value + 1000, 500)
+                    cost_values = cp.array([cost_function(f0, frequency_shifted, Config.fft_ups_x[i] , Config.nsamp, Config.fs) for f0 in f_range])
+
+                    # Convert to numpy for plotting
+                    estimated_f0 = f_range[cp.argmin(cost_values)].get()
+                    # estimated_f0 = y_value # TODO!!!
+
+                    dirichlet = dirichlet_kernel( cp.linspace(0, Config.fs, Config.fft_n, endpoint=False), estimated_f0, Config.nsamp, Config.fs)
+                    estimated_phase = cp.angle(cp.sum(Config.fft_ups_x[i] * dirichlet))
+
+                    dirichlet0 = dirichlet_kernel( cp.linspace(0, Config.fs, Config.fft_n, endpoint=False), y_value, Config.nsamp, Config.fs)
+                    if True:
+                        plt.figure(figsize=(12, 6))
+                        plt.plot(f_range.get(), cost_values.get())
+                        plt.title("Cost Function Over Frequency Range")
+                        plt.axvline(y_value, color='r')
+                        plt.axvline(estimated_f0, color='k')
+                        plt.xlabel("Frequency (Hz)")
+                        plt.ylabel("cost function")
+                        plt.grid(True)
+                        plt.show()
+
+                    if True:
+                        maxn = cp.max(cp.abs(Config.fft_ups_x[i])).get().item()
+                        fig = go.Figure()
+                        fig.add_trace( go.Scatter(y=np.abs(Config.fft_ups_x[i, y_value - 500: y_value + 500].get()), mode="markers"))
+                        fig.add_trace( go.Scatter(y=np.abs(dirichlet[y_value - 500: y_value + 500].get()), mode="markers"))
+                        # fig.add_trace( go.Scatter(y=np.abs(Config.fft_ups_x[i ].get()), mode="lines"))
+                        # fig.add_trace( go.Scatter(y=np.abs(dirichlet.get() ), mode="lines"))
+                        fig.show()
+
+
+                    # Display the results
+                    print(f"{i}th guess: {y_value} Estimated : {estimated_f0} Hz {estimated_phase} radians")
+                    # fig = go.Figure()
+                    # fig.add_trace(go.Scatter(y=np.unwrap(np.angle(Config.fft_ups_x[i, :].get())), mode="lines"))
+                    # fig.add_trace(go.Scatter(y=np.unwrap(np.angle(dirichlet.get() * np.exp(1j * estimated_phase.get()))), mode="lines"))
+                    # fig.show()
+                    plt.plot(np.unwrap(np.angle(Config.fft_ups_x[i, :].get())) - np.unwrap(np.angle(dirichlet0.get() * np.exp(1j * estimated_phase.get()))))
+                    # plt.plot(np.unwrap(np.angle(dirichlet0.get() * np.exp(1j * estimated_phase.get()))))
+                    plt.show()
+
 
 
 
@@ -719,7 +792,7 @@ if __name__ == "__main__":
             for i in range(trytimes):
 
                     # main detection function with up-down
-                    f, t = coarse_work_fast(data1, est_cfo_f, est_to_s, False, False)# i == 0)
+                    f, t = coarse_work_fast(data1, est_cfo_f, est_to_s, False, False, i >= 1)
 
                     # plot error
                     if t < 0:
