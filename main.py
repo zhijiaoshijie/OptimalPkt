@@ -181,8 +181,10 @@ class Config:
     detect_to_max = nsamp * 2
     fft_n = int(fs) #nsamp * fft_upsamp
     plan = fft.get_fft_plan(cp.zeros(fft_n, dtype=cp.complex64))
-    fft_ups = cp.zeros((preamble_len + detect_range_pkts, fft_n), dtype=cp.complex64)
-    fft_downs = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.complex64)
+    # fft_ups = cp.zeros((preamble_len + detect_range_pkts, fft_n), dtype=cp.complex64)
+    # fft_downs = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.complex64)
+    fft_ups = cp.zeros( fft_n, dtype=cp.float32)
+    fft_downs = cp.zeros( fft_n, dtype=cp.float32)
 
 
 if use_gpu:
@@ -464,7 +466,7 @@ def add_freq(pktdata_in, est_cfo_freq):
     pktdata2a = pktdata_in * cfosymb
     return pktdata2a
 
-def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False):
+def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = False):
 
     # tstart = round(tstart) # !!!!! TODO tstart rounded !!!!!
 
@@ -497,6 +499,11 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False):
         fdiff.append(start_pos_d)
         sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
         sig2 = sig1 * downchirp
+        if not linfit:
+            # use input cfo for sfo
+            sig2 = add_freq(sig2, - fstart/Config.sig_freq * Config.bw * pidx - start_pos_d / nsamp_small * Config.bw / Config.fs * Config.fft_n)
+
+
         # plt.plot(cp.unwrap(cp.angle(sig1)).get())
         # plt.show()
         # plt.plot(cp.unwrap(cp.angle(downchirp)).get())
@@ -505,7 +512,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False):
         # plt.show()
         data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
         data = cp.abs(data0) + cp.abs(cp.roll(data0, -fft_sig_n))
-        Config.fft_ups[pidx] = data
+        Config.fft_ups += data
         # data2 = data.copy()
         # data2[cp.argmax(cp.abs(data)) - 2000 :cp.argmax(cp.abs(data)) + 2000 ]= 0
         # print(cp.max(cp.abs(data2)), cp.argmax(cp.abs(data2)))
@@ -587,22 +594,27 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False):
 
 
         # linear fit fups
-        fdiff = np.array(fdiff)
-        y_values = fups[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt] + fdiff[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt] / nsamp_small * Config.bw / Config.fs * Config.fft_n
-        y_values = [(x + fft_sig_n//2) % fft_sig_n - fft_sig_n//2 for x in y_values]  # move into [-fft_sig_n//2, fft_sig_n//2] range
-        # print(f"{fft_sig_n=}")
-        # y_values = y_values % Config.bw
-        x_values = np.arange(len(y_values)) + Config.skip_preambles
-        coefficients = np.polyfit(x_values, y_values, 1)
+        if linfit:
+            fdiff = np.array(fdiff)
+            y_values = fups[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt] + fdiff[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt] / nsamp_small * Config.bw / Config.fs * Config.fft_n
+            y_values = [(x + fft_sig_n//2) % fft_sig_n - fft_sig_n//2 for x in y_values]  # move into [-fft_sig_n//2, fft_sig_n//2] range
+            # print(f"{fft_sig_n=}")
+            # y_values = y_values % Config.bw
+            x_values = np.arange(len(y_values)) + Config.skip_preambles
+            coefficients = np.polyfit(x_values, y_values, 1)
 
-        # plot fitted result
-        # plt.scatter(x_values, y_values)
-        # plt.plot(x_values, np.poly1d(coefficients)(x_values))
-        # plt.title("linear")
-        # plt.show()
-        # print('c',coefficients[0]/Config.bw*Config.fs)
+            # plot fitted result
+            # plt.scatter(x_values, y_values)
+            # plt.plot(x_values, np.poly1d(coefficients)(x_values))
+            # plt.title("linear")
+            # plt.show()
+            # print('c',coefficients[0]/Config.bw*Config.fs)
 
-        polynomial = np.poly1d(coefficients)
+            polynomial = np.poly1d(coefficients)
+        else:
+            y_value = cp.argmax(Config.fft_ups)
+            polynomial = np.poly1d(y_value, fstart/Config.sig_freq * Config.bw)
+
 
         # the fitted line intersect with the fft_val_down, compute the fft_val_up in the same window with fft_val_down (at fdown_pos)
         # find the best downchirp among all possible downchirp windows
