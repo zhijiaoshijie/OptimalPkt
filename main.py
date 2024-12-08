@@ -595,27 +595,48 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
             #     plt.plot(Config.fft_ups[i].get())
             # plt.show()
             # Config.fft_ups[:, fft_sig_n:] = 0 # !!!
-            fig = go.Figure(layout_title_text="plot fft ups add")
-            for i in range(Config.skip_preambles + detect_pkt, Config.preamble_len + detect_pkt):
-                fig.add_trace(go.Scatter(y=np.abs(fft_ups_add[i, y_value_debug - 500: y_value_debug + 500].get()), mode="lines"))
-            fig.show()
+            if True:
+                fig = go.Figure(layout_title_text="plot fft ups add")
+                for i in range(Config.skip_preambles + detect_pkt, Config.preamble_len + detect_pkt):
+                    fig.add_trace(go.Scatter(x=np.arange(0, fft_ups_add.shape[1], 10), y=np.abs(fft_ups_add[i, ::10].get()), mode="lines"))
+                fig.update_layout(xaxis=dict(range=[y_value_debug - 500, y_value_debug + 500]))
+                fig.show()
 
+            # for linfit: identify both peaks
+            # (1) identify highest peak by max, y1
+            # (2) identify lower peak by setting [y1-bw/2, y1+bw/2] to zero
 
-            y_value = cp.argmax(cp.sum(cp.abs(Config.fft_ups[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt]), axis=0)).get()
+            # for direct add
+            # x[d] + roll(x[d+1], -bw). peak at (-bw, 0), considering CFO, peak at (-3bw/2, bw/2).
+            # argmax = yvalue.
+            # if yvalue > -bw/2, consider possibility of yvalue - bw; else consider yvalue + bw.
+            buff_freqs = round(Config.bw // 8  * Config.fft_n / Config.fs)
+            lower = - Config.bw - buff_freqs + Config.fft_n // 2
+            higher = buff_freqs + Config.fft_n // 2
+            y_value = cp.argmax(cp.sum(cp.abs(fft_ups_add[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt, lower:higher ]), axis=0)).get() + lower
+            if y_value > - Config.bw // 2 * Config.fft_n / Config.fs + Config.fft_n // 2:
+                # y_value_secondary = cp.argmax(cp.sum(cp.abs(Config.fft_ups[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt, -3 * Config.bw // 2 + Config.fft_n // 2: -Config.bw // 2+  Config.fft_n // 2]), axis=0)).get() -3 * Config.bw // 2 + Config.fft_n // 2
+                y_value_secondary = -1#y_value - Config.bw * Config.fft_n / Config.fs
+            else:
+                y_value_secondary = 1#y_value + Config.bw * Config.fft_n / Config.fs
+                # y_value_secondary = cp.argmax(cp.sum(cp.abs(Config.fft_ups[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt, - Config.bw//2 + Config.fft_n // 2: Config.bw // 2+  Config.fft_n // 2]), axis=0)).get() - Config.bw // 2 + Config.fft_n // 2
+            # y_value = (y_value - Config.fft_n // 2) / Config.fft_n * Config.fs
+            # y_value_secondary = (y_value_secondary - Config.fft_n // 2) / Config.fft_n * Config.fs # [-fs/2, fs/2), in hz
+
             k = fstart/Config.sig_freq * Config.bw
             coefficients = (k, y_value - (Config.skip_preambles + detect_pkt) * k)
             polynomial = np.poly1d(coefficients)
 
-            y_values = fups[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt]
-            print('y ys', y_value, y_values, fft_sig_n)
-
-
-            y_values = [(x + fft_sig_n // 2) % fft_sig_n - fft_sig_n // 2 for x in y_values]  # move into [-fft_sig_n//2, fft_sig_n//2] range
-            x_values = np.arange(len(y_values)) + Config.skip_preambles + detect_pkt
-            plt.scatter(x_values, y_values)
-            plt.plot(x_values, polynomial(x_values))
-            plt.title("linear")
-            plt.show()
+            # y_values = fups[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt]
+            # print('y ys', y_value, y_values, fft_sig_n)
+            #
+            #
+            # y_values = [(x + fft_sig_n // 2) % fft_sig_n - fft_sig_n // 2 for x in y_values]  # move into [-fft_sig_n//2, fft_sig_n//2] range
+            # x_values = np.arange(len(y_values)) + Config.skip_preambles + detect_pkt
+            # plt.scatter(x_values, y_values)
+            # plt.plot(x_values, polynomial(x_values))
+            # plt.title("linear")
+            # plt.show()
 
             if sigD:
                 fig = go.Figure()
@@ -656,38 +677,45 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
 
         # the fitted line intersect with the fft_val_down, compute the fft_val_up in the same window with fft_val_down (at fdown_pos)
         # find the best downchirp among all possible downchirp windows
-        fdown_pos, fdown = cp.unravel_index(cp.argmax(cp.abs(Config.fft_downs[detect_pkt: detect_pkt + 2])), Config.fft_downs[detect_pkt: detect_pkt + 2].shape)
+        fdown_pos, fdown = cp.unravel_index(cp.argmax(cp.abs(Config.fft_downs_x[detect_pkt: detect_pkt + 2])), Config.fft_downs_x[detect_pkt: detect_pkt + 2].shape)
         fdown_pos = fdown_pos.item() + detect_pkt + Config.sfdpos  # position of best downchirp
         fdown = fdown.item()  # freq of best downchirp
+        if fdown > Config.fft_n // 2:
+            fdown2 = -1#fdown - Config.bw * Config.fft_n / Config.fs
+        else:
+            fdown2 = 1#fdown + Config.bw * Config.fft_n / Config.fs
 
         fft_val_up = (polynomial(fdown_pos) - (Config.fft_n//2)) / fft_sig_n # rate, [-0.5, 0.5) if no cfo and to it should be zero  #!!! because previous +0.5
-        fft_val_up = (fft_val_up + 0.5) % 1 - 0.5 # remove all ">0 <0 stuff, just [-0.5, 0.5)
+        # fft_val_up = (fft_val_up + 0.5) % 1 - 0.5 # remove all ">0 <0 stuff, just [-0.5, 0.5)
 
         fft_val_down = (fdown-(Config.fft_n//2)) / fft_sig_n # [0, 1)
-        fft_val_down = (fft_val_down + 0.5) % 1 - 0.5 # remove all ">0 <0 stuff, just [-0.5, 0.5)
+        # fft_val_down = (fft_val_down + 0.5) % 1 - 0.5 # remove all ">0 <0 stuff, just [-0.5, 0.5)
 
-        f0 = ((fft_val_up + fft_val_down) / 2) % 1
-        t0 = (f0 - fft_val_up) % 1
 
         # try all possible variations (unwrap f0, t0 if their real value exceed [-0.5, 0.5))
-        # print(f0, t0)
-        deltaf, deltat = np.meshgrid((np.arange(-1, 1.5, 0.5)+f0)*Config.bw, (np.arange(-1, 1.5, 0.5)+t0)*Config.tsig + tstart + detect_pkt*Config.nsamp)
-        values = np.zeros_like(deltaf).astype(float)
+        print(y_value, fdown, fft_val_up, fft_val_down)
+        deltaf, deltat = np.meshgrid(np.array((0, y_value_secondary)), np.array((0, fdown2)))#
+        values = np.zeros((2, 2, 3)).astype(float)
         for i in range(deltaf.shape[0]):
             for j in range(deltaf.shape[1]):
-                values[i][j] = objective_core(deltaf[i,j], deltat[i,j], pktdata_in) # objective_core returns minus power value, so argmin; out of range objective_core=0
-        best_idx = np.argmin(values)
-        est_cfo_f = deltaf.flat[best_idx]
-        est_to_s = deltat.flat[best_idx]
+                f0 = (fft_val_up + fft_val_down) / 2 + deltaf[i, j]
+                t0 = (f0 - fft_val_up) + deltat[i, j]
+                f1 = f0 * Config.bw
+                t1 = t0 * Config.tsig + tstart + detect_pkt * nsamp_small
+                values[i][j] = [f1, t1, objective_core(f1, t1, pktdata_in)] # objective_core returns minus power value, so argmin; out of range objective_core=0
+                print(values[i][j])
+        best_idx = np.argmin(values[:,:,2])
+        est_cfo_f = values[:,:,0].flat[best_idx]
+        est_to_s = values[:,:,1].flat[best_idx]
         dvals = -np.min(values)
         detect_vals[detect_pkt] = (dvals, est_cfo_f, est_to_s) # save result
 
         print('c',coefficients[0], 'd', est_cfo_f/Config.sig_freq * Config.bw, fdiff / nsamp_small * Config.bw / Config.fs * Config.fft_n)
 
     # find max among all detect windows
-    print(f"{detect_vals[:, 0]=}")
     detect_pkt_max = np.argmax(detect_vals[:, 0])
     est_cfo_f, est_to_s = detect_vals[detect_pkt_max, 1], detect_vals[detect_pkt_max, 2]
+    print(f"{detect_vals=} {est_cfo_f=}, {est_to_s=}")
     # assert detect_pkt_max == 0
     return est_cfo_f, est_to_s
 
@@ -789,6 +817,7 @@ if __name__ == "__main__":
 
                     # main detection function with up-down
                     f, t = coarse_work_fast(data1, est_cfo_f, est_to_s, False, False, i >= 1)
+                    # 1208 result: est_cfo_f = -36704.015494791645, est_to_s = 4779.794477241814
 
                     # plot error
                     if t < 0:
