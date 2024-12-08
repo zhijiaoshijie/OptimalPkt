@@ -184,7 +184,8 @@ class Config:
     if not os.path.exists(figpath): os.mkdir(figpath)
 
     fft_upsamp = 1024
-    detect_range_pkts = 1
+    detect_range_pkts = 2
+    assert detect_range_pkts >= 2 # add 1, for buffer of cross-add
     detect_to_max = nsamp * 2
     fft_n = int(fs) #nsamp * fft_upsamp
     plan = fft.get_fft_plan(cp.zeros(fft_n, dtype=cp.complex64))
@@ -497,7 +498,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
     upchirp = mychirp(est_to_s, f0=-Config.bw / 2, f1=Config.bw / 2, t1=t1)
     downchirp = mychirp(est_to_s, f0=Config.bw / 2, f1=-Config.bw / 2, t1=t1)
 
-    fft_sig_n = Config.bw#  round(Config.bw / Config.fs * Config.fft_n) # 4096 fft_n=nsamp*fft_upsamp, nsamp=t*fs=2**sf/bw*fs, fft_sig_n=2**sf * fft_upsamp
+    fft_sig_n = Config.bw / Config.fs * Config.fft_n#  round(Config.bw / Config.fs * Config.fft_n) # 4096 fft_n=nsamp*fft_upsamp, nsamp=t*fs=2**sf/bw*fs, fft_sig_n=2**sf * fft_upsamp
     fups = [] # max upchirp positions
     fret = [] # return phase of two peaks
 
@@ -551,6 +552,8 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
             Config.fft_downs[pidx - Config.sfdpos] = data
         else:
             Config.fft_downs[pidx - Config.sfdpos] = cp.abs(data0)
+        Config.fft_downs_x[pidx -  Config.sfdpos] = data0
+
             # plt.plot(cp.abs(data0).get())
             # plt.title("sigD "+str(pidx))
             # plt.show()
@@ -559,10 +562,13 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
         # draw_fit(0, pktdata_in, 0, tstart)
         return fret
 
+    fft_ups_add = Config.fft_ups_x[:-1, :-Config.bw / Config.fs * Config.fft_n] + Config.fft_ups_x[1:, Config.bw / Config.fs * Config.fft_n:]
+    fft_downs_add = Config.fft_downs_x[:-1, :-Config.bw / Config.fs * Config.fft_n] + Config.fft_downs_x[1:, Config.bw / Config.fs * Config.fft_n:]
+
 
     # fit the up chirps with linear, intersect with downchirp
     detect_vals = np.zeros((Config.detect_range_pkts, 3))
-    for detect_pkt in range(Config.detect_range_pkts): # try all possible starting windows, signal start at detect_pkt th window
+    for detect_pkt in range(Config.detect_range_pkts - 1): # try all possible starting windows, signal start at detect_pkt th window
 
 
         # linear fit fups
@@ -584,15 +590,14 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
 
             polynomial = np.poly1d(coefficients)
         else:
-            y_value_debug = cp.argmax(cp.sum(cp.abs(Config.fft_ups[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt, :fft_sig_n]), axis=0)).get()
+            y_value_debug = cp.argmax(cp.sum(cp.abs(fft_ups_add[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt, :]), axis=0)).get()
             # for i in range(Config.skip_preambles + detect_pkt, Config.preamble_len + detect_pkt):
             #     plt.plot(Config.fft_ups[i].get())
             # plt.show()
-            Config.fft_ups[:, fft_sig_n:] = 0 # !!!
-            fig = go.Figure()
+            # Config.fft_ups[:, fft_sig_n:] = 0 # !!!
+            fig = go.Figure(layout_title_text="plot fft ups add")
             for i in range(Config.skip_preambles + detect_pkt, Config.preamble_len + detect_pkt):
-                fig.add_trace(go.Scatter(y=Config.fft_ups[i, y_value_debug - 500: y_value_debug + 500].get(), mode="lines"))
-
+                fig.add_trace(go.Scatter(y=np.abs(fft_ups_add[i, y_value_debug - 500: y_value_debug + 500].get()), mode="lines"))
             fig.show()
 
 
