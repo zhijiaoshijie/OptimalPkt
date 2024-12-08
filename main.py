@@ -113,6 +113,12 @@ def myplot(*args, **kwargs):
 
 def myfft(chirp_data, n, plan):
     return np.fft.fftshift(fft.fft(chirp_data.astype(cp.complex64), n=n, plan=plan))
+# freqs: before shift f = [0, 1, ...,   n/2-1,     -n/2, ..., -1] / n   if n is even
+# after shift f = [-n/2, ..., -1, 0, 1, ...,   n/2-1] / n if n is even
+# n is fft_n, f is cycles per sample spacing
+# since fs=1e6: real freq in hz fhz=[-n/2, ..., -1, 0, 1, ...,   n/2-1] / n * 1e6Hz
+# total range: sampling frequency. -fs/2 ~ fs/2, centered at 0
+# bandwidth = 0.40625 sf
 
 
 script_path = __file__
@@ -472,6 +478,11 @@ def add_freq(pktdata_in, est_cfo_freq):
 
 def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = False, sigD = False):
 
+    # if really have to linfit:
+    # (1) try different initial cfo guesses, get the max one that falls in correct range
+    # (2) wrap everybody into appropriate range *as the first symbol peak* and fit, get the slope,
+    # then try intercept / intercept - bw / intercept + bw, get the highest
+
     # tstart = round(tstart) # !!!!! TODO tstart rounded !!!!!
 
     # plot angle of input
@@ -506,8 +517,15 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
             sig2 = add_freq(sig2, - fstart/Config.sig_freq * Config.bw * pidx + start_pos_d / nsamp_small * Config.bw / Config.fs * Config.fft_n)
             # pass
         data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
-        data = cp.abs(data0) + cp.abs(cp.roll(data0, -fft_sig_n))
-        Config.fft_ups[pidx] = data
+        data = cp.abs(data0) + cp.abs(cp.roll(data0, -fft_sig_n)) # roll(-1): left shift 1 [1 2 3 4 5] -> [2 3 4 5 1]
+        if not sigD:
+            Config.fft_ups[pidx] = data # TODO!!!
+        else:
+            Config.fft_ups[pidx] = cp.abs(data0)
+            # plt.plot(cp.abs(data0).get())
+            # plt.title("sigD "+str(pidx))
+            # plt.show()
+
         Config.fft_ups_x[pidx] = data0
         amax = cp.argmax(cp.abs(data))
         fups.append(amax.get())
@@ -529,6 +547,13 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
         data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
         data = cp.abs(data0) + cp.abs(cp.roll(data0, -fft_sig_n))
         Config.fft_downs[pidx - Config.sfdpos] = data
+        if not sigD:
+            Config.fft_downs[pidx - Config.sfdpos] = data
+        else:
+            Config.fft_downs[pidx - Config.sfdpos] = cp.abs(data0)
+            # plt.plot(cp.abs(data0).get())
+            # plt.title("sigD "+str(pidx))
+            # plt.show()
 
     if retpflag:
         # draw_fit(0, pktdata_in, 0, tstart)
@@ -608,7 +633,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
                     data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
                     yval2 = cp.argmax(cp.abs(data0)).item()
                     dval2 = np.array(cp.angle(data0[yval2]).get().item()) - dphase
-                    print(dphase)
+                    print(dphase, yval2, y_value)
                     dphaselist.append(dval2)
                 plt.plot(np.unwrap(dphaselist))
                 # plt.plot(np.unwrap(dphaselist))
@@ -741,6 +766,7 @@ if __name__ == "__main__":
             read_idx, data1, data2 = pkt_data
             # (Optional) skip the first pkt because it may be half a pkt. read_idx == len(data1) means this pkt start from start of file
             if read_idx == len(data1) // Config.nsamp: continue
+            # if pkt_idx < 1: continue
 
             # normalization
             data1 /= cp.mean(cp.abs(data1))
