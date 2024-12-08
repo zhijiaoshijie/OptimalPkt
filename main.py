@@ -184,7 +184,7 @@ class Config:
     if not os.path.exists(figpath): os.mkdir(figpath)
 
     fft_upsamp = 1024
-    detect_range_pkts = 2
+    detect_range_pkts = 3
     assert detect_range_pkts >= 2 # add 1, for buffer of cross-add
     detect_to_max = nsamp * 2
     fft_n = int(fs) #nsamp * fft_upsamp
@@ -595,7 +595,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
             #     plt.plot(Config.fft_ups[i].get())
             # plt.show()
             # Config.fft_ups[:, fft_sig_n:] = 0 # !!!
-            if True:
+            if False:
                 fig = go.Figure(layout_title_text="plot fft ups add")
                 for i in range(Config.skip_preambles + detect_pkt, Config.preamble_len + detect_pkt):
                     fig.add_trace(go.Scatter(x=np.arange(0, fft_ups_add.shape[1], 10), y=np.abs(fft_ups_add[i, ::10].get()), mode="lines"))
@@ -659,12 +659,20 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
                     data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
                     yval2 = cp.argmax(cp.abs(data0)).item()
                     dval2 = np.array(cp.angle(data0[yval2]).get().item()) - dphase
-                    print(dphase, yval2, y_value)
                     dphaselist.append(dval2)
-                plt.plot(np.unwrap(dphaselist))
-                # plt.plot(np.unwrap(dphaselist))
-                plt.title("add1")
-                plt.show()
+                uplist = np.unwrap(dphaselist)
+                # uplist = np.array(dphaselist)
+                fig = px.line(y=uplist, title="add1")
+                x_val = np.arange(Config.skip_preambles, Config.preamble_len)
+                y_val = uplist[x_val]
+                coefficients = np.polyfit(x_val, y_val, 1)
+                x_val2 = np.arange(Config.preamble_len)
+                y_val2 = np.polyval(coefficients, x_val2)
+                fig.add_trace(go.Scatter(x=x_val2, y=y_val2, mode="lines"))
+                fig.show()
+                print(f"final fit dphase {coefficients=}")
+                return fstart, tstart
+
                     # plt.plot(phases)
                     # res = np.unwrap((np.array(phases)- np.array(dphaselist))  % (2 * np.pi))
                     # for i2 in range(8, len(res) - 1): res[i2:] += 2 * np.pi
@@ -693,29 +701,32 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
 
 
         # try all possible variations (unwrap f0, t0 if their real value exceed [-0.5, 0.5))
-        print(y_value, fdown, fft_val_up, fft_val_down)
+        print(f"mid values {y_value=}, {fdown=}, {fft_val_up=}, {fft_val_down=} {y_value_secondary=} {fdown2=}")
         deltaf, deltat = np.meshgrid(np.array((0, y_value_secondary)), np.array((0, fdown2)))#
         values = np.zeros((2, 2, 3)).astype(float)
         for i in range(deltaf.shape[0]):
             for j in range(deltaf.shape[1]):
-                f0 = (fft_val_up + fft_val_down) / 2 + deltaf[i, j]
-                t0 = (f0 - fft_val_up) + deltat[i, j]
+                fu = fft_val_up + deltaf[i, j]
+                fd = fft_val_down + deltat[i, j]
+                f0 = (fu + fd) / 2
+                t0 = (f0 - fu)
                 f1 = f0 * Config.bw
                 t1 = t0 * Config.tsig + tstart + detect_pkt * nsamp_small
                 values[i][j] = [f1, t1, objective_core(f1, t1, pktdata_in)] # objective_core returns minus power value, so argmin; out of range objective_core=0
-                print(values[i][j])
+                print(f"inloop {f1=} {t1=} {values[i][j]=}")
         best_idx = np.argmin(values[:,:,2])
         est_cfo_f = values[:,:,0].flat[best_idx]
         est_to_s = values[:,:,1].flat[best_idx]
-        dvals = -np.min(values)
+        dvals = -np.min(values[:,:,2])
         detect_vals[detect_pkt] = (dvals, est_cfo_f, est_to_s) # save result
 
-        print('c',coefficients[0], 'd', est_cfo_f/Config.sig_freq * Config.bw, fdiff / nsamp_small * Config.bw / Config.fs * Config.fft_n)
+        # print('c',coefficients[0], 'd', est_cfo_f/Config.sig_freq * Config.bw, fdiff / nsamp_small * Config.bw / Config.fs * Config.fft_n)
 
     # find max among all detect windows
     detect_pkt_max = np.argmax(detect_vals[:, 0])
     est_cfo_f, est_to_s = detect_vals[detect_pkt_max, 1], detect_vals[detect_pkt_max, 2]
-    print(f"{detect_vals=} {est_cfo_f=}, {est_to_s=}")
+    np.set_printoptions(precision=4, suppress=True)
+    print(f"{detect_vals[:-1]=} {est_cfo_f=}, {est_to_s=}")
     # assert detect_pkt_max == 0
     return est_cfo_f, est_to_s
 
@@ -740,7 +751,7 @@ if __name__ == "__main__":
     fulldata = []
 
     # Main loop read files
-    for file_path in Config.file_paths:
+    for file_path in Config.file_paths[:1]:
         file_path = "hou2"
 
         #  read file and count size
@@ -934,13 +945,13 @@ if __name__ == "__main__":
                     psa1.append(len(ps))
                     ps2.append(est_cfo_f)
                     ps3.append(est_to_s)
-            sys.exit(0)
+            # sys.exit(0)
         # the length of each pkt (for plotting)
         psa1 = psa1[:-1]
         psa2.append(len(ps))
 
         # save info of all the file to csv (done once each packet, overwrite old)
-        if True:
+        if False: # !!!!!!
             header = ["fileID", "CFO", "Time offset"]
             header.extend([f"Angle{x}" for x in range(Config.total_len)])
             header.extend([f"Abs{x}" for x in range(Config.total_len)])
