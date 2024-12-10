@@ -330,24 +330,43 @@ def objective_core_new(est_cfo_f, est_to_s, pktdata_in):
         yval2 = cp.argmax(cp.abs(data0)).item()
 
         vals[pidx] = data0[yval2].item()
+    if True:
+        freq = np.linspace(0, 2 * np.pi, 1000)
+        vals2 = vals[Config.skip_preambles : Config.preamble_len]
+        res2 = np.array([sum(vals2 * np.exp(np.arange(len(vals2)) * 1j * x)) for x in freq])
+        retval = np.max(np.abs(res2)) / (Config.preamble_len - Config.skip_preambles)
+        retvala = np.angle(res2[np.argmax(np.abs(res2))])
+        vals2 = vals[Config.sfdpos : Config.sfdpos + 2]
+        res2 = np.array([sum(vals2 * np.exp(np.arange(len(vals2)) * 1j * x)) for x in freq])
+        retval2 = np.max(np.abs(res2)) / 2
+        retvala2 = np.angle(res2[np.argmax(np.abs(res2))])
+        print(f"newcore {retval=} {retvala=} {retval2=} {retvala2=}")
+        print(f"newcore angles {np.diff(np.angle(vals[Config.skip_preambles : Config.preamble_len]))=} {np.diff(np.angle(vals[Config.sfdpos : Config.sfdpos + 2]))=}")
+
     # plt.plot(np.abs(vals))
     # plt.show()
-    freq = np.linspace(0, vallen, 1000)
-    res = np.array([sum(vals * np.exp(np.arange(len(vals)) * 1j * x)) for x in freq])
-    # plt.plot(freq, np.abs(res)/vallen/Config.nsamp)
-    # plt.show()
-    # # lst = np.concatenate((vals[Config.skip_preambles:Config.preamble_len], vals[Config.sfdpos:Config.sfdpos + 2]))
-    # lst = vals[:]#[Config.skip_preambles:]
-    # lst[Config.preamble_len] = lst[Config.preamble_len - 1]
-    # lst[Config.preamble_len + 1] = lst[Config.preamble_len - 1]
-    # lst = np.unwrap(np.angle(lst))
-    # print(lst)
-    # lst[Config.sfdpos:] += 2 * np.pi
-    # print(lst)
-    # plt.plot(lst[Config.skip_preambles:])
-    # plt.show()
+    vals[Config.preamble_len:] = 0 # !!!
+    freq = np.linspace(0, 2 * np.pi, 1000)
+    res = np.array([sum(vals * np.exp(np.arange(len(vals)) * -1j * x)) for x in freq])
+    plt.plot(freq, np.abs(res)/vallen)
+    plt.show()
+    # lst = np.concatenate((vals[Config.skip_preambles:Config.preamble_len], vals[Config.sfdpos:Config.sfdpos + 2]))
+    lst = vals[:]#[Config.skip_preambles:]
+    lst[Config.preamble_len] = lst[Config.preamble_len - 1] # for plotting only
+    lst[Config.preamble_len + 1] = lst[Config.preamble_len - 1] # for plotting only
+    lst = np.unwrap(np.angle(lst))
+    lst[Config.sfdpos:] += 2 * np.pi # for plotting only
+    x_values = np.arange(Config.skip_preambles, Config.sfdpos + 2)
+    plt.plot(x_values, lst[x_values])
+    x_values = np.arange(Config.skip_preambles, Config.preamble_len)
+    coefficients = np.polyfit(x_values, lst[x_values], 1)
+    # coefficients[0] = 2.6164215092960035
+    # coefficients[1] += (2.87-2.61)*8
+    x_values = np.arange(Config.skip_preambles, Config.sfdpos + 2)
+    plt.plot(x_values, np.poly1d(coefficients)(x_values), '--')
+    plt.show()
     retval = np.max(np.abs(res)) / vallen
-    print(retval)
+    print(f"{retval=} {coefficients=} argmax={freq[np.argmax(res)]}")
     return retval
 
 
@@ -774,9 +793,9 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
     logger.info(
         f"final parameters:{est_cfo_f=} {est_to_s=} obj={objective_core(est_cfo_f, est_to_s, data1, True)}")
     beta = Config.bw / ((2 ** Config.sf) / Config.bw) / Config.fs
-    # dxdebug = 0#-24 # !!!!!!
-    # est_cfo_f += dxdebug
-    # est_to_s -= dxdebug / beta
+    dxdebugv = 0 # !!!!!!
+    est_cfo_f += dxdebugv
+    est_to_s -= dxdebugv / beta
 
 
     if sigD:
@@ -822,7 +841,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
             dval2 = np.array(cp.angle(data0[yval2]).get().item())# - dphase
             # dval2 = np.array(cp.angle(data0[Config.fft_n//2]).get().item())# - dphase
             # linear, the difference on angle = -0.03270806338636364 * bin so 1 bin(1hz) = 0.03 rad, angle[y]=angle[n/2]-0.03*(y-n/2)
-            print("newres", yval2 - Config.fft_n//2, dval2, cp.max(cp.abs(data0)).item(), np.abs(data0[Config.fft_n//2]))
+            # print("newres", yval2 - Config.fft_n//2, dval2, cp.max(cp.abs(data0)).item(), np.abs(data0[Config.fft_n//2]))
             # plt.plot(cp.abs(data0).get())
             # plt.title("new fft result")
             # plt.show()
@@ -841,7 +860,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
         coefficients = np.polyfit(x_val, y_val, 1)
         fit_dfreq = coefficients[0] / (2 * np.pi) / Config.tsig * Config.fs
         if True:
-            fig = px.line(y=uplist, title=f"add1 {fit_dfreq=}")
+            fig = px.line(y=uplist, title=f"add1 {coefficients[0]=:.5f} {fit_dfreq=}")
             # fig = go.Figure()
             x_val2 = np.arange(Config.preamble_len)
             y_val2 = np.polyval(coefficients, x_val2)
@@ -952,7 +971,7 @@ if __name__ == "__main__":
             read_idx, data1, data2 = pkt_data
             # (Optional) skip the first pkt because it may be half a pkt. read_idx == len(data1) means this pkt start from start of file
             if read_idx == len(data1) // Config.nsamp: continue
-            # if pkt_idx < 1: continue
+            if pkt_idx < 2: continue
 
             # normalization
             data1 /= cp.mean(cp.abs(data1))
