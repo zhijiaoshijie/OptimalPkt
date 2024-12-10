@@ -297,6 +297,59 @@ def objective_core_phased(cfofreq, time_error, pktdata2a):
     res = cp.abs(cp.conj(pktdata2a[math.ceil(time_error):math.ceil(time_error)+len(detect_symb_concat)]).dot(detect_symb_concat)) / len(detect_symb_concat)
     return -res.get()
 
+
+def objective_decode(est_cfo_f, est_to_s, pktdata_in):
+    vals = np.zeros(Config.sfdpos + 2, dtype=np.complex64)
+    yvals2 = np.zeros(Config.sfdpos + 2, dtype=int)
+    vallen = Config.preamble_len - Config.skip_preambles + 2
+
+    nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
+    codes = []
+    angdiffs = []
+    for pidx in range(Config.sfdpos + 2, Config.total_len):
+        # codes1 = []
+        # codes2 = []
+        codesv = []
+        angdv = []
+        start_pos_all_new = nsamp_small * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
+        start_pos = round(start_pos_all_new)
+        cfoppm1 = (1 + est_cfo_f / Config.sig_freq)  # TODO!!!
+        tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1] + (start_pos - start_pos_all_new) / Config.fs
+        for code in range(Config.n_classes):
+            nsamples = round(Config.nsamp / Config.n_classes * (Config.n_classes - code))
+            refchirp = mychirp(tstandard, f0=Config.bw * (-0.5 + code / Config.n_classes) * cfoppm1 + est_cfo_f, f1=Config.bw * (0.5 + code / Config.n_classes) * cfoppm1 + est_cfo_f,
+                                t1=2 ** Config.sf / Config.bw * cfoppm1)[:nsamples]
+            sig1 = pktdata_in[start_pos: nsamples + start_pos]
+            if len(sig1) > 0: sig2 = cp.abs(sig1.dot(cp.conj(refchirp))) #/ cp.sum(cp.abs(sig1))
+            else: sig2 = cp.array(0)
+
+            refchirp = mychirp(tstandard, f0=Config.bw * (-1.5 + code / Config.n_classes) * cfoppm1 + est_cfo_f, f1=Config.bw * (-0.5 + code / Config.n_classes) * cfoppm1 + est_cfo_f,
+                               t1=2 ** Config.sf / Config.bw * cfoppm1)[nsamples:]
+            sig1 = pktdata_in[start_pos + nsamples: start_pos + Config.nsamp]
+            if len(sig1) > 0: sig3 = sig1.dot(cp.conj(refchirp)) #/ cp.sum(cp.abs(sig1))
+            else: sig3 = cp.array(0)
+            codesv.append(cp.abs(sig2).item() ** 2 + cp.abs(sig3).item() ** 2)
+            angdv.append(cp.angle(sig3).item() - cp.angle(sig2).item())
+            # codes1.append(sig2.item())
+            # codes2.append(sig3.item())
+        # fig = go.Figure(layout_title_text=f"decode {pidx=}")
+        # fig.add_trace(go.Scatter(y=codes1, mode="lines"))
+        # fig.add_trace(go.Scatter(y=codes2, mode="lines"))
+        # fig.show()
+        # plt.plot(np.unwrap(np.angle(pktdata_in[start_pos - Config.nsamp: start_pos + Config.nsamp].get())))
+        # plt.show()
+        coderet = np.argmax(np.array(codesv))
+        codes.append(coderet)
+        angdiffs.append(angdv[coderet])
+        print(pidx, coderet)
+    fig = go.Figure(layout_title_text=f"decode angles")
+    fig.add_trace(go.Scatter(x=codes, y=angdiffs, mode="markers"))
+    fig.show()
+    return codes, angdiffs
+
+
+
+
 def objective_core_new(est_cfo_f, est_to_s, pktdata_in):
     vals = np.zeros(Config.sfdpos + 2, dtype=np.complex64)
     yvals2 = np.zeros(Config.sfdpos + 2, dtype=int)
@@ -805,7 +858,8 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
     # est_cfo_f += dxdebugv
     # est_to_s -= dxdebugv / beta
 
-
+    codes = None
+    codeangles = None
     if sigD:
         fig = go.Figure()
         phases = np.zeros((10, Config.preamble_len), dtype=np.float32)
@@ -867,7 +921,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
         y_val = uplist[x_val]
         coefficients = np.polyfit(x_val, y_val, 1)
         fit_dfreq = coefficients[0] / (2 * np.pi) / Config.tsig * Config.fs
-        if True:
+        if False:
             # fig = px.line(y=uplist, title=f"add1 {coefficients[0]=:.5f} {fit_dfreq=}")
             fig = go.Figure()
             x_val2 = np.arange(Config.preamble_len)
@@ -888,6 +942,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
         retval, est_cfo_f, est_to_s = objective_core_new(est_cfo_f, est_to_s, pktdata_in)
         retval2, est_cfo_f, est_to_s = objective_core_new(est_cfo_f, est_to_s, pktdata_in)
         print(f"final fit dphase {coefficients=} {fit_dfreq=} {retval=} {retval2=} {est_cfo_f=} {est_to_s=}")
+        codes, codeangles = objective_decode(est_cfo_f, est_to_s, pktdata_in)
 
         # print(f"sigd preobj {objective_core(est_cfo_f - fit_dfreq, est_to_s - fit_dfreq / beta, pktdata_in)=}")
         # print(f"sigd preobj {objective_core(est_cfo_f + fit_dfreq, est_to_s + fit_dfreq / beta, pktdata_in)=}")
@@ -898,7 +953,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
         # print(f"sigd preobj {objective_core_phased(est_cfo_f + fit_dfreq, est_to_s - fit_dfreq / beta, pktdata_in)=}")
         # print(f"sigd preobj {objective_core_phased(est_cfo_f - fit_dfreq, est_to_s + fit_dfreq / beta, pktdata_in)=}")
 
-    return est_cfo_f, est_to_s
+    return est_cfo_f, est_to_s, codes, codeangles
 
 
 def fix_cfo_to(est_cfo_f, est_to_s, pktdata_in):
@@ -974,6 +1029,8 @@ if __name__ == "__main__":
             fig.show()
 
         # loop for demodulating all decoded packets: iterate over pkts with energy>thresh and length>min_length
+        codescl = []
+        canglescl = []
         for pkt_idx, pkt_data in enumerate(read_pkt(file_path, file_path.replace("data0", "data1"), thresh, min_length=30)):
 
             # read data: read_idx is the index of packet end window in the file
@@ -997,7 +1054,12 @@ if __name__ == "__main__":
             for tryi in range(trytimes):
 
                     # main detection function with up-down
-                    f, t = coarse_work_fast(data1, est_cfo_f, est_to_s, False, False, tryi >= 1)
+                    f, t, codes, codeangles = coarse_work_fast(data1, est_cfo_f, est_to_s, False, False, tryi >= 1)
+
+            codescl.append(codes)
+            canglescl.append(codeangles)
+
+            if False:
                     # 1208 result: est_cfo_f = -36704.015494791645, est_to_s = 4779.794477241814
 
                     # plot error
@@ -1077,9 +1139,17 @@ if __name__ == "__main__":
                     psa1.append(len(ps))
                     ps2.append(est_cfo_f)
                     ps3.append(est_to_s)
-            print("only compute 1 pkt, ending")
-            sys.exit(0)
+            # print("only compute 1 pkt, ending")
+            # sys.exit(0)
         # the length of each pkt (for plotting)
+
+        fig = go.Figure(layout_title_text=f"decode angles")
+        for i in range(len(codescl)):
+            codes = codescl[i]
+            angdiffs = canglescl[i]
+            fig.add_trace(go.Scatter(x=codes, y=angdiffs, mode="markers"))
+        fig.write_html("codeangles.html")
+
         psa1 = psa1[:-1]
         psa2.append(len(ps))
 
