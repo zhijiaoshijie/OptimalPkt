@@ -323,7 +323,7 @@ def objective_core_new(est_cfo_f, est_to_s, pktdata_in):
                                f1=-Config.bw / 2 * cfoppm1 + est_cfo_f,
                                t1=2 ** Config.sf / Config.bw * cfoppm1)
         sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
-        sig2 = sig1 * cp.conj(refchirp)
+        sig2 = sig1 * cp.conj(refchirp) / cp.sum(cp.abs(sig1))
 
         data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
         # print("new", np.max(np.abs(data0)), (start_pos - start_pos_all_new)/Config.fs, tstandard[0], tstandard[-1], Config.bw / 2 * (1 - est_cfo_f / Config.sig_freq )  - est_cfo_f, -Config.bw / 2* (1 - est_cfo_f / Config.sig_freq )  - est_cfo_f, 2 ** Config.sf / Config.bw  * (1 - est_cfo_f / Config.sig_freq ) )
@@ -346,7 +346,7 @@ def objective_core_new(est_cfo_f, est_to_s, pktdata_in):
     # print(lst)
     # plt.plot(lst[Config.skip_preambles:])
     # plt.show()
-    retval = np.max(np.abs(res))/vallen/Config.nsamp
+    retval = np.max(np.abs(res)) / vallen
     print(retval)
     return retval
 
@@ -774,7 +774,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
     logger.info(
         f"final parameters:{est_cfo_f=} {est_to_s=} obj={objective_core(est_cfo_f, est_to_s, data1, True)}")
     beta = Config.bw / ((2 ** Config.sf) / Config.bw) / Config.fs
-    # dxdebug = -1000 # !!!!!!
+    # dxdebug = 0#-24 # !!!!!!
     # est_cfo_f += dxdebug
     # est_to_s -= dxdebug / beta
 
@@ -1094,8 +1094,8 @@ if __name__ == "__main__":
                     psa1.append(len(ps))
                     ps2.append(est_cfo_f)
                     ps3.append(est_to_s)
-            # print("only compute 1 pkt, ending")
-            # sys.exit(0)
+            print("only compute 1 pkt, ending")
+            sys.exit(0)
         # the length of each pkt (for plotting)
         psa1 = psa1[:-1]
         psa2.append(len(ps))
