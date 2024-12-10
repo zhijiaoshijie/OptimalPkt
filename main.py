@@ -345,9 +345,9 @@ def objective_core_new(est_cfo_f, est_to_s, pktdata_in):
 
     # plt.plot(np.abs(vals))
     # plt.show()
-    vals[Config.preamble_len:] = 0 # !!!
+
     freq = np.linspace(0, 2 * np.pi, 1000)
-    res = np.array([sum(vals * np.exp(np.arange(len(vals)) * -1j * x)) for x in freq])
+    res = np.array([vals.dot(np.exp(np.arange(len(vals)) * -1j * x)) for x in freq])
     plt.plot(freq, np.abs(res)/vallen)
     plt.show()
     # lst = np.concatenate((vals[Config.skip_preambles:Config.preamble_len], vals[Config.sfdpos:Config.sfdpos + 2]))
@@ -366,7 +366,7 @@ def objective_core_new(est_cfo_f, est_to_s, pktdata_in):
     plt.plot(x_values, np.poly1d(coefficients)(x_values), '--')
     plt.show()
     retval = np.max(np.abs(res)) / vallen
-    print(f"{retval=} {coefficients=} argmax={freq[np.argmax(res)]}")
+    print(f"{retval=} {coefficients[0]=} argmax={freq[np.argmax(np.abs(res))]}")
     return retval
 
 
