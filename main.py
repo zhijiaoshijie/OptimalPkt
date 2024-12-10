@@ -299,6 +299,7 @@ def objective_core_phased(cfofreq, time_error, pktdata2a):
 
 def objective_core_new(est_cfo_f, est_to_s, pktdata_in):
     vals = np.zeros(Config.sfdpos + 2, dtype=np.complex64)
+    yvals2 = np.zeros(Config.sfdpos + 2, dtype=int)
     vallen = Config.preamble_len - Config.skip_preambles + 2
 
     nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
@@ -329,7 +330,20 @@ def objective_core_new(est_cfo_f, est_to_s, pktdata_in):
         # print("new", np.max(np.abs(data0)), (start_pos - start_pos_all_new)/Config.fs, tstandard[0], tstandard[-1], Config.bw / 2 * (1 - est_cfo_f / Config.sig_freq )  - est_cfo_f, -Config.bw / 2* (1 - est_cfo_f / Config.sig_freq )  - est_cfo_f, 2 ** Config.sf / Config.bw  * (1 - est_cfo_f / Config.sig_freq ) )
         yval2 = cp.argmax(cp.abs(data0)).item()
 
+        print("objres", pidx, yval2 - Config.fft_n // 2, cp.max(cp.abs(data0)).item(), np.abs(data0[Config.fft_n // 2]))
         vals[pidx] = data0[yval2].item()
+        yvals2[pidx] = yval2 - Config.fft_n // 2
+
+    # dxdebugv = -6 # !!!!!!
+    # est_cfo_f += dxdebugv
+    # est_to_s -= dxdebugv / beta
+    beta = Config.bw / ((2 ** Config.sf) / Config.bw) / Config.fs
+    yup = np.mean(yvals2[Config.skip_preambles:Config.preamble_len])
+    ydown = np.mean(yvals2[Config.sfdpos:Config.sfdpos + 2])
+    est_cfo_f += (yup + ydown) / 2
+    est_to_s -= (yup - ydown) / 2 / beta
+    print(yup, ydown, (yup + ydown) / 2, (yup - ydown) / 2)
+
     if True:
         freq = np.linspace(0, 2 * np.pi, 1000)
         vals2 = vals[Config.skip_preambles : Config.preamble_len]
@@ -371,7 +385,7 @@ def objective_core_new(est_cfo_f, est_to_s, pktdata_in):
     plt.show()
     retval = np.max(np.abs(res)) / vallen
     print(f"{retval=} fitup {coefficients[0]},{freq[np.argmax(np.abs(res0))]} fitall={freq[np.argmax(np.abs(res))]}")
-    return retval
+    return retval, est_cfo_f, est_to_s
 
 
 def objective_core(cfofreq, time_error, pktdata2a, drawflag = False):
@@ -797,7 +811,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
     logger.info(
         f"final parameters:{est_cfo_f=} {est_to_s=} obj={objective_core(est_cfo_f, est_to_s, data1, True)}")
     beta = Config.bw / ((2 ** Config.sf) / Config.bw) / Config.fs
-    # dxdebugv = 20 # !!!!!!
+    # dxdebugv = -6 # !!!!!!
     # est_cfo_f += dxdebugv
     # est_to_s -= dxdebugv / beta
 
@@ -881,8 +895,9 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
             fig.add_trace(go.Scatter(x=dxval, y=dyval, mode="lines"))
             # fig.add_vline(x=0, line=dict(color="black", dash="dash"))
             fig.show()
-        objective_core_new(est_cfo_f, est_to_s, pktdata_in)
-        print(f"final fit dphase {coefficients=} {fit_dfreq=}")
+        retval, est_cfo_f, est_to_s = objective_core_new(est_cfo_f, est_to_s, pktdata_in)
+        retval2, est_cfo_f, est_to_s = objective_core_new(est_cfo_f, est_to_s, pktdata_in)
+        print(f"final fit dphase {coefficients=} {fit_dfreq=} {retval=} {retval2=} {est_cfo_f=} {est_to_s=}")
 
         # print(f"sigd preobj {objective_core(est_cfo_f - fit_dfreq, est_to_s - fit_dfreq / beta, pktdata_in)=}")
         # print(f"sigd preobj {objective_core(est_cfo_f + fit_dfreq, est_to_s + fit_dfreq / beta, pktdata_in)=}")
