@@ -299,7 +299,7 @@ def objective_core_phased(cfofreq, time_error, pktdata2a):
 
 def objective_core_new(est_cfo_f, est_to_s, pktdata_in):
     vals = np.zeros(Config.sfdpos + 2, dtype=np.complex64)
-    vallen = Config.preamble_len - Config.skip_preambles
+    vallen = Config.preamble_len - Config.skip_preambles + 2
 
     nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
     # for pidx in range(Config.skip_preambles, Config.preamble_len):  # assume chirp start at one in [0, Config.detect_range_pkts) possible windows
@@ -315,7 +315,7 @@ def objective_core_new(est_cfo_f, est_to_s, pktdata_in):
                     start_pos - start_pos_all_new) / Config.fs
         # print(tstandard)
         cfoppm1 = (1 + est_cfo_f / Config.sig_freq)  # TODO!!!
-        if pidx >= Config.preamble_len:
+        if pidx <= Config.preamble_len:
             refchirp = mychirp(tstandard, f0=-Config.bw / 2 * cfoppm1 + est_cfo_f, f1=Config.bw / 2 * cfoppm1 + est_cfo_f,
                                 t1=2 ** Config.sf / Config.bw * cfoppm1)
         else:
@@ -330,23 +330,25 @@ def objective_core_new(est_cfo_f, est_to_s, pktdata_in):
         yval2 = cp.argmax(cp.abs(data0)).item()
 
         vals[pidx] = data0[yval2].item()
-    plt.plot(np.abs(vals))
-    plt.show()
-    # vals = vals[:Config.preamble_len]
+    # plt.plot(np.abs(vals))
+    # plt.show()
     freq = np.linspace(0, vallen, 1000)
     res = np.array([sum(vals * np.exp(np.arange(len(vals)) * 1j * x)) for x in freq])
-    plt.plot(np.abs(res)/vallen/Config.nsamp)
-    plt.show()
-    # lst = np.concatenate((vals[Config.skip_preambles:Config.preamble_len], vals[Config.sfdpos:Config.sfdpos + 2]))
-    lst = vals[:]#[Config.skip_preambles:]
-    lst[Config.preamble_len] = lst[Config.preamble_len - 1]
-    lst[Config.preamble_len + 1] = lst[Config.preamble_len - 1]
-    lst = np.unwrap(np.angle(lst))
-    print(lst)
-    lst[Config.sfdpos:] += 2 * np.pi
-    print(lst)
-    plt.plot(lst[Config.skip_preambles:])
-    plt.show()
+    # plt.plot(freq, np.abs(res)/vallen/Config.nsamp)
+    # plt.show()
+    # # lst = np.concatenate((vals[Config.skip_preambles:Config.preamble_len], vals[Config.sfdpos:Config.sfdpos + 2]))
+    # lst = vals[:]#[Config.skip_preambles:]
+    # lst[Config.preamble_len] = lst[Config.preamble_len - 1]
+    # lst[Config.preamble_len + 1] = lst[Config.preamble_len - 1]
+    # lst = np.unwrap(np.angle(lst))
+    # print(lst)
+    # lst[Config.sfdpos:] += 2 * np.pi
+    # print(lst)
+    # plt.plot(lst[Config.skip_preambles:])
+    # plt.show()
+    retval = np.max(np.abs(res))/vallen/Config.nsamp
+    print(retval)
+    return retval
 
 
 def objective_core(cfofreq, time_error, pktdata2a, drawflag = False):
@@ -829,6 +831,10 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
 
             dphaselist.append(dval2)
         uplist = np.unwrap(dphaselist)
+        # debug !!!
+        if uplist[-1] < 0:
+            uplist[:2] += 2 * np.pi
+            uplist[:1] += 2 * np.pi
         # uplist = np.array(dphaselist)
         x_val = np.arange(Config.skip_preambles, Config.preamble_len - 1)
         y_val = uplist[x_val]
@@ -1088,8 +1094,8 @@ if __name__ == "__main__":
                     psa1.append(len(ps))
                     ps2.append(est_cfo_f)
                     ps3.append(est_to_s)
-            print("only compute 1 pkt, ending")
-            sys.exit(0)
+            # print("only compute 1 pkt, ending")
+            # sys.exit(0)
         # the length of each pkt (for plotting)
         psa1 = psa1[:-1]
         psa2.append(len(ps))
