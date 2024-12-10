@@ -297,6 +297,58 @@ def objective_core_phased(cfofreq, time_error, pktdata2a):
     res = cp.abs(cp.conj(pktdata2a[math.ceil(time_error):math.ceil(time_error)+len(detect_symb_concat)]).dot(detect_symb_concat)) / len(detect_symb_concat)
     return -res.get()
 
+def objective_core_new(est_cfo_f, est_to_s, pktdata_in):
+    vals = np.zeros(Config.sfdpos + 2, dtype=np.complex64)
+    vallen = Config.preamble_len - Config.skip_preambles
+
+    nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
+    # for pidx in range(Config.skip_preambles, Config.preamble_len):  # assume chirp start at one in [0, Config.detect_range_pkts) possible windows
+    for pidx in range(Config.sfdpos + 2):  # assume chirp start at one in [0, Config.detect_range_pkts) possible windows
+        if pidx < Config.skip_preambles: continue
+        if pidx >= Config.preamble_len and pidx < Config.sfdpos: continue
+
+        # t1 = 2 ** Config.sf / Config.bw * (1 - cfoppm)
+        start_pos_all_new = nsamp_small * pidx * (1 - est_cfo_f / Config.sig_freq) + est_to_s
+        start_pos = round(start_pos_all_new)
+        # t1 = nsamp_small * (pidx + 1) * (1 + est_cfo_f / Config.sig_freq * Config.bw) + est_to_s - start_pos_all_new
+        tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1] + (
+                    start_pos - start_pos_all_new) / Config.fs
+        # print(tstandard)
+        cfoppm1 = (1 + est_cfo_f / Config.sig_freq)  # TODO!!!
+        if pidx >= Config.preamble_len:
+            refchirp = mychirp(tstandard, f0=-Config.bw / 2 * cfoppm1 + est_cfo_f, f1=Config.bw / 2 * cfoppm1 + est_cfo_f,
+                                t1=2 ** Config.sf / Config.bw * cfoppm1)
+        else:
+            refchirp = mychirp(tstandard, f0=Config.bw / 2 * cfoppm1 + est_cfo_f,
+                               f1=-Config.bw / 2 * cfoppm1 + est_cfo_f,
+                               t1=2 ** Config.sf / Config.bw * cfoppm1)
+        sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
+        sig2 = sig1 * cp.conj(refchirp)
+
+        data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
+        # print("new", np.max(np.abs(data0)), (start_pos - start_pos_all_new)/Config.fs, tstandard[0], tstandard[-1], Config.bw / 2 * (1 - est_cfo_f / Config.sig_freq )  - est_cfo_f, -Config.bw / 2* (1 - est_cfo_f / Config.sig_freq )  - est_cfo_f, 2 ** Config.sf / Config.bw  * (1 - est_cfo_f / Config.sig_freq ) )
+        yval2 = cp.argmax(cp.abs(data0)).item()
+
+        vals[pidx] = data0[yval2].item()
+    plt.plot(np.abs(vals))
+    plt.show()
+    # vals = vals[:Config.preamble_len]
+    freq = np.linspace(0, vallen, 1000)
+    res = np.array([sum(vals * np.exp(np.arange(len(vals)) * 1j * x)) for x in freq])
+    plt.plot(np.abs(res)/vallen/Config.nsamp)
+    plt.show()
+    # lst = np.concatenate((vals[Config.skip_preambles:Config.preamble_len], vals[Config.sfdpos:Config.sfdpos + 2]))
+    lst = vals[:]#[Config.skip_preambles:]
+    lst[Config.preamble_len] = lst[Config.preamble_len - 1]
+    lst[Config.preamble_len + 1] = lst[Config.preamble_len - 1]
+    lst = np.unwrap(np.angle(lst))
+    print(lst)
+    lst[Config.sfdpos:] += 2 * np.pi
+    print(lst)
+    plt.plot(lst[Config.skip_preambles:])
+    plt.show()
+
+
 def objective_core(cfofreq, time_error, pktdata2a, drawflag = False):
     drawflag =False#!!!!!!!
     # print('input', cfofreq, time_error, 0)
@@ -529,7 +581,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
             sig2 = add_freq(sig2, - fstart/Config.sig_freq * Config.bw * pidx + start_pos_d / nsamp_small * Config.bw / Config.fs * Config.fft_n)
             # pass
         data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
-        print("old", np.max(np.abs(data0)), tstandard[0], tstandard[-1], Config.bw / 2, -Config.bw / 2, t1)
+        # print("old", np.max(np.abs(data0)), tstandard[0], tstandard[-1], Config.bw / 2, -Config.bw / 2, t1)
         data = cp.abs(data0) + cp.abs(cp.roll(data0, -fft_sig_n)) # roll(-1): left shift 1 [1 2 3 4 5] -> [2 3 4 5 1]
         if not sigD:
             Config.fft_ups[pidx] = data # TODO!!!
@@ -720,9 +772,9 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
     logger.info(
         f"final parameters:{est_cfo_f=} {est_to_s=} obj={objective_core(est_cfo_f, est_to_s, data1, True)}")
     beta = Config.bw / ((2 ** Config.sf) / Config.bw) / Config.fs
-    dxdebug = 0 # !!!!!!
-    est_cfo_f += dxdebug
-    est_to_s -= dxdebug / beta
+    # dxdebug = -1000 # !!!!!!
+    # est_cfo_f += dxdebug
+    # est_to_s -= dxdebug / beta
 
 
     if sigD:
@@ -757,15 +809,18 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
             # t1 = nsamp_small * (pidx + 1) * (1 + est_cfo_f / Config.sig_freq * Config.bw) + est_to_s - start_pos_all_new
             tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1] + (start_pos - start_pos_all_new)/Config.fs
             # print(tstandard)
-            downchirp = mychirp(tstandard , f0=Config.bw / 2  * (1 + est_cfo_f / Config.sig_freq ) - est_cfo_f, f1=-Config.bw / 2 * (1 + est_cfo_f / Config.sig_freq ) -est_cfo_f, t1=2 ** Config.sf / Config.bw  * (1 - est_cfo_f / Config.sig_freq ) )
+            cfoppm1 = (1 + est_cfo_f / Config.sig_freq )# TODO!!!
+            downchirp = mychirp(tstandard , f0=Config.bw / 2 * cfoppm1 - est_cfo_f, f1=-Config.bw / 2 * cfoppm1 - est_cfo_f, t1=2 ** Config.sf / Config.bw  * cfoppm1 )
             sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
             sig2 = sig1 * downchirp
 
             data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
-            print("new", np.max(np.abs(data0)), (start_pos - start_pos_all_new)/Config.fs, tstandard[0], tstandard[-1], Config.bw / 2 * (1 - est_cfo_f / Config.sig_freq )  - est_cfo_f, -Config.bw / 2* (1 - est_cfo_f / Config.sig_freq )  - est_cfo_f, 2 ** Config.sf / Config.bw  * (1 - est_cfo_f / Config.sig_freq ) )
+            # print("new", np.max(np.abs(data0)), (start_pos - start_pos_all_new)/Config.fs, tstandard[0], tstandard[-1], Config.bw / 2 * (1 - est_cfo_f / Config.sig_freq )  - est_cfo_f, -Config.bw / 2* (1 - est_cfo_f / Config.sig_freq )  - est_cfo_f, 2 ** Config.sf / Config.bw  * (1 - est_cfo_f / Config.sig_freq ) )
             yval2 = cp.argmax(cp.abs(data0)).item()
             dval2 = np.array(cp.angle(data0[yval2]).get().item())# - dphase
-            print(yval2 - Config.fft_n//2,  cp.max(cp.abs(data0)).item(), np.abs(data0[Config.fft_n//2]))
+            # dval2 = np.array(cp.angle(data0[Config.fft_n//2]).get().item())# - dphase
+            # linear, the difference on angle = -0.03270806338636364 * bin so 1 bin(1hz) = 0.03 rad, angle[y]=angle[n/2]-0.03*(y-n/2)
+            print("newres", yval2 - Config.fft_n//2, dval2, cp.max(cp.abs(data0)).item(), np.abs(data0[Config.fft_n//2]))
             # plt.plot(cp.abs(data0).get())
             # plt.title("new fft result")
             # plt.show()
@@ -781,12 +836,15 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
         fit_dfreq = coefficients[0] / (2 * np.pi) / Config.tsig * Config.fs
         if True:
             fig = px.line(y=uplist, title=f"add1 {fit_dfreq=}")
+            # fig = go.Figure()
             x_val2 = np.arange(Config.preamble_len)
             y_val2 = np.polyval(coefficients, x_val2)
             fig.add_trace(go.Scatter(x=x_val2, y=y_val2, mode="lines"))
+            # fig.add_trace(go.Scatter(x=x_val2, y=y_val2-uplist, mode="lines"))
             fig.show()
         # print(f"sigd preobj {objective_core(est_cfo_f, est_to_s, pktdata_in)=}")
         # print(f"sigd preobj {objective_core_phased(est_cfo_f, est_to_s, pktdata_in)=}")
+        if False:
             dxval = np.linspace(-100, 100, 1000)
             beta = Config.bw / ((2 ** Config.sf) / Config.bw) / Config.fs
             dyval = [objective_core_phased(est_cfo_f + x, est_to_s - x / beta, pktdata_in) for x in dxval]
@@ -794,6 +852,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
             fig.add_trace(go.Scatter(x=dxval, y=dyval, mode="lines"))
             # fig.add_vline(x=0, line=dict(color="black", dash="dash"))
             fig.show()
+        objective_core_new(est_cfo_f, est_to_s, pktdata_in)
         print(f"final fit dphase {coefficients=} {fit_dfreq=}")
 
         # print(f"sigd preobj {objective_core(est_cfo_f - fit_dfreq, est_to_s - fit_dfreq / beta, pktdata_in)=}")
@@ -1029,8 +1088,8 @@ if __name__ == "__main__":
                     psa1.append(len(ps))
                     ps2.append(est_cfo_f)
                     ps3.append(est_to_s)
-            # print("only compute 1 pkt, ending")
-            # sys.exit(0)
+            print("only compute 1 pkt, ending")
+            sys.exit(0)
         # the length of each pkt (for plotting)
         psa1 = psa1[:-1]
         psa2.append(len(ps))
