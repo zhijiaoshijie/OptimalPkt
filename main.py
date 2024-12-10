@@ -303,19 +303,14 @@ def objective_core_new(est_cfo_f, est_to_s, pktdata_in):
     vallen = Config.preamble_len - Config.skip_preambles + 2
 
     nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
-    # for pidx in range(Config.skip_preambles, Config.preamble_len):  # assume chirp start at one in [0, Config.detect_range_pkts) possible windows
-    for pidx in range(Config.sfdpos + 2):  # assume chirp start at one in [0, Config.detect_range_pkts) possible windows
+    for pidx in range(Config.sfdpos + 2):
         if pidx < Config.skip_preambles: continue
         if pidx >= Config.preamble_len and pidx < Config.sfdpos: continue
 
-        # t1 = 2 ** Config.sf / Config.bw * (1 - cfoppm)
         start_pos_all_new = nsamp_small * pidx * (1 - est_cfo_f / Config.sig_freq) + est_to_s
         start_pos = round(start_pos_all_new)
-        # t1 = nsamp_small * (pidx + 1) * (1 + est_cfo_f / Config.sig_freq * Config.bw) + est_to_s - start_pos_all_new
-        tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1] + (
-                    start_pos - start_pos_all_new) / Config.fs
-        # print(tstandard)
         cfoppm1 = (1 + est_cfo_f / Config.sig_freq)  # TODO!!!
+        tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1] + (start_pos - start_pos_all_new) / Config.fs
         if pidx <= Config.preamble_len:
             refchirp = mychirp(tstandard, f0=-Config.bw / 2 * cfoppm1 + est_cfo_f, f1=Config.bw / 2 * cfoppm1 + est_cfo_f,
                                 t1=2 ** Config.sf / Config.bw * cfoppm1)
@@ -327,24 +322,20 @@ def objective_core_new(est_cfo_f, est_to_s, pktdata_in):
         sig2 = sig1 * cp.conj(refchirp) / cp.sum(cp.abs(sig1))
 
         data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
-        # print("new", np.max(np.abs(data0)), (start_pos - start_pos_all_new)/Config.fs, tstandard[0], tstandard[-1], Config.bw / 2 * (1 - est_cfo_f / Config.sig_freq )  - est_cfo_f, -Config.bw / 2* (1 - est_cfo_f / Config.sig_freq )  - est_cfo_f, 2 ** Config.sf / Config.bw  * (1 - est_cfo_f / Config.sig_freq ) )
         yval2 = cp.argmax(cp.abs(data0)).item()
 
-        print("objres", pidx, yval2 - Config.fft_n // 2, cp.max(cp.abs(data0)).item(), np.abs(data0[Config.fft_n // 2]))
+        # print("objres", pidx, yval2 - Config.fft_n // 2, cp.max(cp.abs(data0)).item(), np.abs(data0[Config.fft_n // 2]))
         vals[pidx] = data0[yval2].item()
         yvals2[pidx] = yval2 - Config.fft_n // 2
 
-    # dxdebugv = -6 # !!!!!!
-    # est_cfo_f += dxdebugv
-    # est_to_s -= dxdebugv / beta
     beta = Config.bw / ((2 ** Config.sf) / Config.bw) / Config.fs
     yup = np.mean(yvals2[Config.skip_preambles:Config.preamble_len])
     ydown = np.mean(yvals2[Config.sfdpos:Config.sfdpos + 2])
     est_cfo_f += (yup + ydown) / 2
     est_to_s -= (yup - ydown) / 2 / beta
-    print(yup, ydown, (yup + ydown) / 2, (yup - ydown) / 2)
+    # print(yup, ydown, (yup + ydown) / 2, (yup - ydown) / 2)
 
-    if True:
+    if False:
         freq = np.linspace(0, 2 * np.pi, 1000)
         vals2 = vals[Config.skip_preambles : Config.preamble_len]
         res2 = np.array([sum(vals2 * np.exp(np.arange(len(vals2)) * 1j * x)) for x in freq])
@@ -357,34 +348,33 @@ def objective_core_new(est_cfo_f, est_to_s, pktdata_in):
         print(f"newcore {retval=} {retvala=} {retval2=} {retvala2=}")
         print(f"newcore angles {np.diff(np.angle(vals[Config.skip_preambles : Config.preamble_len]))=} {np.diff(np.angle(vals[Config.sfdpos : Config.sfdpos + 2]))=}")
 
-    # plt.plot(np.abs(vals))
-    # plt.show()
-
     freq = np.linspace(0, 2 * np.pi, 10000)
     res = np.array([vals.dot(np.exp(np.arange(len(vals)) * -1j * x)) for x in freq])
-    vals2 = vals.copy()
-    vals2[Config.preamble_len:] = 0
-    res0 = np.array([vals2.dot(np.exp(np.arange(len(vals2)) * -1j * x)) for x in freq])
-    # plt.plot(freq, np.abs(res)/vallen)
-    # plt.show()
-    # lst = np.concatenate((vals[Config.skip_preambles:Config.preamble_len], vals[Config.sfdpos:Config.sfdpos + 2]))
-    lst = vals[:]#[Config.skip_preambles:]
-    lst[Config.preamble_len] = lst[Config.preamble_len - 1] # for plotting only
-    lst[Config.preamble_len + 1] = lst[Config.preamble_len - 1] # for plotting only
-    lst = np.unwrap(np.angle(lst))
-    lst[Config.sfdpos:] += 2 * np.pi # for plotting only
-    x_values = np.arange(Config.skip_preambles, Config.sfdpos + 2)
-    plt.plot(x_values, lst[x_values])
-    x_values = np.arange(Config.skip_preambles, Config.preamble_len)
-    coefficients = np.polyfit(x_values, lst[x_values], 1)
-    # coefficients[0] = 2.6164215092960035
-    # coefficients[1] += (2.87-2.61)*8
-    x_values = np.arange(Config.skip_preambles, Config.sfdpos + 2)
-    plt.plot(x_values, np.poly1d(coefficients)(x_values), '--')
-    plt.title(f"{retval=:.5f} fitup {coefficients[0]:.5f},{freq[np.argmax(np.abs(res0))]:.5f} fitall={freq[np.argmax(np.abs(res))]:.5f}")
-    plt.show()
     retval = np.max(np.abs(res)) / vallen
-    print(f"{retval=} fitup {coefficients[0]},{freq[np.argmax(np.abs(res0))]} fitall={freq[np.argmax(np.abs(res))]}")
+    if True:
+        vals2 = vals.copy()
+        vals2[Config.preamble_len:] = 0
+        res0 = np.array([vals2.dot(np.exp(np.arange(len(vals2)) * -1j * x)) for x in freq])
+        # plt.plot(freq, np.abs(res)/vallen)
+        # plt.show()
+        # lst = np.concatenate((vals[Config.skip_preambles:Config.preamble_len], vals[Config.sfdpos:Config.sfdpos + 2]))
+        lst = vals[:]#[Config.skip_preambles:]
+        lst[Config.preamble_len] = lst[Config.preamble_len - 1] * (lst[Config.preamble_len - 1] / lst[Config.preamble_len - 2])
+        lst[Config.preamble_len + 1] = lst[Config.preamble_len - 1] * (lst[Config.preamble_len - 1] / lst[Config.preamble_len - 2])**2
+       # for plotting only
+        lst = np.unwrap(np.angle(lst))
+        # lst[Config.sfdpos:] += 2 * np.pi # for plotting only
+        x_values = np.arange(Config.skip_preambles, Config.sfdpos + 2)
+        plt.plot(x_values, lst[x_values])
+        x_values = np.arange(Config.skip_preambles, Config.preamble_len)
+        coefficients = np.polyfit(x_values, lst[x_values], 1)
+        # coefficients[0] = 2.6164215092960035
+        # coefficients[1] += (2.87-2.61)*8
+        x_values = np.arange(Config.skip_preambles, Config.sfdpos + 2)
+        plt.plot(x_values, np.poly1d(coefficients)(x_values), '--')
+        plt.title(f"{retval=:.5f} fitup {coefficients[0]:.5f},{freq[np.argmax(np.abs(res0))]:.5f} fitall={freq[np.argmax(np.abs(res))]:.5f}")
+        plt.show()
+        print(f"{retval=} fitup {coefficients[0]},{freq[np.argmax(np.abs(res0))]} fitall={freq[np.argmax(np.abs(res))]} f+{(yup + ydown) / 2}  t+{-(yup - ydown) / 2 / beta}")
     return retval, est_cfo_f, est_to_s
 
 
@@ -859,7 +849,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
             dval2 = np.array(cp.angle(data0[yval2]).get().item())# - dphase
             # dval2 = np.array(cp.angle(data0[Config.fft_n//2]).get().item())# - dphase
             # linear, the difference on angle = -0.03270806338636364 * bin so 1 bin(1hz) = 0.03 rad, angle[y]=angle[n/2]-0.03*(y-n/2)
-            print("newres", yval2 - Config.fft_n//2, dval2, cp.max(cp.abs(data0)).item(), np.abs(data0[Config.fft_n//2]))
+            # print("newres", yval2 - Config.fft_n//2, dval2, cp.max(cp.abs(data0)).item(), np.abs(data0[Config.fft_n//2]))
             # plt.plot(cp.abs(data0).get())
             # plt.title("new fft result")
             # plt.show()
@@ -1045,52 +1035,7 @@ if __name__ == "__main__":
                     # the best result among trytimes
                     _, est_cfo_f, est_to_s = vals[np.argmin(vals[:, 0])]
 
-                    # fine grained optimization, search around the up-down result towards the local minima
-                    Config.fguess = est_cfo_f
-                    Config.tguess = est_to_s
-                    Config.f_lower = Config.fguess - 500
-                    Config.f_upper = Config.fguess + 500
-                    Config.t_lower = Config.tguess - 50
-                    Config.t_upper = Config.tguess + 50
-                    bestobj = objective_core(Config.fguess, Config.tguess, data1)
 
-                    tryidx = 0
-
-                    # alternative method for optimization (doesn't always get good results, don't know why)
-
-                    if False:
-                        cfo_freq_est, time_error = est_cfo_f, est_to_s
-                        logger.info( f"updown parameters:{cfo_freq_est=} {time_error=} obj={objective_core(cfo_freq_est, time_error, data1, True)}")
-                        linear_dfreq, linear_dtime = objective_linear(cfo_freq_est, time_error, data1)
-                        logger.info(f"linear optimization {linear_dfreq=} {linear_dtime=}")
-                        cfo_freq_est -= linear_dfreq
-                        time_error -= linear_dtime
-                        logger.info( f"final parameters:{cfo_freq_est=} {time_error=} obj={objective_core(cfo_freq_est, time_error, data1, True)}")
-
-                    if False:
-                        for i2 in range(3):
-                            linear_dfreq,linear_dtime = objective_linear(cfo_freq_est, time_error, data1)
-                            logger.info(f"{linear_dfreq=} {linear_dtime=}")
-                            cfo_freq_est -= linear_dfreq
-                            time_error -= linear_dtime
-                            print(f"{i2}th testtime {objective_core(cfo_freq_est, time_error, data1, True)=}")
-                        cfo_freq_est -= 2 * linear_dfreq
-                        print(f"last testtime {objective_core(cfo_freq_est, time_error, data1, True)=}")
-
-                    # sys.exit(0)
-                    # xv = np.linspace(-100, 100, 1000)
-                    # yv = np.array([objective_core(cfo_freq_est, time_error, data1, False, i) for i in xv])
-                    # plt.plot(xv, yv)
-                    # plt.title("xv yv")
-                    # xva = xv[np.argmin(yv)]
-                    # plt.axvline(xva)
-                    # plt.show()
-                    # objective_core(cfo_freq_est, time_error, data1, True, xva)
-                    # sys.exit(0)
-
-                    # cfo_freq_est = 4.60472836e+02
-                    # logger.info(
-                    #     f"updown parameters:\n{cfo_freq_est=}\n{time_error=} obj={objective_core(cfo_freq_est, time_error, data1, True)}")
 
                     if False:
                         cfo_freq_est, time_error = est_cfo_f, est_to_s
