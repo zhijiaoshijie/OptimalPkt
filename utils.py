@@ -86,21 +86,21 @@ class Config:
     fft_ups_x = cp.zeros((preamble_len + detect_range_pkts, fft_n), dtype=cp.complex64)
     fft_downs_x = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.complex64)
 
-    logger = logging.getLogger('my_logger')
-    level = logging.WARNING
-    logger.setLevel(level)
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(level)  # Set the console handler level
-    file_handler = logging.FileHandler('run_241115_2.log')
-    file_handler.setLevel(level)  # Set the file handler level
-    # formatter = logging.Formatter('%(message)s')
-    # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    # formatter = logging.Formatter('%(levelname)s - %(message)s')
-    console_handler.setFormatter(formatter)
-    file_handler.setFormatter(formatter)
-    logger.addHandler(console_handler)
-    logger.addHandler(file_handler)
+logger = logging.getLogger('my_logger')
+level = logging.WARNING
+logger.setLevel(level)
+console_handler = logging.StreamHandler()
+console_handler.setLevel(level)  # Set the console handler level
+file_handler = logging.FileHandler('run_241115_2.log')
+file_handler.setLevel(level)  # Set the file handler level
+# formatter = logging.Formatter('%(message)s')
+# formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+# formatter = logging.Formatter('%(levelname)s - %(message)s')
+console_handler.setFormatter(formatter)
+file_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
+logger.addHandler(file_handler)
 
 if use_gpu:
     cp.cuda.Device(0).use()
@@ -179,3 +179,20 @@ def myplot(*args, **kwargs):
 # bandwidth = 0.40625 sf
 def myfft(chirp_data, n, plan):
     return np.fft.fftshift(fft.fft(chirp_data.astype(cp.complex64), n=n, plan=plan))
+
+
+
+def dechirp_fft(tstart, fstart, pktdata_in, refchirp, pidx, ispreamble):
+    nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
+    start_pos_all = nsamp_small * pidx + tstart
+    start_pos = round(start_pos_all)
+    start_pos_d = start_pos_all - start_pos
+    sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
+    sig2 = sig1 * refchirp
+    freqdiff = start_pos_d / nsamp_small * Config.bw / Config.fs * Config.fft_n
+    if ispreamble: freqdiff -= fstart / Config.sig_freq * Config.bw * pidx
+    else: freqdiff += fstart / Config.sig_freq * Config.bw * pidx
+    sig2 = add_freq(sig2,freqdiff)
+    data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
+    return data0
+
