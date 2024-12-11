@@ -158,8 +158,8 @@ class Config:
     code_len = 2
 
     tstandard = cp.linspace(0, nsamp / fs, nsamp + 1)[:-1]
-    decode_matrix_a = cp.zeros((n_classes, nsamp))
-    decode_matrix_b = cp.zeros((n_classes, nsamp))
+    decode_matrix_a = cp.zeros((n_classes, nsamp), dtype=cp.complex64)
+    decode_matrix_b = cp.zeros((n_classes, nsamp), dtype=cp.complex64)
     for code in range(n_classes):
         nsamples = round(nsamp / n_classes * (n_classes - code))
         refchirp = mychirp(tstandard, f0=bw * (-0.5 + code / n_classes), f1=bw * (0.5 + code / n_classes),
@@ -167,7 +167,7 @@ class Config:
         decode_matrix_a[code, :nsamples] = refchirp[:nsamples]
 
         refchirp = mychirp(tstandard, f0=bw * (-1.5 + code / n_classes), f1=bw * (-0.5 + code / n_classes),
-                           t1=2 ** sf / bw )[nsamples:]
+                           t1=2 ** sf / bw )
         decode_matrix_b[code, nsamples:] = refchirp[nsamples:]
 
 
@@ -291,8 +291,8 @@ def objective_core_phased(cfofreq, time_error, pktdata2a):
 
 def gen_matrix(dt, cfoppm1, est_cfo_f):
     tstandard = Config.tstandard + dt
-    decode_matrix_a = cp.zeros((Config.n_classes, Config.nsamp))
-    decode_matrix_b = cp.zeros((Config.n_classes, Config.nsamp))
+    decode_matrix_a = cp.zeros((Config.n_classes, Config.nsamp), dtype=cp.complex64)
+    decode_matrix_b = cp.zeros((Config.n_classes, Config.nsamp), dtype=cp.complex64)
     for code in range(Config.n_classes):
         nsamples = round(Config.nsamp / Config.n_classes * (Config.n_classes - code))
         refchirp = mychirp(tstandard, f0=Config.bw * (-0.5 + code / Config.n_classes) * cfoppm1 + est_cfo_f,
@@ -302,7 +302,7 @@ def gen_matrix(dt, cfoppm1, est_cfo_f):
 
         refchirp = mychirp(tstandard, f0=Config.bw * (-1.5 + code / Config.n_classes) * cfoppm1 + est_cfo_f,
                            f1=Config.bw * (-0.5 + code / Config.n_classes) * cfoppm1 + est_cfo_f,
-                           t1=2 ** Config.sf / Config.bw * cfoppm1)[nsamples:]
+                           t1=2 ** Config.sf / Config.bw * cfoppm1)
         decode_matrix_b[code, nsamples:] = cp.conj(refchirp[nsamples:])
     return decode_matrix_a, decode_matrix_b
 
@@ -323,22 +323,22 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         dt = (start_pos - start_pos_all_new) / Config.fs
         decode_matrix_a, decode_matrix_b = gen_matrix(dt, cfoppm1, est_cfo_f)
         sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
-        sig2 = sig1.dot(decode_matrix_a)
-        sig3 = sig1.dot(decode_matrix_b)
+        sig2 = sig1.dot(decode_matrix_a.T)
+        sig3 = sig1.dot(decode_matrix_b.T)
 
-        codesv = cp.abs(sig2).item() ** 2 + cp.abs(sig3).item() ** 2
-        angdv = cp.angle(sig3).item() - cp.angle(sig2).item()
+        codesv = cp.abs(sig2) ** 2 + cp.abs(sig3) ** 2
+        angdv = cp.angle(sig3) - cp.angle(sig2)
             # codes1.append(sig2.item())
             # codes2.append(sig3.item())
-        fig = go.Figure(layout_title_text=f"decode {pidx=}")
-        fig.add_trace(go.Scatter(y=codes1, mode="lines"))
-        fig.add_trace(go.Scatter(y=codes2, mode="lines"))
-        fig.show()
+        # fig = go.Figure(layout_title_text=f"decode {pidx=}")
+        # fig.add_trace(go.Scatter(y=cp.abs(sig2).get(), mode="lines"))
+        # fig.add_trace(go.Scatter(y=cp.abs(sig3).get(), mode="lines"))
+        # fig.show()
         # plt.plot(np.unwrap(np.angle(pktdata_in[start_pos - Config.nsamp: start_pos + Config.nsamp].get())))
-        # plt.show()
-        coderet = np.argmax(np.array(codesv))
-        codes.append(coderet)
-        angdiffs.append(angdv[coderet])
+        # plt.show() 
+        coderet = cp.argmax(cp.array(codesv))
+        codes.append(coderet.item())
+        angdiffs.append(angdv[coderet].item())
         print(pidx, coderet)
     fig = go.Figure(layout_title_text=f"decode angles")
     fig.add_trace(go.Scatter(x=codes, y=angdiffs, mode="markers"))
@@ -975,7 +975,7 @@ if __name__ == "__main__":
 
     # Main loop read files
     for file_path in Config.file_paths[:1]:
-        file_path = "hou2"
+        file_path = "/data/djl/temp/OptimalPkt/hou2"
 
         #  read file and count size
         file_path_id = 0# int(file_path.split('_')[-1])
@@ -1146,7 +1146,8 @@ if __name__ == "__main__":
             codes = codescl[i]
             angdiffs = canglescl[i]
             fig.add_trace(go.Scatter(x=codes, y=angdiffs, mode="markers"))
-        fig.write_html("codeangles.html")
+        # fig.write_html("codeangles.html")
+        fig.show()
 
         psa1 = psa1[:-1]
         psa2.append(len(ps))
