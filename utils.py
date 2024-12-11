@@ -43,6 +43,7 @@ class Config:
     thresh = None# 0.03
     # file_paths = ['/data/djl/temp/OptimalPkt/fingerprint_data/data0_test_3',]
     base_path = '/data/djl/temp/OptimalPkt/fingerprint_data/'
+    cfo_range = bw // 8
 
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples
@@ -168,5 +169,13 @@ def myplot(*args, **kwargs):
         raise ValueError("plot function accepts either 1 or 2 positional arguments")
 
 
+
+
+# freqs: before shift f = [0, 1, ...,   n/2-1,     -n/2, ..., -1] / n   if n is even
+# after shift f = [-n/2, ..., -1, 0, 1, ...,   n/2-1] / n if n is even
+# n is fft_n, f is cycles per sample spacing
+# since fs=1e6: real freq in hz fhz=[-n/2, ..., -1, 0, 1, ...,   n/2-1] / n * 1e6Hz
+# total range: sampling frequency. -fs/2 ~ fs/2, centered at 0
+# bandwidth = 0.40625 sf
 def myfft(chirp_data, n, plan):
     return np.fft.fftshift(fft.fft(chirp_data.astype(cp.complex64), n=n, plan=plan))
