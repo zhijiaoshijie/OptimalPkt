@@ -157,25 +157,19 @@ class Config:
     tguess = nsamp / 2
     code_len = 2
 
-    cfo_freq_est = -39705.621
-    time_error = 4321.507
+    tstandard = cp.linspace(0, nsamp / fs, nsamp + 1)[:-1]
+    decode_matrix_a = cp.zeros((n_classes, nsamp))
+    decode_matrix_b = cp.zeros((n_classes, nsamp))
+    for code in range(n_classes):
+        nsamples = round(nsamp / n_classes * (n_classes - code))
+        refchirp = mychirp(tstandard, f0=bw * (-0.5 + code / n_classes), f1=bw * (0.5 + code / n_classes),
+                           t1=2 ** sf / bw )
+        decode_matrix_a[code, :nsamples] = refchirp[:nsamples]
 
-    time_r = time_error / tsig
-    cfo_r = cfo_freq_est / bw
-    # print(time_r + cfo_r, cfo_r - time_r)
+        refchirp = mychirp(tstandard, f0=bw * (-1.5 + code / n_classes), f1=bw * (-0.5 + code / n_classes),
+                           t1=2 ** sf / bw )[nsamples:]
+        decode_matrix_b[code, nsamples:] = refchirp[nsamples:]
 
-
-    fguess = cfo_freq_est
-    tguess = time_error
-    f_lower = fguess - 500
-    f_upper = fguess + 500
-    t_lower = tguess - 50
-    t_upper = tguess + 50
-
-    tbeta = (0.00025319588796389843+0.0002531603667156756)/2
-    fbeta = (-6.283185307178473e-06-6.302329387166181e-06)/2
-    # fguess = -39000
-    # tguess = 4320
 
     gen_refchirp_deadzone = 0
     sfdpos = preamble_len + code_len
@@ -193,8 +187,6 @@ class Config:
     fft_downs = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.float32)
     fft_ups_x = cp.zeros((preamble_len + detect_range_pkts, fft_n), dtype=cp.complex64)
     fft_downs_x = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.complex64)
-    # fft_ups = cp.zeros( fft_n, dtype=cp.float32)
-    # fft_downs = cp.zeros( fft_n, dtype=cp.float32)
 
 
 if use_gpu:
@@ -297,6 +289,24 @@ def objective_core_phased(cfofreq, time_error, pktdata2a):
     res = cp.abs(cp.conj(pktdata2a[math.ceil(time_error):math.ceil(time_error)+len(detect_symb_concat)]).dot(detect_symb_concat)) / len(detect_symb_concat)
     return -res.get()
 
+def gen_matrix(dt, cfoppm1, est_cfo_f):
+    tstandard = Config.tstandard + dt
+    decode_matrix_a = cp.zeros((Config.n_classes, Config.nsamp))
+    decode_matrix_b = cp.zeros((Config.n_classes, Config.nsamp))
+    for code in range(Config.n_classes):
+        nsamples = round(Config.nsamp / Config.n_classes * (Config.n_classes - code))
+        refchirp = mychirp(tstandard, f0=Config.bw * (-0.5 + code / Config.n_classes) * cfoppm1 + est_cfo_f,
+                           f1=Config.bw * (0.5 + code / Config.n_classes) * cfoppm1 + est_cfo_f,
+                           t1=2 ** Config.sf / Config.bw * cfoppm1)
+        decode_matrix_a[code, :nsamples] = cp.conj(refchirp[:nsamples])
+
+        refchirp = mychirp(tstandard, f0=Config.bw * (-1.5 + code / Config.n_classes) * cfoppm1 + est_cfo_f,
+                           f1=Config.bw * (-0.5 + code / Config.n_classes) * cfoppm1 + est_cfo_f,
+                           t1=2 ** Config.sf / Config.bw * cfoppm1)[nsamples:]
+        decode_matrix_b[code, nsamples:] = cp.conj(refchirp[nsamples:])
+    return decode_matrix_a, decode_matrix_b
+
+
 
 def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     vals = np.zeros(Config.sfdpos + 2, dtype=np.complex64)
@@ -307,35 +317,23 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     codes = []
     angdiffs = []
     for pidx in range(Config.sfdpos + 2, Config.total_len):
-        # codes1 = []
-        # codes2 = []
-        codesv = []
-        angdv = []
         start_pos_all_new = nsamp_small * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
         start_pos = round(start_pos_all_new)
         cfoppm1 = (1 + est_cfo_f / Config.sig_freq)  # TODO!!!
-        tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1] + (start_pos - start_pos_all_new) / Config.fs
-        for code in range(Config.n_classes):
-            nsamples = round(Config.nsamp / Config.n_classes * (Config.n_classes - code))
-            refchirp = mychirp(tstandard, f0=Config.bw * (-0.5 + code / Config.n_classes) * cfoppm1 + est_cfo_f, f1=Config.bw * (0.5 + code / Config.n_classes) * cfoppm1 + est_cfo_f,
-                                t1=2 ** Config.sf / Config.bw * cfoppm1)[:nsamples]
-            sig1 = pktdata_in[start_pos: nsamples + start_pos]
-            if len(sig1) > 0: sig2 = cp.abs(sig1.dot(cp.conj(refchirp))) #/ cp.sum(cp.abs(sig1))
-            else: sig2 = cp.array(0)
+        dt = (start_pos - start_pos_all_new) / Config.fs
+        decode_matrix_a, decode_matrix_b = gen_matrix(dt, cfoppm1, est_cfo_f)
+        sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
+        sig2 = sig1.dot(decode_matrix_a)
+        sig3 = sig1.dot(decode_matrix_b)
 
-            refchirp = mychirp(tstandard, f0=Config.bw * (-1.5 + code / Config.n_classes) * cfoppm1 + est_cfo_f, f1=Config.bw * (-0.5 + code / Config.n_classes) * cfoppm1 + est_cfo_f,
-                               t1=2 ** Config.sf / Config.bw * cfoppm1)[nsamples:]
-            sig1 = pktdata_in[start_pos + nsamples: start_pos + Config.nsamp]
-            if len(sig1) > 0: sig3 = sig1.dot(cp.conj(refchirp)) #/ cp.sum(cp.abs(sig1))
-            else: sig3 = cp.array(0)
-            codesv.append(cp.abs(sig2).item() ** 2 + cp.abs(sig3).item() ** 2)
-            angdv.append(cp.angle(sig3).item() - cp.angle(sig2).item())
+        codesv = cp.abs(sig2).item() ** 2 + cp.abs(sig3).item() ** 2
+        angdv = cp.angle(sig3).item() - cp.angle(sig2).item()
             # codes1.append(sig2.item())
             # codes2.append(sig3.item())
-        # fig = go.Figure(layout_title_text=f"decode {pidx=}")
-        # fig.add_trace(go.Scatter(y=codes1, mode="lines"))
-        # fig.add_trace(go.Scatter(y=codes2, mode="lines"))
-        # fig.show()
+        fig = go.Figure(layout_title_text=f"decode {pidx=}")
+        fig.add_trace(go.Scatter(y=codes1, mode="lines"))
+        fig.add_trace(go.Scatter(y=codes2, mode="lines"))
+        fig.show()
         # plt.plot(np.unwrap(np.angle(pktdata_in[start_pos - Config.nsamp: start_pos + Config.nsamp].get())))
         # plt.show()
         coderet = np.argmax(np.array(codesv))
