@@ -70,14 +70,12 @@ def objective_core_phased(cfofreq, time_error, pktdata2a):
 
 
 def gen_matrix2(dt, est_cfo_f):
-    decode_matrix_a = cp.zeros((Config.n_classes, Config.nsamp), dtype=cp.complex64)
-    decode_matrix_b = cp.zeros((Config.n_classes, Config.nsamp), dtype=cp.complex64)
     beta = Config.bw / ((2 ** Config.sf) / Config.bw) / Config.fs
 
     df = -(est_cfo_f + dt * beta)
     cfosymb = cp.exp(2j * cp.pi * df * cp.linspace(0, Config.nsamp / Config.fs, num=Config.nsamp, endpoint=False)).astype(cp.complex64)
     decode_matrix_a = Config.decode_matrix_a * cfosymb
-    decode_matrix_b
+    decode_matrix_b = Config.decode_matrix_b * cfosymb
     return decode_matrix_a, decode_matrix_b
 
 
