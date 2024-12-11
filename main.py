@@ -28,7 +28,7 @@ from tqdm import tqdm
 import cupyx.scipy.fft as fft
 
 logger = logging.getLogger('my_logger')
-level = logging.INFO
+level = logging.WARNING
 logger.setLevel(level)
 console_handler = logging.StreamHandler()
 console_handler.setLevel(level)  # Set the console handler level
@@ -225,6 +225,7 @@ def objective(params, pktdata2a):
 
 
 def objective_linear(cfofreq, time_error, pktdata2a):
+    if time_error < 0: return -cfofreq, -time_error
     detect_symb = gen_refchirp(cfofreq, time_error - math.ceil(time_error), deadzone=Config.gen_refchirp_deadzone,
                                calctime=0)
     detect_symb_concat = cp.concatenate(detect_symb, axis=0)
@@ -232,6 +233,7 @@ def objective_linear(cfofreq, time_error, pktdata2a):
     ddx = 0  # TODO
     tint = math.ceil(time_error)
     # ress2 = cp.conj(pktdata2a[tint:tint + len(detect_symb_concat)]) * detect_symb_concat
+    logger.info(f"ObjLinear {time_error=} {tint=} {len(pktdata2a)=}")
     ress2 = -cp.unwrap(cp.angle(pktdata2a[tint:tint + len(detect_symb_concat)])) + cp.unwrap(cp.angle(detect_symb_concat))
     # plt.plot(cp.unwrap(cp.angle(pktdata2a[tint:tint + len(detect_symb_concat)])).get())
     # plt.plot(cp.unwrap(cp.angle(detect_symb_concat)).get())
@@ -318,9 +320,11 @@ def gen_matrix2(dt, est_cfo_f):
     decode_matrix_a = cp.zeros((Config.n_classes, Config.nsamp), dtype=cp.complex64)
     decode_matrix_b = cp.zeros((Config.n_classes, Config.nsamp), dtype=cp.complex64)
     beta = Config.bw / ((2 ** Config.sf) / Config.bw) / Config.fs
-    for code in range(Config.n_classes):
-        decode_matrix_a[code] = add_freq(Config.decode_matrix_a[code],-(est_cfo_f + dt * beta))
-        decode_matrix_b[code] = add_freq(Config.decode_matrix_b[code],-(est_cfo_f + dt * beta))
+
+    df = -(est_cfo_f + dt * beta)
+    cfosymb = cp.exp(2j * cp.pi * df * cp.linspace(0, Config.nsamp / Config.fs, num=Config.nsamp, endpoint=False)).astype(cp.complex64)
+    decode_matrix_a = Config.decode_matrix_a * cfosymb
+    decode_matrix_b
     return decode_matrix_a, decode_matrix_b
 
 
@@ -418,7 +422,7 @@ def objective_core_new(est_cfo_f, est_to_s, pktdata_in):
     freq = np.linspace(0, 2 * np.pi, 10000)
     res = np.array([vals.dot(np.exp(np.arange(len(vals)) * -1j * x)) for x in freq])
     retval = np.max(np.abs(res)) / vallen
-    if True:
+    if False:
         vals2 = vals.copy()
         vals2[Config.preamble_len:] = 0
         res0 = np.array([vals2.dot(np.exp(np.arange(len(vals2)) * -1j * x)) for x in freq])
@@ -621,6 +625,8 @@ def read_pkt(file_path_in1, file_path_in2, threshold, min_length=20):
             current_sequence2.append(rawdata2)
         else:
             if len(current_sequence1) > min_length:
+                current_sequence1.append(rawdata1)
+                current_sequence2.append(rawdata2)
                 yield read_idx, cp.concatenate(current_sequence1), cp.concatenate(current_sequence2)
             current_sequence1 = []
             current_sequence2 = []
@@ -854,10 +860,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
     detect_pkt_max = np.argmax(detect_vals[:, 0])
     est_cfo_f, est_to_s = detect_vals[detect_pkt_max, 1], detect_vals[detect_pkt_max, 2]
     np.set_printoptions(precision=4, suppress=True)
-    print(f"{detect_vals[:-1]=} {est_cfo_f=}, {est_to_s=}")
-    # assert detect_pkt_max == 0
-
-    print(f"sigd preobj {objective_linear(est_cfo_f, est_to_s, pktdata_in)=}")
+    logger.info(f"{detect_vals[:-1]=} {est_cfo_f=}, {est_to_s=} sigd preobj {objective_linear(est_cfo_f, est_to_s, pktdata_in)=}")
 
     logger.info(
         f"updown parameters:{est_cfo_f=} {est_to_s=} obj={objective_core(est_cfo_f, est_to_s, data1, True)}")
@@ -865,8 +868,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
     logger.info(f"linear optimization {linear_dfreq=} {linear_dtime=}")
     est_cfo_f -= linear_dfreq
     est_to_s -= linear_dtime
-    logger.info(
-        f"final parameters:{est_cfo_f=} {est_to_s=} obj={objective_core(est_cfo_f, est_to_s, data1, True)}")
+    logger.warning(f"pre sigD parameters:{est_cfo_f=} {est_to_s=} obj={objective_core(est_cfo_f, est_to_s, data1, True)}")
     beta = Config.bw / ((2 ** Config.sf) / Config.bw) / Config.fs
     # dxdebugv = -6 # !!!!!!
     # est_cfo_f += dxdebugv
@@ -874,6 +876,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
 
     codes = None
     codeangles = None
+    if est_to_s < 0: return 0, 0, None # !!!
     if sigD:
         fig = go.Figure()
         phases = np.zeros((10, Config.preamble_len), dtype=np.float32)
@@ -882,8 +885,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
 
 
 
-        for pidx in range(
-                Config.preamble_len):  # assume chirp start at one in [0, Config.detect_range_pkts) possible windows
+        for pidx in range(Config.preamble_len):  # assume chirp start at one in [0, Config.detect_range_pkts) possible windows
             start_pos_all = nsamp_small * pidx + est_to_s
             start_pos = round(start_pos_all)
             start_pos_d = start_pos_all - start_pos
@@ -955,8 +957,8 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
             fig.show()
         retval, est_cfo_f, est_to_s = objective_core_new(est_cfo_f, est_to_s, pktdata_in)
         retval2, est_cfo_f, est_to_s = objective_core_new(est_cfo_f, est_to_s, pktdata_in)
-        print(f"final fit dphase {coefficients=} {fit_dfreq=} {retval=} {retval2=} {est_cfo_f=} {est_to_s=}")
-        codes, codeangles = objective_decode(est_cfo_f, est_to_s, pktdata_in)
+        logger.warning(f"final fit dphase {coefficients=} {fit_dfreq=} {retval=} {retval2=} {est_cfo_f=} {est_to_s=}")
+        # codes, codeangles = objective_decode(est_cfo_f, est_to_s, pktdata_in)
 
         # print(f"sigd preobj {objective_core(est_cfo_f - fit_dfreq, est_to_s - fit_dfreq / beta, pktdata_in)=}")
         # print(f"sigd preobj {objective_core(est_cfo_f + fit_dfreq, est_to_s + fit_dfreq / beta, pktdata_in)=}")
@@ -967,7 +969,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart , retpflag = False, linfit = Fal
         # print(f"sigd preobj {objective_core_phased(est_cfo_f + fit_dfreq, est_to_s - fit_dfreq / beta, pktdata_in)=}")
         # print(f"sigd preobj {objective_core_phased(est_cfo_f - fit_dfreq, est_to_s + fit_dfreq / beta, pktdata_in)=}")
 
-    return est_cfo_f, est_to_s, codes, codeangles
+    return est_cfo_f, est_to_s, None# (codes, codeangles)
 
 
 def fix_cfo_to(est_cfo_f, est_to_s, pktdata_in):
@@ -990,11 +992,13 @@ if __name__ == "__main__":
     fulldata = []
 
     # Main loop read files
-    for file_path in Config.file_paths[:1]:
-        file_path = "/data/djl/temp/OptimalPkt/hou2"
+    vfilecnt = 0
+    fig = go.Figure()
+    for file_path in Config.file_paths:
+        # file_path = "/data/djl/temp/OptimalPkt/hou2"
 
         #  read file and count size
-        file_path_id = 0# int(file_path.split('_')[-1])
+        file_path_id = int(file_path.split('_')[-1])
 
         logger.info(f"FILEPATH { file_path}")
         pkt_cnt = 0
@@ -1051,7 +1055,8 @@ if __name__ == "__main__":
             read_idx, data1, data2 = pkt_data
             # (Optional) skip the first pkt because it may be half a pkt. read_idx == len(data1) means this pkt start from start of file
             if read_idx == len(data1) // Config.nsamp: continue
-            if pkt_idx < 2: continue
+            # if pkt_idx < 2: continue
+            # if pkt_idx > 2: break
 
             # normalization
             data1 /= cp.mean(cp.abs(data1))
@@ -1068,19 +1073,13 @@ if __name__ == "__main__":
             for tryi in range(trytimes):
 
                     # main detection function with up-down
-                    f, t, codes, codeangles = coarse_work_fast(data1, est_cfo_f, est_to_s, False, False, tryi >= 1)
+                    f, t, _ = coarse_work_fast(data1, est_cfo_f, est_to_s, False, False, tryi >= 1)
 
-            codescl.append(codes)
-            canglescl.append(codeangles)
-
-            if False:
-                    # 1208 result: est_cfo_f = -36704.015494791645, est_to_s = 4779.794477241814
-
-                    # plot error
                     if t < 0:
+                        break
                         # plot unwrapped phases of the pkt
                         logger.error(f"ERROR in {est_cfo_f=} {est_to_s=} out {f=} {t=} {file_path=} {pkt_idx=}")
-                        plt.plot(cp.unwrap(cp.angle(data1)).get()[:Config.nsamp*20])
+                        plt.plot(cp.unwrap(cp.angle(data1)).get()[:Config.nsamp * 20])
                         plt.show()
 
                         # plt the powers in nmaxs to see if there is a pkt detection error (variation in recv power)
@@ -1089,8 +1088,10 @@ if __name__ == "__main__":
                         filtered_y = [nmaxs[x] for x in filtered_x]
                         fig = px.scatter(x=filtered_x, y=filtered_y, title=file_path)
                         fig.add_hline(y=thresh, line=dict(dash='dash'))
-                        fig.add_trace(go.Scatter(x=xrange1, y=[nmaxs[x] for x in xrange1], mode="markers",line=dict(color='red'),marker=dict(size=3),
-                                                 name='Data Range'))
+                        fig.add_trace(
+                            go.Scatter(x=xrange1, y=[nmaxs[x] for x in xrange1], mode="markers", line=dict(color='red'),
+                                       marker=dict(size=3),
+                                       name='Data Range'))
                         fig.update_traces(marker=dict(size=3))
                         fig.show()
 
@@ -1099,80 +1100,57 @@ if __name__ == "__main__":
                         est_to_s = random.randint(0, Config.nsamp - 1)
                         break
 
-                    # renew the result for next iteration
-                    est_cfo_f = f
-                    est_to_s = t
-                    if tryi==0: continue # TODO !!!!!
 
-                    objval=objective_core(est_cfo_f, est_to_s, data1)
-                    logger.info(f"try{tryi} {est_cfo_f=} {est_to_s=} obj={objval}")
-                    vals[tryi] = (objval, est_cfo_f, est_to_s)
-
-                    # the best result among trytimes
-                    _, est_cfo_f, est_to_s = vals[np.argmin(vals[:, 0])]
-
-
-
-                    if False:
-                        cfo_freq_est, time_error = est_cfo_f, est_to_s
-                        tryidx += 1
-                        start_t = est_to_s#random.uniform(Config.t_lower, Config.t_upper)
-                        start_f = est_cfo_f#random.uniform(Config.f_lower, Config.f_upper)
-                        result = opt.minimize(objective, converter_down(start_f, start_t), args=(data1,),
-                                              bounds=[
-                                                  (converter_down(Config.f_lower, 0)[0], converter_down(Config.f_upper, 0)[0]),
-                                                  (converter_down(0, Config.t_lower)[1], converter_down(0, Config.t_upper)[1])],
-                                              method='L-BFGS-B',
-                                              options={'gtol': 1e-12, 'disp': False}
-                                              )
-
-                        if result.fun < bestobj:
-                            cfo_freq_est, time_error = converter_up(*result.x)
-                            logger.debug(
-                                f"{tryidx=: 6d} cfo_freq_est = {cfo_freq_est:.3f}, time_error = {time_error:.3f} {result.fun=:.5f}")
-                            # Config.fguess, Config.tguess = result.x
-                            bestobj = result.fun
-                            if tryidx > 100: draw_fit(pktidx, data1, cfo_freq_est, time_error)
-                        if tryidx == 100: draw_fit(pktidx, data1, cfo_freq_est, time_error)
-                        logger.info(f"Optimized parameters:\n{cfo_freq_est=}\n{time_error=} obj={objective_core(cfo_freq_est, time_error, data1, True)}")
-                        # draw_fit(0, data1, cfo_freq_est, time_error)
-                        est_cfo_f, est_to_s = cfo_freq_est, time_error
-
-                    # skip fine_grained optimization
 
                     # compute angles
-                    data_angles = []
-                    for pidx in range(Config.total_len):
-                        sig1 = data1[Config.nsamp * pidx + est_to_s: Config.nsamp * (pidx + 1) + est_to_s]
-                        sig2 = data2[Config.nsamp * pidx + est_to_s: Config.nsamp * (pidx + 1) + est_to_s]
-                        data_angles.append((sig1.dot(sig2.conj())).item())
+                    if False:
+                        data_angles = []
+                        est_cfo_f, est_to_s = f, t
+                        for pidx in range(10, Config.total_len):
+                            sig1 = data1[Config.nsamp * pidx + est_to_s: Config.nsamp * (pidx + 1) + est_to_s]
+                            sig2 = data2[Config.nsamp * pidx + est_to_s: Config.nsamp * (pidx + 1) + est_to_s]
+                            sigtimes = sig1 * sig2.conj()
+                            sigangles = cp.cumsum(sigtimes[::-1])[::-1]
+                            fig.add_trace(go.Scatter(y=cp.angle(sigangles).get(), mode="lines"))
+                            break
+                            # fig.add_trace(go.Scatter(y=cp.unwrap(cp.angle(sig2)).get()))
+
+
                     # save data for output line
-                    fulldata.append([file_path_id, est_cfo_f, est_to_s, *(np.angle(np.array(data_angles))), *(np.abs(np.array(data_angles))) ])
+                    est_cfo_f, est_to_s = f, t
+                    logger.info(f"EST {est_cfo_f=} {est_to_s=}")
+                    fulldata.append([file_path_id, est_cfo_f, est_to_s])
+                    if est_to_s > 0:
+                        sig1 = data1[round(est_to_s): Config.nsamp * (Config.total_len + Config.sfdend) + round(est_to_s)]
+                        sig2 = data2[round(est_to_s): Config.nsamp * (Config.total_len + Config.sfdend) + round(est_to_s)]
+                        sig1.tofile(f"fout/data0_test_{file_path_id}_pkt_{pkt_idx}")
+                        sig2.tofile(f"fout/data1_test_{file_path_id}_pkt_{pkt_idx}")
                     # save data for plotting
-                    ps.extend(data_angles)
-                    psa1.append(len(ps))
-                    ps2.append(est_cfo_f)
-                    ps3.append(est_to_s)
+                    # ps.extend(data_angles)
+                    # psa1.append(len(ps))
+                    # ps2.append(est_cfo_f)
+                    # ps3.append(est_to_s)
             # print("only compute 1 pkt, ending")
             # sys.exit(0)
         # the length of each pkt (for plotting)
 
-        fig = go.Figure(layout_title_text=f"decode angles")
-        for i in range(len(codescl)):
-            codes = codescl[i]
-            angdiffs = canglescl[i]
-            fig.add_trace(go.Scatter(x=codes, y=angdiffs, mode="markers"))
-        # fig.write_html("codeangles.html")
-        fig.show()
+        if False:
+            fig = go.Figure(layout_title_text=f"decode angles")
+            for i in range(len(codescl)):
+                codes = codescl[i]
+                angdiffs = canglescl[i]
+                fig.add_trace(go.Scatter(x=codes, y=angdiffs, mode="markers"))
+            # fig.write_html("codeangles.html")
+            fig.show()
 
         psa1 = psa1[:-1]
         psa2.append(len(ps))
 
         # save info of all the file to csv (done once each packet, overwrite old)
-        if False: # !!!!!!
+        if True: # !!!!!!
             header = ["fileID", "CFO", "Time offset"]
-            header.extend([f"Angle{x}" for x in range(Config.total_len)])
-            header.extend([f"Abs{x}" for x in range(Config.total_len)])
+            # header.extend([f"Angle{x}" for x in range(Config.total_len)])
+            # header.extend([f"Abs{x}" for x in range(Config.total_len)])
             csv_file_path = 'output_with_header.csv'
             with open(csv_file_path, 'w', newline='') as csvfile:
                 csvwriter = csv.writer(csvfile)
