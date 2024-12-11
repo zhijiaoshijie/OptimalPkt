@@ -293,6 +293,13 @@ def gen_matrix(dt, cfoppm1, est_cfo_f):
     tstandard = Config.tstandard + dt
     decode_matrix_a = cp.zeros((Config.n_classes, Config.nsamp), dtype=cp.complex64)
     decode_matrix_b = cp.zeros((Config.n_classes, Config.nsamp), dtype=cp.complex64)
+
+    def mychirp(t, f0, f1, t1):
+        beta = (f1 - f0) / t1
+        phase = 2 * cp.pi * (f0 * t + 0.5 * beta * t * t)
+        sig = cp.exp(1j * togpu(phase))
+        return sig
+
     for code in range(Config.n_classes):
         nsamples = round(Config.nsamp / Config.n_classes * (Config.n_classes - code))
         refchirp = mychirp(tstandard, f0=Config.bw * (-0.5 + code / Config.n_classes) * cfoppm1 + est_cfo_f,
@@ -306,6 +313,15 @@ def gen_matrix(dt, cfoppm1, est_cfo_f):
         decode_matrix_b[code, nsamples:] = cp.conj(refchirp[nsamples:])
     return decode_matrix_a, decode_matrix_b
 
+
+def gen_matrix2(dt, cfoppm1, est_cfo_f):
+    decode_matrix_a = cp.zeros((Config.n_classes, Config.nsamp), dtype=cp.complex64)
+    decode_matrix_b = cp.zeros((Config.n_classes, Config.nsamp), dtype=cp.complex64)
+    beta = Config.bw / ((2 ** Config.sf) / Config.bw) / Config.fs
+    for code in range(Config.n_classes):
+        decode_matrix_a[code] = cp.conj(add_freq(Config.decode_matrix_a[code], est_cfo_f + dt * beta))
+        decode_matrix_b[code] = cp.conj(add_freq(Config.decode_matrix_b[code], est_cfo_f + dt * beta))
+    return decode_matrix_a, decode_matrix_b
 
 
 def objective_decode(est_cfo_f, est_to_s, pktdata_in):
@@ -321,7 +337,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         start_pos = round(start_pos_all_new)
         cfoppm1 = (1 + est_cfo_f / Config.sig_freq)  # TODO!!!
         dt = (start_pos - start_pos_all_new) / Config.fs
-        decode_matrix_a, decode_matrix_b = gen_matrix(dt, cfoppm1, est_cfo_f)
+        decode_matrix_a, decode_matrix_b = gen_matrix2(dt, cfoppm1, est_cfo_f)
         sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
         sig2 = sig1.dot(decode_matrix_a.T)
         sig3 = sig1.dot(decode_matrix_b.T)
@@ -330,12 +346,12 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         angdv = cp.angle(sig3) - cp.angle(sig2)
             # codes1.append(sig2.item())
             # codes2.append(sig3.item())
-        # fig = go.Figure(layout_title_text=f"decode {pidx=}")
-        # fig.add_trace(go.Scatter(y=cp.abs(sig2).get(), mode="lines"))
-        # fig.add_trace(go.Scatter(y=cp.abs(sig3).get(), mode="lines"))
-        # fig.show()
+        fig = go.Figure(layout_title_text=f"decode {pidx=}")
+        fig.add_trace(go.Scatter(y=cp.abs(sig2).get(), mode="lines"))
+        fig.add_trace(go.Scatter(y=cp.abs(sig3).get(), mode="lines"))
+        fig.show()
         # plt.plot(np.unwrap(np.angle(pktdata_in[start_pos - Config.nsamp: start_pos + Config.nsamp].get())))
-        # plt.show() 
+        # plt.show()
         coderet = cp.argmax(cp.array(codesv))
         codes.append(coderet.item())
         angdiffs.append(angdv[coderet].item())
