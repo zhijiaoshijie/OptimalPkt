@@ -164,11 +164,11 @@ class Config:
         nsamples = round(nsamp / n_classes * (n_classes - code))
         refchirp = mychirp(tstandard, f0=bw * (-0.5 + code / n_classes), f1=bw * (0.5 + code / n_classes),
                            t1=2 ** sf / bw )
-        decode_matrix_a[code, :nsamples] = refchirp[:nsamples]
+        decode_matrix_a[code, :nsamples] = cp.conj(refchirp[:nsamples])
 
         refchirp = mychirp(tstandard, f0=bw * (-1.5 + code / n_classes), f1=bw * (-0.5 + code / n_classes),
                            t1=2 ** sf / bw )
-        decode_matrix_b[code, nsamples:] = refchirp[nsamples:]
+        decode_matrix_b[code, nsamples:] = cp.conj(refchirp[nsamples:])
 
 
     gen_refchirp_deadzone = 0
@@ -314,13 +314,13 @@ def gen_matrix(dt, cfoppm1, est_cfo_f):
     return decode_matrix_a, decode_matrix_b
 
 
-def gen_matrix2(dt, cfoppm1, est_cfo_f):
+def gen_matrix2(dt, est_cfo_f):
     decode_matrix_a = cp.zeros((Config.n_classes, Config.nsamp), dtype=cp.complex64)
     decode_matrix_b = cp.zeros((Config.n_classes, Config.nsamp), dtype=cp.complex64)
     beta = Config.bw / ((2 ** Config.sf) / Config.bw) / Config.fs
     for code in range(Config.n_classes):
-        decode_matrix_a[code] = cp.conj(add_freq(Config.decode_matrix_a[code], est_cfo_f + dt * beta))
-        decode_matrix_b[code] = cp.conj(add_freq(Config.decode_matrix_b[code], est_cfo_f + dt * beta))
+        decode_matrix_a[code] = add_freq(Config.decode_matrix_a[code],-(est_cfo_f + dt * beta))
+        decode_matrix_b[code] = add_freq(Config.decode_matrix_b[code],-(est_cfo_f + dt * beta))
     return decode_matrix_a, decode_matrix_b
 
 
@@ -337,7 +337,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         start_pos = round(start_pos_all_new)
         cfoppm1 = (1 + est_cfo_f / Config.sig_freq)  # TODO!!!
         dt = (start_pos - start_pos_all_new) / Config.fs
-        decode_matrix_a, decode_matrix_b = gen_matrix2(dt, cfoppm1, est_cfo_f)
+        decode_matrix_a, decode_matrix_b = gen_matrix2(dt, est_cfo_f)
         sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
         sig2 = sig1.dot(decode_matrix_a.T)
         sig3 = sig1.dot(decode_matrix_b.T)
