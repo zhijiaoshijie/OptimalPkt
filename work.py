@@ -99,17 +99,17 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
                 t1 = t0 * Config.tsig + tstart + detect_pkt * nsamp_small
 
                 linear_dfreq, linear_dtime = objective_linear(f1, t1, pktdata_in)
-                logger.info(f"linear optimization {linear_dfreq=} {linear_dtime=}")
+                logger.info(f"linear optimization {f1=} {t1=} {linear_dfreq=} {linear_dtime=}")
                 f1 -= linear_dfreq
                 t1 -= linear_dtime
                 retval, f2, t2 = objective_core_new(f1, t1, pktdata_in)
 
                 values[i][j] = [f2, t2, retval]
 
-        best_idx = np.argmin(values[:, :, 2])
+        best_idx = np.argmax(values[:, :, 2])
         est_cfo_f = values[:, :, 0].flat[best_idx]
         est_to_s = values[:, :, 1].flat[best_idx]
-        dvals = -np.min(values[:, :, 2])
+        dvals = np.max(values[:, :, 2])
         detect_vals[detect_pkt] = (dvals, est_cfo_f, est_to_s)  # save result
 
     # find max among all detect windows
@@ -126,7 +126,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
     if est_to_s < 0: return 0, 0, None  # !!!
 
     if sigD:
-        logger.warning(f"pre sigD parameters:{est_cfo_f=} {est_to_s=}")
+        logger.info(f"pre sigD parameters:{est_cfo_f=} {est_to_s=}")
         dphaselist = []
         for pidx in range(Config.preamble_len):  # assume chirp start at one in [0, Config.detect_range_pkts) possible windows
             start_pos_all = nsamp_small * pidx + est_to_s
@@ -190,8 +190,8 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
             # fig.add_vline(x=0, line=dict(color="black", dash="dash"))
             fig.show()
         retval, est_cfo_f, est_to_s = objective_core_new(est_cfo_f, est_to_s, pktdata_in)
-        retval2, est_cfo_f, est_to_s = objective_core_new(est_cfo_f, est_to_s, pktdata_in)
-        logger.warning(f"final fit dphase {coefficients=} {fit_dfreq=} {retval=} {retval2=} {est_cfo_f=} {est_to_s=}")
+        # retval2, est_cfo_f, est_to_s = objective_core_new(est_cfo_f, est_to_s, pktdata_in)
+        logger.info(f"final fit dphase {coefficients=} {fit_dfreq=} {retval=} {est_cfo_f=} {est_to_s=}")
         # codes, codeangles = objective_decode(est_cfo_f, est_to_s, pktdata_in)
 
         # print(f"sigd preobj {objective_core(est_cfo_f - fit_dfreq, est_to_s - fit_dfreq / beta, pktdata_in)=}")
@@ -203,4 +203,4 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
         # print(f"sigd preobj {objective_core_phased(est_cfo_f + fit_dfreq, est_to_s - fit_dfreq / beta, pktdata_in)=}")
         # print(f"sigd preobj {objective_core_phased(est_cfo_f - fit_dfreq, est_to_s + fit_dfreq / beta, pktdata_in)=}")
 
-    return est_cfo_f, est_to_s, None# (codes, codeangles)
+    return est_cfo_f, est_to_s, retval# None# (codes, codeangles)
