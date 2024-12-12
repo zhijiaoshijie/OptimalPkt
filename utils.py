@@ -76,7 +76,7 @@ class Config:
     if not os.path.exists(figpath): os.mkdir(figpath)
 
     fft_upsamp = 1024
-    detect_range_pkts = 2
+    detect_range_pkts = 4
     assert detect_range_pkts >= 2 # add 1, for buffer of cross-add
     detect_to_max = nsamp * 2
     fft_n = int(fs) #nsamp * fft_upsamp
@@ -85,6 +85,19 @@ class Config:
     fft_downs = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.float32)
     fft_ups_x = cp.zeros((preamble_len + detect_range_pkts, fft_n), dtype=cp.complex64)
     fft_downs_x = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.complex64)
+
+    wired = False
+    if not wired:
+        file_paths_zip = sorted(
+            (
+                (os.path.join(base_path, filename), int(filename.split('_')[-1]))
+                for filename in os.listdir(base_path)
+                if 'data0' in filename
+            ),
+            key=lambda pair: pair[1]
+        )
+    else:
+        file_paths_zip = (("/data/djl/temp/OptimalPkt/hou2", 0),) # !!! TODO FOR DEBUG
 
 logger = logging.getLogger('my_logger')
 level = logging.WARNING
@@ -105,8 +118,6 @@ logger.addHandler(file_handler)
 if use_gpu:
     cp.cuda.Device(0).use()
 Config = Config()
-file_paths = [os.path.join(Config.base_path, x) for x in os.listdir(Config.base_path) if 'data0' in x]
-Config.file_paths = sorted(file_paths, key=lambda x: int(x.split('_')[-1]))  # TODO!
 
 
 

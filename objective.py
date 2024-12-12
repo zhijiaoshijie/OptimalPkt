@@ -59,7 +59,7 @@ def objective_linear(cfofreq, time_error, pktdata2a):
 
 def objective_core_phased(cfofreq, time_error, pktdata2a):
     if time_error < 0: return 0
-    if abs(cfofreq + 20000) > 20000: return 0 # TODO !!!
+    # if abs(cfofreq + 20000) > 20000: return 0 # TODO !!!
     assert pktdata2a.ndim == 1
     assert cp.mean(cp.abs(pktdata2a)).ndim == 0
     # pktdata2a_roll = cp.roll(pktdata2a / cp.mean(cp.abs(pktdata2a)), -math.ceil(time_error))
@@ -78,7 +78,7 @@ def gen_matrix2(dt, est_cfo_f):
     decode_matrix_b = Config.decode_matrix_b * cfosymb
     return decode_matrix_a, decode_matrix_b
 
-
+# todo 斜率是否不受cfo sfo影响
 def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
     codes = []
@@ -86,7 +86,6 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     for pidx in range(Config.sfdpos + 2, Config.total_len):
         start_pos_all_new = nsamp_small * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
         start_pos = round(start_pos_all_new)
-        cfoppm1 = (1 + est_cfo_f / Config.sig_freq)  # TODO!!!
         dt = (start_pos - start_pos_all_new) / Config.fs
         decode_matrix_a, decode_matrix_b = gen_matrix2(dt, est_cfo_f)
         sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]

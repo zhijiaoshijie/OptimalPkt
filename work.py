@@ -97,8 +97,15 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
                 t0 = (f0 - fu)
                 f1 = f0 * Config.bw
                 t1 = t0 * Config.tsig + tstart + detect_pkt * nsamp_small
-                values[i][j] = [f1, t1, objective_core(f1, t1,
-                                                       pktdata_in)]  # objective_core returns minus power value, so argmin; out of range objective_core=0
+
+                linear_dfreq, linear_dtime = objective_linear(f1, t1, pktdata_in)
+                logger.info(f"linear optimization {linear_dfreq=} {linear_dtime=}")
+                f1 -= linear_dfreq
+                t1 -= linear_dtime
+                retval, f2, t2 = objective_core_new(f1, t1, pktdata_in)
+
+                values[i][j] = [f2, t2, retval]
+
         best_idx = np.argmin(values[:, :, 2])
         est_cfo_f = values[:, :, 0].flat[best_idx]
         est_to_s = values[:, :, 1].flat[best_idx]
@@ -196,4 +203,4 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
         # print(f"sigd preobj {objective_core_phased(est_cfo_f + fit_dfreq, est_to_s - fit_dfreq / beta, pktdata_in)=}")
         # print(f"sigd preobj {objective_core_phased(est_cfo_f - fit_dfreq, est_to_s + fit_dfreq / beta, pktdata_in)=}")
 
-    return est_cfo_f, est_to_s, None  # (codes, codeangles)
+    return est_cfo_f, est_to_s, None# (codes, codeangles)

@@ -1,9 +1,7 @@
 import time
-from sklearn.mixture import GaussianMixture
 
 from work import *
 from reader import *
-
 
 # read packets from file
 if __name__ == "__main__":
@@ -13,68 +11,10 @@ if __name__ == "__main__":
     readable_time = time.ctime(mod_time)
     logger.info(f"Last modified time of the script: {readable_time}")
 
-
-    ps = []
-    ps2 = []
-    psa1 = []
-    psa2 = []
-    ps3 = []
     fulldata = []
-
     # Main loop read files
-    vfilecnt = 0
-    fig = go.Figure()
-    for file_path in Config.file_paths:
-        # file_path = "/data/djl/temp/OptimalPkt/hou2"
-
-        #  read file and count size
-        file_path_id = int(file_path.split('_')[-1])
-
-        logger.info(f"FILEPATH { file_path}")
-        pkt_cnt = 0
-        pktdata = []
-        fsize = int(os.stat(file_path).st_size / (Config.nsamp * 4 * 2))
-        logger.debug(f'reading file: {file_path} SF: {Config.sf} pkts in file: {fsize}')
-
-        # read max power of first 5000 windows, for envelope detection
-        power_eval_len = 5000
-        nmaxs = []
-        for idx, rawdata in enumerate(read_large_file(file_path)):
-            nmaxs.append(cp.max(cp.abs(rawdata)))
-            if idx == power_eval_len - 1: break
-        nmaxs = cp.array(nmaxs).get()
-
-        # clustering
-        data = nmaxs.reshape(-1, 1)
-        gmm = GaussianMixture(n_components=2)
-        gmm.fit(data)
-        means = gmm.means_.flatten()
-        covariances = gmm.covariances_.flatten()
-        weights = gmm.weights_.flatten()
-
-        sorted_indices = np.argsort(means)
-        mean1, mean2 = means[sorted_indices]
-        covariance1, covariance2 = covariances[sorted_indices]
-        weight1, weight2 = weights[sorted_indices]
-
-        # threshold to divide the noise power from signal power
-        thresh = (mean1 * covariance2 + mean2 * covariance1) / (covariance1 + covariance2)
-
-        # if threshold may not work set this to True
-        # plot the power map
-        if False:
-            counts, bins = cp.histogram(nmaxs, bins=100)
-            # logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
-            logger.debug(f"cluster: {kmeans.cluster_centers_[0]} {kmeans.cluster_centers_[1]} {thresh=}")
-            threshpos = np.searchsorted(tocpu(bins), thresh).item()
-            logger.debug(f"lower: {cp_str(counts[:threshpos])}")
-            logger.debug(f"higher: {cp_str(counts[threshpos:])}")
-            fig = px.line(nmaxs.get())
-            fig.add_hline(y=thresh)
-            fig.update_layout(
-                title=f"{file_path} pow {len(nmaxs)}",
-                legend=dict(x=0.1, y=1.1))
-            fig.show()
+    for file_path, file_path_id in Config.file_paths_zip:
+        preprocess_file(file_path)
 
         # loop for demodulating all decoded packets: iterate over pkts with energy>thresh and length>min_length
         codescl = []
@@ -121,15 +61,19 @@ if __name__ == "__main__":
                             # fig.add_trace(go.Scatter(y=cp.unwrap(cp.angle(sig2)).get()))
 
                     # save data for output line
-                    if False:
+                    if t > 0 and abs(f - 38000) < 4000:
                         est_cfo_f, est_to_s = f, t
-                        logger.info(f"EST {est_cfo_f=} {est_to_s=}")
-                        fulldata.append([file_path_id, est_cfo_f, est_to_s])
-                        if est_to_s > 0:
+                        logger.warning(f"EST f{file_path_id} {est_cfo_f=} {est_to_s=} {read_idx=} tot {est_to_s + read_idx * Config.nsamp}")
+                        fulldata.append([file_path_id, est_cfo_f, est_to_s + read_idx * Config.nsamp])
+                        if True:
                             sig1 = data1[round(est_to_s): Config.nsamp * (Config.total_len + Config.sfdend) + round(est_to_s)]
                             sig2 = data2[round(est_to_s): Config.nsamp * (Config.total_len + Config.sfdend) + round(est_to_s)]
                             sig1.tofile(f"fout/data0_test_{file_path_id}_pkt_{pkt_idx}")
                             sig2.tofile(f"fout/data1_test_{file_path_id}_pkt_{pkt_idx}")
+                    else:
+                        est_cfo_f, est_to_s = f, t
+                        logger.error(f"ERR f{file_path_id} {est_cfo_f=} {est_to_s=} {read_idx=} tot {est_to_s + read_idx * Config.nsamp}")
+                    fulldata.append([file_path_id, est_cfo_f, est_to_s + read_idx * Config.nsamp])
                     # save data for plotting
                     # ps.extend(data_angles)
                     # psa1.append(len(ps))
@@ -147,9 +91,6 @@ if __name__ == "__main__":
                 fig.add_trace(go.Scatter(x=codes, y=angdiffs, mode="markers"))
             # fig.write_html("codeangles.html")
             fig.show()
-
-        psa1 = psa1[:-1]
-        psa2.append(len(ps))
 
         # save info of all the file to csv (done once each packet, overwrite old)
         if False: # !!!!!!
