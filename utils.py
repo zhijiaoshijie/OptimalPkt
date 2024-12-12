@@ -42,7 +42,6 @@ class Config:
     total_len = 89
     thresh = None# 0.03
     # file_paths = ['/data/djl/temp/OptimalPkt/fingerprint_data/data0_test_3',]
-    base_path = '/data/djl/temp/OptimalPkt/fingerprint_data/'
     cfo_range = bw // 8
 
     n_classes = 2 ** sf
@@ -88,14 +87,15 @@ class Config:
 
     wired = False
     if not wired:
-        file_paths_zip = sorted(
-            (
-                (os.path.join(base_path, filename), int(filename.split('_')[-1]))
-                for filename in os.listdir(base_path)
-                if 'data0' in filename
-            ),
-            key=lambda pair: pair[1]
-        )
+        base_path = '/data/djl/temp/OptimalPkt/fingerprint_data/'
+        temp_list = []
+        for filename in os.listdir(base_path):
+            if 'data0' in filename:
+                file_tuple = (os.path.join(base_path, filename), int(filename.split('_')[-1]))
+                temp_list.append(file_tuple)
+
+        file_paths_zip = sorted(temp_list, key=lambda pair: pair[1])
+
     else:
         file_paths_zip = (("/data/djl/temp/OptimalPkt/hou2", 0),) # !!! TODO FOR DEBUG
 

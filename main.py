@@ -14,7 +14,7 @@ if __name__ == "__main__":
     fulldata = []
     # Main loop read files
     for file_path, file_path_id in Config.file_paths_zip:
-        preprocess_file(file_path)
+        thresh = preprocess_file(file_path)
 
         # loop for demodulating all decoded packets: iterate over pkts with energy>thresh and length>min_length
         codescl = []
@@ -63,7 +63,7 @@ if __name__ == "__main__":
                     # save data for output line
                     if t > 0 and abs(f - 38000) < 4000:
                         est_cfo_f, est_to_s = f, t
-                        logger.warning(f"EST f{file_path_id} {est_cfo_f=} {est_to_s=} {read_idx=} tot {est_to_s + read_idx * Config.nsamp}")
+                        logger.warning(f"EST f{file_path_id} {est_cfo_f=} {est_to_s=} {pkt_idx=} {read_idx=} tot {est_to_s + read_idx * Config.nsamp}")
                         fulldata.append([file_path_id, est_cfo_f, est_to_s + read_idx * Config.nsamp])
                         if True:
                             sig1 = data1[round(est_to_s): Config.nsamp * (Config.total_len + Config.sfdend) + round(est_to_s)]
@@ -72,7 +72,7 @@ if __name__ == "__main__":
                             sig2.tofile(f"fout/data1_test_{file_path_id}_pkt_{pkt_idx}")
                     else:
                         est_cfo_f, est_to_s = f, t
-                        logger.error(f"ERR f{file_path_id} {est_cfo_f=} {est_to_s=} {read_idx=} tot {est_to_s + read_idx * Config.nsamp}")
+                        logger.error(f"ERR f{file_path_id} {est_cfo_f=} {est_to_s=} {pkt_idx=} {read_idx=} tot {est_to_s + read_idx * Config.nsamp}")
                     fulldata.append([file_path_id, est_cfo_f, est_to_s + read_idx * Config.nsamp])
                     # save data for plotting
                     # ps.extend(data_angles)
