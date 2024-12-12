@@ -64,7 +64,7 @@ if __name__ == "__main__":
             if t > 0 and abs(f + 38000) < 4000:
                 est_cfo_f, est_to_s = f, t
                 logger.warning(f"est f{file_path_id:3d} {est_cfo_f=:.6f} {est_to_s=:.6f} {pkt_idx=:3d} {read_idx=:5d} tot {est_to_s + read_idx * Config.nsamp:15.2f} {retval=:.6f}")
-                fulldata.append([file_path_id, est_cfo_f, est_to_s + read_idx * Config.nsamp])
+                fulldata.append([file_path_id, est_cfo_f, est_to_s + read_idx * Config.nsamp, retval])
                 if True:
                     sig1 = data1[round(est_to_s): Config.nsamp * (Config.total_len + Config.sfdend) + round(est_to_s)]
                     sig2 = data2[round(est_to_s): Config.nsamp * (Config.total_len + Config.sfdend) + round(est_to_s)]
@@ -93,8 +93,8 @@ if __name__ == "__main__":
             fig.show()
 
         # save info of all the file to csv (done once each packet, overwrite old)
-        if False: # !!!!!!
-            header = ["fileID", "CFO", "Time offset"]
+        if True: # !!!!!!
+            header = ["fileID", "CFO", "Time offset", "Power"]
             # header.extend([f"Angle{x}" for x in range(Config.total_len)])
             # header.extend([f"Abs{x}" for x in range(Config.total_len)])
             csv_file_path = 'data_out.csv'
