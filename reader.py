@@ -90,7 +90,7 @@ def read_pkt(file_path_in1, file_path_in2, threshold, min_length=20):
             if len(current_sequence1) > min_length:
                 current_sequence1.append(rawdata1) # end +1 window
                 current_sequence2.append(rawdata2)
-                yield read_idx, cp.concatenate(current_sequence1), cp.concatenate(current_sequence2)
+                yield read_idx + 1 - len(current_sequence1), cp.concatenate(current_sequence1), cp.concatenate(current_sequence2)
             current_sequence1 = [rawdata1,] # previous +1 window
             current_sequence2 = [rawdata2,]
 
