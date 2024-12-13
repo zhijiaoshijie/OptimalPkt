@@ -3,7 +3,7 @@ import os
 import math
 import numpy as np
 
-use_gpu = True
+use_gpu = False
 if use_gpu:
     import cupy as cp
     import cupyx.scipy.fft as fft
@@ -82,7 +82,8 @@ class Config:
     assert detect_range_pkts >= 2 # add 1, for buffer of cross-add
     detect_to_max = nsamp * 2
     fft_n = int(fs) #nsamp * fft_upsamp
-    plan = fft.get_fft_plan(cp.zeros(fft_n, dtype=cp.complex64))
+    if use_gpu: plan = fft.get_fft_plan(cp.zeros(fft_n, dtype=cp.complex64))
+    else: plan = None
     fft_ups = cp.zeros((preamble_len + detect_range_pkts, fft_n), dtype=cp.float32)
     fft_downs = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.float32)
     fft_ups_x = cp.zeros((preamble_len + detect_range_pkts, fft_n), dtype=cp.complex64)
@@ -192,7 +193,10 @@ def myplot(*args, **kwargs):
 # total range: sampling frequency. -fs/2 ~ fs/2, centered at 0
 # bandwidth = 0.40625 sf
 def myfft(chirp_data, n, plan):
-    return np.fft.fftshift(fft.fft(chirp_data.astype(cp.complex64), n=n, plan=plan))
+    if use_gpu:
+        return np.fft.fftshift(fft.fft(chirp_data.astype(cp.complex64), n=n, plan=plan))
+    else:
+        return np.fft.fftshift(fft.fft(chirp_data.astype(cp.complex64), n=n))
 
 
 

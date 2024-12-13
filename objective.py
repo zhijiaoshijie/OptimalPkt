@@ -12,35 +12,22 @@ def objective_linear(cfofreq, time_error, pktdata2a):
     tint = math.ceil(time_error)
     logger.info(f"ObjLinear {time_error=} {tint=} {len(pktdata2a)=}")
     ress2 = -cp.unwrap(cp.angle(pktdata2a[tint:tint + len(detect_symb_concat)])) + cp.unwrap(cp.angle(detect_symb_concat))
-    # plt.plot(cp.unwrap(cp.angle(pktdata2a[tint:tint + len(detect_symb_concat)])).get())
-    # plt.plot(cp.unwrap(cp.angle(detect_symb_concat)).get())
-    # fig = px.scatter(y=ress2[:150000].get())
-    # fig.show()
 
 
     phasediff = ress2#cp.unwrap(cp.angle(cp.array(ress2)))
     est_dfreqs = []
-    lflag = False
-    fig = go.Figure()
-    if lflag:
-        fig = px.scatter(y=phasediff[:Config.preamble_len * Config.nsamp].get())
-        fig.update_traces(marker=dict(size=2))
     for fit_symbidx in range(0, Config.preamble_len):
         x_values = np.arange(Config.nsamp * fit_symbidx + 50, Config.nsamp * (fit_symbidx + 1) - 50)
-        y_values = phasediff[x_values].get()
+        y_values = tocpu(phasediff[x_values])
         coefficients = np.polyfit(x_values, y_values, 1)
         est_dfreq = coefficients[0] * Config.fs / 2 / np.pi
         est_dfreqs.append(est_dfreq)
         # print(f"fitted curve {est_dfreq=:.2f} Hz")
-        if lflag: fig.add_trace(go.Scatter(x=x_values, y=np.poly1d(coefficients)(x_values), mode="lines"))
-    if lflag:
-        fig.update_layout(title = f"{cfofreq:.2f} Hz {time_error:.2f} sps")
-        fig.show()
 
     est_ups = []
     for fit_symbidx in range(Config.sfdpos, Config.sfdpos + 2):
         x_values = np.arange(Config.nsamp * fit_symbidx + 50, Config.nsamp * (fit_symbidx + 1) - 50)
-        y_values = phasediff[x_values].get()
+        y_values = tocpu(phasediff[x_values])
         coefficients = np.polyfit(x_values, y_values, 1)
         est_ufreq = coefficients[0] * Config.fs / 2 / np.pi
         est_ups.append(est_ufreq)

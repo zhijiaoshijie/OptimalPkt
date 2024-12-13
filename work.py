@@ -36,8 +36,8 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
         Config.fft_downs_x[pidx - Config.sfdpos] = data0
 
     # todo SFO是否会导致bw不是原来的bw
-    fft_ups_add = Config.fft_ups_x[:-1, :-Config.bw / Config.fs * Config.fft_n] + Config.fft_ups_x[1:,
-                                                                                  Config.bw / Config.fs * Config.fft_n:]
+    fft_ups_add = (Config.fft_ups_x[:-1, :round(-Config.bw / Config.fs * Config.fft_n)] +
+                   Config.fft_ups_x[1:, round(Config.bw / Config.fs * Config.fft_n):])
     # fft_downs_add = Config.fft_downs_x[:-1, :-Config.bw / Config.fs * Config.fft_n] + Config.fft_downs_x[1:, Config.bw / Config.fs * Config.fft_n:]
 
     # fit the up chirps with linear, intersect with downchirp
@@ -57,9 +57,9 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
         buff_freqs = round(Config.cfo_range * Config.fft_n / Config.fs)
         lower = - Config.bw - buff_freqs + Config.fft_n // 2
         higher = buff_freqs + Config.fft_n // 2
-        y_value = cp.argmax(cp.sum(
+        y_value = tocpu(cp.argmax(cp.sum(
             cp.abs(fft_ups_add[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt, lower:higher]),
-            axis=0)).get() + lower
+            axis=0))) + lower
         if y_value > - Config.bw // 2 * Config.fft_n / Config.fs + Config.fft_n // 2:
             y_value_secondary = -1
         else:
@@ -152,7 +152,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
             data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
             # print("new", np.max(np.abs(data0)), (start_pos - start_pos_all_new)/Config.fs, tstandard[0], tstandard[-1], Config.bw / 2 * (1 - est_cfo_f / Config.sig_freq )  - est_cfo_f, -Config.bw / 2* (1 - est_cfo_f / Config.sig_freq )  - est_cfo_f, 2 ** Config.sf / Config.bw  * (1 - est_cfo_f / Config.sig_freq ) )
             yval2 = cp.argmax(cp.abs(data0)).item()
-            dval2 = np.array(cp.angle(data0[yval2]).get().item())  # - dphase
+            dval2 = np.array(tocpu(cp.angle(data0[yval2])).item())  # - dphase
             # dval2 = np.array(cp.angle(data0[Config.fft_n//2]).get().item())# - dphase
             # linear, the difference on angle = -0.03270806338636364 * bin so 1 bin(1hz) = 0.03 rad, angle[y]=angle[n/2]-0.03*(y-n/2)
             # print("newres", yval2 - Config.fft_n//2, dval2, cp.max(cp.abs(data0)).item(), np.abs(data0[Config.fft_n//2]))

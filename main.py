@@ -70,8 +70,8 @@ if __name__ == "__main__":
                 logger.warning(f"est f{file_path_id:3d} {est_cfo_f=:.6f} {est_to_s=:.6f} {pkt_idx=:3d} {read_idx=:5d} tot {est_to_s_full:15.2f} {retval=:.6f}")
                 fulldata.append([file_path_id, pkt_idx, est_cfo_f, est_to_s_full , retval])
                 if True:
-                    sig1 = data1[round(est_to_s): Config.nsamp * (Config.total_len ) + round(est_to_s)]
-                    sig2 = data2[round(est_to_s): Config.nsamp * (Config.total_len ) + round(est_to_s)]
+                    sig1 = data1[round(est_to_s): Config.nsamp * math.ceil(Config.total_len) + round(est_to_s)]
+                    sig2 = data2[round(est_to_s): Config.nsamp * math.ceil(Config.total_len) + round(est_to_s)]
                     sig1.tofile(os.path.join(Config.outfolder, f"data0_test_{file_path_id}_pkt_{pkt_idx}"))
                     sig2.tofile(os.path.join(Config.outfolder, f"data1_test_{file_path_id}_pkt_{pkt_idx}"))
             else:
