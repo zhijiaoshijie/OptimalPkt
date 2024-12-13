@@ -1,6 +1,6 @@
-import matplotlib.pyplot as plt
-import plotly.express as px
-import plotly.graph_objects as go
+# import matplotlib.pyplot as plt
+# import plotly.express as px
+# import plotly.graph_objects as go
 
 from utils import *
 
@@ -114,9 +114,9 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         amaxdfs.append(amaxdf)
         # print(max(dv1), max(dv2), max(dv2)/(max(dv1)+max(dv2))*Config.n_classes)
 
-    fig = go.Figure(layout_title_text=f"decode angles")
-    fig.add_trace(go.Scatter(y=amaxdfs, mode="markers"))
-    fig.show()
+    # fig = go.Figure(layout_title_text=f"decode angles")
+    # fig.add_trace(go.Scatter(y=amaxdfs, mode="markers"))
+    # fig.show()
     return codes, angdiffs
 
 
