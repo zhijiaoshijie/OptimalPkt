@@ -8,10 +8,10 @@ def work(pktdata_in, fstart, tstart):
 
     logger.info(f"updown result:{est_cfo_f=} {est_to_s=} {retval=}")
 
-    linear_dfreq, linear_dtime = objective_linear(est_cfo_f, est_to_s, pktdata_in)
-    logger.info(f"linear optimization {linear_dfreq=} {linear_dtime=}")
-    est_cfo_f -= linear_dfreq
-    est_to_s -= linear_dtime
+    # linear_dfreq, linear_dtime = objective_linear(est_cfo_f, est_to_s, pktdata_in)
+    # logger.info(f"linear optimization {linear_dfreq=} {linear_dtime=}")
+    # est_cfo_f -= linear_dfreq
+    # est_to_s -= linear_dtime
 
     if est_to_s < 0: return 0, 0, None  # !!!
 
@@ -82,10 +82,10 @@ def coarse_updown_detect(pktdata_in, fstart, tstart):
                 f1 = f0 * Config.bw
                 t1 = t0 * Config.tsig + tstart + detect_pkt * Config.nsampf
 
-                linear_dfreq, linear_dtime = objective_linear(f1, t1, pktdata_in)
-                logger.info(f"linear optimization {f1=} {t1=} {linear_dfreq=} {linear_dtime=}")
-                f1 -= linear_dfreq
-                t1 -= linear_dtime
+                # linear_dfreq, linear_dtime = objective_core_new(f1, t1, pktdata_in)
+                # logger.info(f"linear optimization {f1=} {t1=} {linear_dfreq=} {linear_dtime=}")
+                # f1 -= linear_dfreq
+                # t1 -= linear_dtime
                 retval, f2, t2 = objective_core_new(f1, t1, pktdata_in)
 
                 results.append((f2, t2, retval))

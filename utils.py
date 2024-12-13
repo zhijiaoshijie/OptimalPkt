@@ -104,7 +104,7 @@ class Config:
         file_paths_zip = (("/data/djl/temp/OptimalPkt/hou2", 0),) # !!! TODO FOR DEBUG
 
 logger = logging.getLogger('my_logger')
-level = logging.WARNING
+level = logging.INFO
 logger.setLevel(level)
 console_handler = logging.StreamHandler()
 console_handler.setLevel(level)  # Set the console handler level

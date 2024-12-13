@@ -80,9 +80,9 @@ def objective_core_new(est_cfo_f, est_to_s, pktdata_in):
 
 def gen_refchirp(cfofreq, tstart, deadzone=0, calctime=0):
     detect_symb = []
-    bw = Config.bw * (1 + cfofreq / Config.sig_freq)
-    sigt = 2 ** Config.sf / bw * Config.fs #* (1 - cfofreq / Config.sig_freq)
-    beta = Config.bw / sigt
+    bw = Config.bw# * (1 + cfofreq / Config.sig_freq)
+    sigt = 2 ** Config.sf / bw * Config.fs# * (1 - cfofreq / Config.sig_freq)
+    beta = Config.bw / ((2 ** Config.sf) / Config.bw) / Config.fs
     for tid in range(Config.preamble_len):
         upchirp = gen_upchirp(tstart + sigt * tid, sigt, -bw  / 2 + cfofreq, beta)
         # assert len(upchirp) == math.ceil(tid_times[tid + 1]) - math.ceil(tid_times[tid])
