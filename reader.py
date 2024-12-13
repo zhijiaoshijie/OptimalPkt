@@ -16,7 +16,7 @@ def preprocess_file(file_path):
     for idx, rawdata in enumerate(read_large_file(file_path)):
         nmaxs.append(cp.max(cp.abs(rawdata)))
         if idx == power_eval_len - 1: break
-    nmaxs = cp.array(nmaxs).get()
+    nmaxs = tocpu(cp.array(nmaxs))
     # clustering
     data = nmaxs.reshape(-1, 1)
     gmm = GaussianMixture(n_components=2)

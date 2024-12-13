@@ -32,8 +32,8 @@ def coarse_updown_detect(pktdata_in, fstart, tstart):
     for pidx in range(Config.sfdpos, Config.sfdpos + 2 + Config.detect_range_pkts):
         data0 = dechirp_fft(tstart, fstart, pktdata_in, upchirp, pidx, False)
         Config.fft_downs_x[pidx - Config.sfdpos] = data0
-    fft_ups_add = (Config.fft_ups_x[:-1, :-Config.bw / Config.fs * Config.fft_n] +
-                   Config.fft_ups_x[1:, Config.bw / Config.fs * Config.fft_n:])
+    fft_ups_add = (Config.fft_ups_x[:-1, :int(-Config.bw / Config.fs * Config.fft_n)] +
+                   Config.fft_ups_x[1:, int(Config.bw / Config.fs * Config.fft_n):])
     # fit the up chirps with linear, intersect with downchirp
     results = []
     for detect_pkt in range(
@@ -44,9 +44,9 @@ def coarse_updown_detect(pktdata_in, fstart, tstart):
         buff_freqs = round(Config.cfo_range * Config.fft_n / Config.fs)
         lower = - Config.bw - buff_freqs + Config.fft_n // 2
         higher = buff_freqs + Config.fft_n // 2
-        y_value = cp.argmax(cp.sum(
+        y_value = tocpu(cp.argmax(cp.sum(
             cp.abs(fft_ups_add[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt, lower:higher]),
-            axis=0)).get() + lower
+            axis=0))) + lower
         if y_value > - Config.bw // 2 * Config.fft_n / Config.fs + Config.fft_n // 2:
             y_value_secondary = -1
         else:

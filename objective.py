@@ -12,7 +12,7 @@ def objective_linear(cfofreq, time_error, pktdata2a):
     est_dfreqs = []
     for fit_symbidx in range(0, Config.preamble_len):
         x_values = np.arange(Config.nsamp * fit_symbidx + 50, Config.nsamp * (fit_symbidx + 1) - 50)
-        y_values = phasediff[x_values].get()
+        y_values = tocpu(phasediff[x_values])
         coefficients = np.polyfit(x_values, y_values, 1)
         est_dfreq = coefficients[0] * Config.fs / 2 / np.pi
         est_dfreqs.append(est_dfreq)
@@ -20,7 +20,7 @@ def objective_linear(cfofreq, time_error, pktdata2a):
     est_ups = []
     for fit_symbidx in range(Config.sfdpos, Config.sfdpos + 2):
         x_values = np.arange(Config.nsamp * fit_symbidx + 50, Config.nsamp * (fit_symbidx + 1) - 50)
-        y_values = phasediff[x_values].get()
+        y_values = tocpu(phasediff[x_values])
         coefficients = np.polyfit(x_values, y_values, 1)
         est_ufreq = coefficients[0] * Config.fs / 2 / np.pi
         est_ups.append(est_ufreq)
