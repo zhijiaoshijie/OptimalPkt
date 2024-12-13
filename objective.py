@@ -1,6 +1,6 @@
-# import matplotlib.pyplot as plt
-# import plotly.express as px
-# import plotly.graph_objects as go
+import matplotlib.pyplot as plt
+import plotly.express as px
+import plotly.graph_objects as go
 
 from utils import *
 
@@ -11,6 +11,10 @@ def objective_linear(cfofreq, time_error, pktdata2a):
     detect_symb_concat = cp.concatenate(detect_symb, axis=0)
     tint = math.ceil(time_error)
     logger.info(f"ObjLinear {time_error=} {tint=} {len(pktdata2a)=}")
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(y=cp.unwrap(cp.angle(pktdata2a[tint:tint + len(detect_symb_concat)]))))
+    fig.add_trace(go.Scatter(y=cp.unwrap(cp.angle(detect_symb_concat))))
+    fig.show()
     ress2 = -cp.unwrap(cp.angle(pktdata2a[tint:tint + len(detect_symb_concat)])) + cp.unwrap(cp.angle(detect_symb_concat))
 
 
@@ -33,10 +37,10 @@ def objective_linear(cfofreq, time_error, pktdata2a):
         est_ups.append(est_ufreq)
         # print(f"fitted curve {est_ufreq=:.2f} Hz")
     ret_ufreq = np.mean(est_ups)
-    # fig = px.scatter(y=est_dfreqs)
     ret_dfreq = np.mean(est_dfreqs[Config.skip_preambles:])
-    # fig.add_hline(y=ret_dfreq)
-    # fig.show()
+    fig = px.scatter(y=est_dfreqs, title=f"objlinear {cfofreq:.3f} {time_error:.3f}")
+    fig.add_hline(y=ret_dfreq)
+    fig.show()
 
     beta = Config.bw / ((2 ** Config.sf) / Config.bw) / Config.fs
     ret_freq = (ret_ufreq + ret_dfreq)/2
