@@ -1,3 +1,4 @@
+import os.path
 import time
 import csv
 
@@ -6,6 +7,7 @@ from reader import *
 
 # read packets from file
 if __name__ == "__main__":
+    if not os.path.exists(Config.outfolder): os.makedirs(Config.outfolder)
 
     script_path = __file__
     mod_time = os.path.getmtime(script_path)
@@ -70,8 +72,8 @@ if __name__ == "__main__":
                 if True:
                     sig1 = data1[round(est_to_s): Config.nsamp * (Config.total_len ) + round(est_to_s)]
                     sig2 = data2[round(est_to_s): Config.nsamp * (Config.total_len ) + round(est_to_s)]
-                    sig1.tofile(f"fout/data0_test_{file_path_id}_pkt_{pkt_idx}")
-                    sig2.tofile(f"fout/data1_test_{file_path_id}_pkt_{pkt_idx}")
+                    sig1.tofile(os.path.join(Config.outfolder, f"data0_test_{file_path_id}_pkt_{pkt_idx}"))
+                    sig2.tofile(os.path.join(Config.outfolder, f"data1_test_{file_path_id}_pkt_{pkt_idx}"))
             else:
                 est_cfo_f, est_to_s = f, t
                 logger.error(f"ERR f{file_path_id} {est_cfo_f=} {est_to_s=} {pkt_idx=} {read_idx=} tot {est_to_s + read_idx * Config.nsamp} {retval=}")

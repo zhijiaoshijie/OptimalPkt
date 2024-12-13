@@ -43,6 +43,7 @@ class Config:
     thresh = None# 0.03
     # file_paths = ['/data/djl/temp/OptimalPkt/fingerprint_data/data0_test_3',]
     cfo_range = bw // 8
+    outfolder = "fout"
 
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples

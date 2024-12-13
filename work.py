@@ -192,7 +192,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
         retval, est_cfo_f, est_to_s = objective_core_new(est_cfo_f, est_to_s, pktdata_in)
         # retval2, est_cfo_f, est_to_s = objective_core_new(est_cfo_f, est_to_s, pktdata_in)
         logger.info(f"final fit dphase {coefficients=} {fit_dfreq=} {retval=} {est_cfo_f=} {est_to_s=}")
-        codes, codeangles = objective_decode(est_cfo_f, est_to_s, pktdata_in)
+        # codes, codeangles = objective_decode(est_cfo_f, est_to_s, pktdata_in)
 
         # print(f"sigd preobj {objective_core(est_cfo_f - fit_dfreq, est_to_s - fit_dfreq / beta, pktdata_in)=}")
         # print(f"sigd preobj {objective_core(est_cfo_f + fit_dfreq, est_to_s + fit_dfreq / beta, pktdata_in)=}")
