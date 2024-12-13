@@ -10,7 +10,7 @@ if __name__ == "__main__":
     script_path = __file__
     mod_time = os.path.getmtime(script_path)
     readable_time = time.ctime(mod_time)
-    logger.info(f"Last modified time of the script: {readable_time}")
+    logger.warning(f"Last modified time of the script: {readable_time}")
 
     fulldata = []
     # Main loop read files

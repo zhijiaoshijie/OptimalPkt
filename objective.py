@@ -57,17 +57,6 @@ def objective_linear(cfofreq, time_error, pktdata2a):
 
     return ret_freq, ret_tdiff
 
-def objective_core_phased(cfofreq, time_error, pktdata2a):
-    if time_error < 0: return 0
-    # if abs(cfofreq + 20000) > 20000: return 0 # TODO !!!
-    assert pktdata2a.ndim == 1
-    assert cp.mean(cp.abs(pktdata2a)).ndim == 0
-    # pktdata2a_roll = cp.roll(pktdata2a / cp.mean(cp.abs(pktdata2a)), -math.ceil(time_error))
-    detect_symb = gen_refchirp(cfofreq, time_error - math.ceil(time_error), deadzone=Config.gen_refchirp_deadzone, calctime=0)
-    detect_symb_concat = cp.concatenate(detect_symb, axis=0)
-    res = cp.abs(cp.conj(pktdata2a[math.ceil(time_error):math.ceil(time_error)+len(detect_symb_concat)]).dot(detect_symb_concat)) / len(detect_symb_concat)
-    return -res.get()
-
 
 def gen_matrix2(dt, est_cfo_f):
     beta = Config.bw / ((2 ** Config.sf) / Config.bw) / Config.fs
@@ -83,29 +72,60 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
     codes = []
     angdiffs = []
-    for pidx in range(Config.sfdpos + 2, Config.total_len):
+    amaxdfs = []
+    for pidx in range(Config.sfdpos + 2, round(Config.total_len)):
+        dv1 = []
+        dv2 = []
+        freqrange = np.arange(0, 90, 0.1)
         start_pos_all_new = nsamp_small * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
         start_pos = round(start_pos_all_new)
-        dt = (start_pos - start_pos_all_new) / Config.fs
-        decode_matrix_a, decode_matrix_b = gen_matrix2(dt, est_cfo_f)
-        sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
-        sig2 = sig1.dot(decode_matrix_a.T)
-        sig3 = sig1.dot(decode_matrix_b.T)
-
-        codesv = cp.abs(sig2) ** 2 + cp.abs(sig3) ** 2
-        angdv = cp.angle(sig3) - cp.angle(sig2)
-        fig = go.Figure(layout_title_text=f"decode {pidx=}")
-        fig.add_trace(go.Scatter(y=cp.abs(sig2).get(), mode="lines"))
-        fig.add_trace(go.Scatter(y=cp.abs(sig3).get(), mode="lines"))
-        fig.show()
         # plt.plot(np.unwrap(np.angle(pktdata_in[start_pos - Config.nsamp: start_pos + Config.nsamp].get())))
         # plt.show()
-        coderet = cp.argmax(cp.array(codesv))
-        codes.append(coderet.item())
-        angdiffs.append(angdv[coderet].item())
-        print(pidx, coderet)
+        for debugfreq in freqrange:
+
+            dt = (start_pos - start_pos_all_new) / Config.fs
+            decode_matrix_a, decode_matrix_b = Config.decode_matrix_a, Config.decode_matrix_b
+
+            beta = Config.bw / ((2 ** Config.sf) / Config.bw)
+
+            df = -(est_cfo_f + dt * beta)
+            # cfosymb = cp.exp(
+            #     2j * cp.pi * df * cp.linspace(0, Config.nsamp / Config.fs, num=Config.nsamp, endpoint=False)).astype(
+            #     cp.complex64)
+
+
+            sig1 = add_freq(pktdata_in[start_pos: Config.nsamp + start_pos], debugfreq + df)
+            sig2 = sig1.dot(decode_matrix_a.T)
+            sig3 = sig1.dot(decode_matrix_b.T)
+
+            codesv = cp.abs(sig2) ** 2 + cp.abs(sig3) ** 2
+            angdv = cp.angle(sig3) - cp.angle(sig2)
+            # fig = go.Figure(layout_title_text=f"decode {pidx=}")
+            # fig.add_trace(go.Scatter(y=cp.abs(sig2).get(), mode="lines"))
+            # fig.add_trace(go.Scatter(y=cp.abs(sig3).get(), mode="lines"))
+            # fig.show()
+            coderet = cp.argmax(cp.array(codesv))
+            # coderet = cp.array(2732)
+            # if abs(debugfreq)<1e-2: print("coderet", coderet)
+            codes.append(coderet.item())
+            angdiffs.append(angdv[coderet].item())
+
+            debugval2 = cp.abs(sig2[coderet])
+            debugval3 = cp.abs(sig3[coderet])
+            dv1.append(debugval2.item())
+            dv2.append(debugval3.item())
+            # logger.warning(f"WO106 {debugfreq=} {pidx=}, {coderet=} {debugval2=} {debugval3=} {df=}")
+        # fig = go.Figure(layout_title_text=f"decode angles")
+        # fig.add_trace(go.Scatter(x=freqrange, y=dv1, mode="lines"))
+        # fig.add_trace(go.Scatter(x=freqrange, y=dv2, mode="lines"))
+        # fig.show()
+        amaxdf = freqrange[np.argmax(np.array(dv1) ** 2 + np.array(dv2)**2)]
+        print(f"{pidx=} {dt=} {dt*beta=} {est_cfo_f=} amax_df={amaxdf}")
+        amaxdfs.append(amaxdf)
+        # print(max(dv1), max(dv2), max(dv2)/(max(dv1)+max(dv2))*Config.n_classes)
+
     fig = go.Figure(layout_title_text=f"decode angles")
-    fig.add_trace(go.Scatter(x=codes, y=angdiffs, mode="markers"))
+    fig.add_trace(go.Scatter(y=amaxdfs, mode="markers"))
     fig.show()
     return codes, angdiffs
 
@@ -193,54 +213,13 @@ def objective_core_new(est_cfo_f, est_to_s, pktdata_in):
     return retval, est_cfo_f, est_to_s
 
 
-def objective_core(cfofreq, time_error, pktdata2a, drawflag = False):
-    if time_error < 0 or abs(cfofreq) > Config.cfo_range:# or time_error > Config.detect_to_max: # TODO!!!
-        # print('ret', cfofreq, time_error, 0)
-        return 0
-    assert pktdata2a.ndim == 1
-    assert cp.mean(cp.abs(pktdata2a)).ndim == 0
-    detect_symb = gen_refchirp(cfofreq, time_error - math.ceil(time_error), deadzone=Config.gen_refchirp_deadzone, calctime=0)
-    detect_symb_concat = cp.concatenate(detect_symb, axis=0)
-
-    res = cp.zeros(len(detect_symb), dtype=cp.float32)#complex64)
-    ddx = 0  # TODO
-    ress2 = cp.conj(pktdata2a[math.ceil(time_error):math.ceil(time_error) + len(detect_symb_concat)]) * detect_symb_concat
-
-    res2 = []
-    for sidx, ssymb in enumerate(detect_symb):
-        symbdata = pktdata2a[ddx + math.ceil(time_error): math.ceil(time_error) + ddx + len(ssymb)] #* fixchirp[:len(ssymb)]
-        ress = cp.conj(ssymb).dot(symbdata)
-        ddx += len(ssymb)
-        res[sidx] = cp.abs(ress) / len(ssymb) # !!! abs: not all add up
-        res2.append(cp.angle(ress).get())
-    res2 = np.array(res2)
-
-    ret =  - tocpu(cp.abs(cp.sum(res)) / len(res-2)) # two zero codes
-    if drawflag :#ret<-0.08:
-        plt.plot(res2)
-        plt.title(f"nounwrap {cfofreq:.2f} Hz {time_error:.2f} sps")
-        plt.show()
-
-        plt.plot(np.unwrap(res2))
-
-        x_values = np.arange(Config.skip_preambles, Config.preamble_len)
-        y_values = np.unwrap(res2[x_values])
-        coefficients = np.polyfit(x_values, y_values, 1)
-        plt.plot(x_values, np.poly1d(coefficients)(x_values))
-        coef = coefficients[0]
-        coef_estcfo = coefficients[0] / Config.bw / (2 ** Config.sf / Config.bw) * Config.sig_freq
-        plt.title(f"{cfofreq:.2f} Hz {time_error:.2f} sps {coef:.5e} {coef_estcfo:.2e}")
-        plt.show()
-    return ret
-
-
 
 def gen_refchirp(cfofreq, tstart, deadzone=0, calctime=0):
     detect_symb = []
     bw = Config.bw * (1 + cfofreq / Config.sig_freq)
     sigt = 2 ** Config.sf / bw * Config.fs #* (1 - cfofreq / Config.sig_freq)
-    beta = bw / sigt
-    sigt *= (1 + 1e-6 * calctime)# (1 + cfofreq / Config.sig_freq)
+    beta = Config.bw / sigt
+    # sigt *= (1 + 1e-6 * calctime)# (1 + cfofreq / Config.sig_freq)
     # print(Config.bw / Config.tsig * (1 + cfofreq / Config.sig_freq) / (1 - cfofreq / Config.sig_freq))
     # print(Config.bw / Config.tsig * (1 + cfofreq / Config.sig_freq) )
     # print(Config.bw / Config.tsig )
