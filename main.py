@@ -4,7 +4,6 @@ import csv
 from work import *
 from reader import *
 
-# read packets from file
 if __name__ == "__main__":
 
     script_path = __file__
@@ -21,13 +20,9 @@ if __name__ == "__main__":
         codescl = []
         canglescl = []
         for pkt_idx, pkt_data in enumerate(read_pkt(file_path, file_path.replace("data0", "data1"), thresh, min_length=30)):
-
-            # read data: read_idx is the index of packet end window in the file
             read_idx, data1, data2 = pkt_data
             # (Optional) skip the first pkt because it may be half a pkt. read_idx == len(data1) means this pkt start from start of file
             if read_idx == len(data1) // Config.nsamp: continue
-            # if pkt_idx < 2: continue
-            # if pkt_idx > 2: break
 
             # normalization
             data1 /= cp.mean(cp.abs(data1))
@@ -36,24 +31,19 @@ if __name__ == "__main__":
             logger.info(f"Prework {pkt_idx=} {len(data1)=}")
             est_cfo_f = 0
             est_to_s = 0
-            trytimes = 2
-            vals = np.zeros((trytimes, 3))
-            # iterate trytimes times to detect, each time based on estimations of the last time
-            for tryi in range(trytimes):
-
-                    # main detection function with up-down
-                    f, t, retval = work(data1, est_cfo_f, est_to_s)
-
-                    if t <= 0:
-                        logger.error(f"ERROR in {est_cfo_f=} {est_to_s=} out {f=} {t=} {file_path=} {pkt_idx=}")
-                        break
+            # iterate 2 times to detect, each time based on estimations of the last time
+            for tryi in range(2):
+                f, t, retval = work(data1, est_cfo_f, est_to_s)
+                if t <= 0:
+                    logger.error(f"ERROR in {est_cfo_f=} {est_to_s=} out {f=} {t=} {file_path=} {pkt_idx=}")
+                    break
 
             if t > 0 and abs(f + 38000) < 4000:
                 est_cfo_f, est_to_s = f, t
                 est_to_s_full = est_to_s + (read_idx * Config.nsamp)
                 logger.warning(f"est f{file_path_id:3d} {est_cfo_f=:.6f} {est_to_s=:.6f} {pkt_idx=:3d} {read_idx=:5d} tot {est_to_s_full:15.2f} {retval=:.6f}")
                 fulldata.append([file_path_id, pkt_idx, est_cfo_f, est_to_s_full , retval])
-                if False:
+                if False: # code for writing symbol data
                     sig1 = data1[round(est_to_s): Config.nsamp * (Config.total_len ) + round(est_to_s)]
                     sig2 = data2[round(est_to_s): Config.nsamp * (Config.total_len ) + round(est_to_s)]
                     sig1.tofile(f"fout/data0_test_{file_path_id}_pkt_{pkt_idx}")
@@ -62,7 +52,7 @@ if __name__ == "__main__":
                 est_cfo_f, est_to_s = f, t
                 logger.error(f"ERR f{file_path_id} {est_cfo_f=} {est_to_s=} {pkt_idx=} {read_idx=} tot {est_to_s + read_idx * Config.nsamp} {retval=}")
 
-            if False:  # !!!!!!
+            if False:  # code for writing CSV file
                 header = ["fileID", "pktID", "CFO", "Time offset", "Power"]
                 # header.extend([f"Angle{x}" for x in range(Config.total_len)])
                 # header.extend([f"Abs{x}" for x in range(Config.total_len)])
@@ -72,7 +62,7 @@ if __name__ == "__main__":
                     csvwriter.writerow(header)  # Write the header
                     for row in fulldata:
                         csvwriter.writerow(row)
-        if False:
+        if False: # code for reading
             bytes_per_complex = 8
             byte_offset = round(est_to_s_full) * bytes_per_complex
             L = Config.nsamp * Config.total_len

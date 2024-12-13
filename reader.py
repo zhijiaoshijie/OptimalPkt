@@ -8,8 +8,6 @@ from utils import *
 def preprocess_file(file_path):
     #  read file and count size
     logger.info(f"FILEPATH {file_path}")
-    pkt_cnt = 0
-    pktdata = []
     fsize = int(os.stat(file_path).st_size / (Config.nsamp * 4 * 2))
     logger.debug(f'reading file: {file_path} SF: {Config.sf} pkts in file: {fsize}')
     # read max power of first 5000 windows, for envelope detection
@@ -25,7 +23,6 @@ def preprocess_file(file_path):
     gmm.fit(data)
     means = gmm.means_.flatten()
     covariances = gmm.covariances_.flatten()
-    weights = gmm.weights_.flatten()
     sorted_indices = np.argsort(means)
     mean1, mean2 = means[sorted_indices]
     covariance1, covariance2 = covariances[sorted_indices]
