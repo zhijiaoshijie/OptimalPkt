@@ -3,7 +3,7 @@ import os
 import math
 import numpy as np
 
-use_gpu = False
+use_gpu = True
 if use_gpu:
     import cupy as cp
     import cupyx.scipy.fft as fft
@@ -32,18 +32,33 @@ def mychirp(t, f0, f1, t1):
     return sig
 
 class Config:
+
     sf = 12
     bw = 406250#*(1-20*1e-6)
     fs = 1e6
     sig_freq = 2.4e9
     # sig_freq = 2400000030.517578#-52e6/(2**18)
-    preamble_len = 16  # TODO!!!!
+    preamble_len = 64  # TODO!!!!
     skip_preambles = 8  # skip first 8 preambles ## TODO
-    total_len = 90.25
+    total_len = 90.25-16+64
     thresh = None# 0.03
     # file_paths = ['/data/djl/temp/OptimalPkt/fingerprint_data/data0_test_3',]
     cfo_range = bw // 8
     outfolder = "fout"
+
+    wired = True
+    if not wired:
+        base_path = '/data/djl/temp/OptimalPkt/fingerprint_data/'
+        temp_list = []
+        for filename in os.listdir(base_path):
+            if 'data0' in filename:
+                file_tuple = (os.path.join(base_path, filename), int(filename.split('_')[-1]))
+                temp_list.append(file_tuple)
+
+        file_paths_zip = sorted(temp_list, key=lambda pair: pair[1])
+
+    else:
+        file_paths_zip = (("/data/djl/OptimalPkt/wired_1213", 0),) # !!! TODO FOR DEBUG
 
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples
@@ -89,19 +104,7 @@ class Config:
     fft_ups_x = cp.zeros((preamble_len + detect_range_pkts, fft_n), dtype=cp.complex64)
     fft_downs_x = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.complex64)
 
-    wired = True
-    if not wired:
-        base_path = '/data/djl/temp/OptimalPkt/fingerprint_data/'
-        temp_list = []
-        for filename in os.listdir(base_path):
-            if 'data0' in filename:
-                file_tuple = (os.path.join(base_path, filename), int(filename.split('_')[-1]))
-                temp_list.append(file_tuple)
 
-        file_paths_zip = sorted(temp_list, key=lambda pair: pair[1])
-
-    else:
-        file_paths_zip = (("/data/djl/temp/OptimalPkt/hou2", 0),) # !!! TODO FOR DEBUG
 
 logger = logging.getLogger('my_logger')
 level = logging.WARNING

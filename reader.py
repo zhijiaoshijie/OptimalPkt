@@ -1,5 +1,7 @@
-import itertools
 from sklearn.mixture import GaussianMixture
+import itertools
+from sklearn.cluster import KMeans
+import plotly.express as px
 
 from utils import *
 
@@ -37,11 +39,10 @@ def preprocess_file(file_path):
     if False:
         counts, bins = cp.histogram(nmaxs, bins=100)
         # logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
-        logger.debug(f"cluster: {kmeans.cluster_centers_[0]} {kmeans.cluster_centers_[1]} {thresh=}")
         threshpos = np.searchsorted(tocpu(bins), thresh).item()
         logger.debug(f"lower: {cp_str(counts[:threshpos])}")
         logger.debug(f"higher: {cp_str(counts[threshpos:])}")
-        fig = px.line(nmaxs.get())
+        fig = px.line(nmaxs)
         fig.add_hline(y=thresh)
         fig.update_layout(
             title=f"{file_path} pow {len(nmaxs)}",

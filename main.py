@@ -26,7 +26,7 @@ if __name__ == "__main__":
             # read data: read_idx is the index of packet end window in the file
             read_idx, data1, data2 = pkt_data
             # (Optional) skip the first pkt because it may be half a pkt. read_idx == len(data1) means this pkt start from start of file
-            if read_idx == len(data1) // Config.nsamp: continue
+            if read_idx == 0: continue
             # if pkt_idx < 2: continue
             # if pkt_idx > 2: break
 
@@ -34,7 +34,8 @@ if __name__ == "__main__":
             data1 /= cp.mean(cp.abs(data1))
             data2 /= cp.mean(cp.abs(data1))
 
-            logger.info(f"Prework {pkt_idx=} {len(data1)=}")
+            nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
+            logger.warning(f"Prework {pkt_idx=} {len(data1)/nsamp_small=}")
             est_cfo_f = 0
             est_to_s = 0
             trytimes = 2
