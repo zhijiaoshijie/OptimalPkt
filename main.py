@@ -42,7 +42,7 @@ if __name__ == "__main__":
             for tryi in range(trytimes):
 
                     # main detection function with up-down
-                    f, t, retval = coarse_work_fast(data1, est_cfo_f, est_to_s,  tryi >= 1)
+                    f, t, retval = work(data1, est_cfo_f, est_to_s,  tryi >= 1)
 
                     if t < 0:
                         logger.error(f"ERROR in {est_cfo_f=} {est_to_s=} out {f=} {t=} {file_path=} {pkt_idx=}")
@@ -84,7 +84,7 @@ if __name__ == "__main__":
             # sys.exit(0)
         # the length of each pkt (for plotting)
                 # save info of all the file to csv (done once each packet, overwrite old)
-            if True:  # !!!!!!
+            if False:  # !!!!!!
                 header = ["fileID", "pktID", "CFO", "Time offset", "Power"]
                 # header.extend([f"Angle{x}" for x in range(Config.total_len)])
                 # header.extend([f"Abs{x}" for x in range(Config.total_len)])

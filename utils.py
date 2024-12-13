@@ -46,7 +46,8 @@ class Config:
 
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples
-    nsamp = round(n_classes * fs / bw)
+    nsampf = 2 ** sf / bw * fs
+    nsamp = round(nsampf)
     # f_lower, f_upper = -50000, -30000
     f_lower, f_upper = -38000, -34000
     t_lower, t_upper = 0, nsamp
@@ -54,7 +55,7 @@ class Config:
     tguess = nsamp / 2
     code_len = 2
 
-    cfo_change_rate = 46/(60* n_classes * fs / bw) # Hz/sps
+    cfo_change_rate = 0#.37 / nsampf # Hz/sps
 
     tstandard = cp.linspace(0, nsamp / fs, nsamp + 1)[:-1]
     decode_matrix_a = cp.zeros((n_classes, nsamp), dtype=cp.complex64)
@@ -87,7 +88,7 @@ class Config:
     fft_ups_x = cp.zeros((preamble_len + detect_range_pkts, fft_n), dtype=cp.complex64)
     fft_downs_x = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.complex64)
 
-    wired = True
+    wired = False
     if not wired:
         base_path = '/data/djl/temp/OptimalPkt/fingerprint_data/'
         temp_list = []
@@ -196,13 +197,12 @@ def myfft(chirp_data, n, plan):
 
 
 def dechirp_fft(tstart, fstart, pktdata_in, refchirp, pidx, ispreamble):
-    nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
-    start_pos_all = nsamp_small * pidx + tstart
+    start_pos_all = Config.nsampf * pidx + tstart
     start_pos = round(start_pos_all)
     start_pos_d = start_pos_all - start_pos
     sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
     sig2 = sig1 * refchirp
-    freqdiff = start_pos_d / nsamp_small * Config.bw / Config.fs * Config.fft_n
+    freqdiff = start_pos_d / Config.nsampf * Config.bw / Config.fs * Config.fft_n
     if ispreamble: freqdiff -= fstart / Config.sig_freq * Config.bw * pidx
     else: freqdiff += fstart / Config.sig_freq * Config.bw * pidx
     sig2 = add_freq(sig2,freqdiff)

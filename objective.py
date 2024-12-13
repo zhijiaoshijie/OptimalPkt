@@ -1,7 +1,3 @@
-import matplotlib.pyplot as plt
-import plotly.express as px
-import plotly.graph_objects as go
-
 from utils import *
 
 def objective_linear(cfofreq, time_error, pktdata2a):
@@ -70,17 +66,46 @@ def gen_matrix2(dt, est_cfo_f):
 # todo 斜率是否不受cfo sfo影响
 def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     tstandard = cp.arange(len(pktdata_in))
-    nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
-    pstart = nsamp_small * (0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
-    pktdata_in *= np.exp(1j * np.pi * Config.cfo_change_rate * (tstandard - pstart) ** 2 / Config.fs)
+    pstart = Config.nsampf * (0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
+    # pktdata_in *= np.exp(1j * np.pi * Config.cfo_change_rate * (tstandard - pstart) ** 2 / Config.fs)
     codes = []
     angdiffs = []
+    freqrange = np.arange(-4000, 4000, 1)
+
+    tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
+    t1 = 2 ** Config.sf / Config.bw# * (1 - cfoppm)
+    upchirp = mychirp(tstandard, f0=-Config.bw / 2, f1=Config.bw / 2, t1=t1)
+    downchirp = mychirp(tstandard, f0=Config.bw / 2, f1=-Config.bw / 2, t1=t1)
+    fig = FigureResampler(go.Figure(layout_title_text=f"preamble freqdiff"))
+    dv2 = []
+    for pidx in range(Config.preamble_len):
+        start_pos_all_new = Config.nsampf * pidx * (1 - est_cfo_f / Config.sig_freq) + est_to_s
+        start_pos = round(start_pos_all_new)
+        dv = []
+        for debugfreq in freqrange:
+            dt = (start_pos - start_pos_all_new) / Config.fs
+            beta = Config.bw / ((2 ** Config.sf) / Config.bw)
+            df = -(est_cfo_f + dt * beta)
+            sig1 = add_freq(pktdata_in[start_pos: Config.nsamp + start_pos], debugfreq + df)
+            dv.append(cp.abs(sig1.dot(downchirp)).item())
+        dv2a = freqrange[np.argmax(np.array(dv))]
+        logger.warning(f"{pidx=} amax={dv2a}")
+        dv2.append(dv2a)
+        fig.add_trace(go.Scatter(x=freqrange, y=dv, mode="lines"))
+    fig.show()
+    fig = px.line(y=dv2)
+    fig.show()
+
+
+
+
+
+
     amaxdfs = []
     for pidx in range(Config.sfdpos + 2, round(Config.total_len)):
         dv1 = []
         dv2 = []
-        freqrange = np.arange(0, 90, 0.1)
-        start_pos_all_new = nsamp_small * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
+        start_pos_all_new = Config.nsampf * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
         start_pos = round(start_pos_all_new)
         # plt.plot(np.unwrap(np.angle(pktdata_in[start_pos - Config.nsamp: start_pos + Config.nsamp].get())))
         # plt.show()
@@ -97,7 +122,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
             #     cp.complex64)
 
 
-            sig1 = add_freq(pktdata_in[start_pos: Config.nsamp + start_pos], debugfreq + df)
+            sig1 = add_freq(pktdata_in[start_pos: Config.nsamp + start_pos], debugfreq + df) # TODO SIG1 start
             sig2 = sig1.dot(decode_matrix_a.T)
             sig3 = sig1.dot(decode_matrix_b.T)
 
@@ -108,8 +133,8 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
             # fig.add_trace(go.Scatter(y=cp.abs(sig3).get(), mode="lines"))
             # fig.show()
             coderet = cp.argmax(cp.array(codesv))
-            # coderet = cp.array(2732)
-            # if abs(debugfreq)<1e-2: print("coderet", coderet)
+            coderet = cp.array(3133)
+            if abs(debugfreq)<1e-2: print("coderet", coderet)
             codes.append(coderet.item())
             angdiffs.append(angdv[coderet].item())
 
@@ -118,18 +143,24 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
             dv1.append(debugval2.item())
             dv2.append(debugval3.item())
             # logger.warning(f"WO106 {debugfreq=} {pidx=}, {coderet=} {debugval2=} {debugval3=} {df=}")
-        # fig = go.Figure(layout_title_text=f"decode angles")
-        # fig.add_trace(go.Scatter(x=freqrange, y=dv1, mode="lines"))
-        # fig.add_trace(go.Scatter(x=freqrange, y=dv2, mode="lines"))
-        # fig.show()
+        fig = go.Figure(layout_title_text=f"decode angles")
+        fig.add_trace(go.Scatter(x=freqrange, y=dv1, mode="lines"))
+        fig.add_trace(go.Scatter(x=freqrange, y=dv2, mode="lines"))
+        fig.show()
         amaxdf = freqrange[np.argmax(np.array(dv1) ** 2 + np.array(dv2)**2)]
         print(f"{pidx=} {dt=} {dt*beta=} {est_cfo_f=} amax_df={amaxdf}")
         amaxdfs.append(amaxdf)
         # print(max(dv1), max(dv2), max(dv2)/(max(dv1)+max(dv2))*Config.n_classes)
 
-    fig = go.Figure(layout_title_text=f"decode angles")
-    fig.add_trace(go.Scatter(y=amaxdfs, mode="markers"))
+    fig = go.Figure(layout_title_text=f"Decode residue freqs")
+    x = np.arange(len(amaxdfs))  # Assuming x is [0, 1, 2, ..., len(amaxdfs)-1]
+    coefficients = np.polyfit(x, amaxdfs, 1)  # Fit a line y = mx + b
+    logger.warning(f"W decode freq linear {coefficients=} {Config.cfo_change_rate=} {est_cfo_f=} {est_to_s=}")
+    y_fit = np.polyval(coefficients, x)
+    fig.add_trace(go.Scatter(x=x, y=amaxdfs, mode="markers", name="Data Points"))
+    fig.add_trace(go.Scatter(x=x, y=y_fit, mode="lines", name="Fitted Line"))
     fig.show()
+
     return codes, angdiffs
 
 
@@ -140,18 +171,18 @@ def objective_core_new(est_cfo_f, est_to_s, pktdata_in):
     yvals2 = np.zeros(Config.sfdpos + 2, dtype=int)
     vallen = Config.preamble_len - Config.skip_preambles + 2
 
-    nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
     for pidx in range(Config.sfdpos + 2):
         if pidx < Config.skip_preambles: continue
         if pidx >= Config.preamble_len and pidx < Config.sfdpos: continue
 
-        start_pos_all_new = nsamp_small * pidx * (1 - est_cfo_f / Config.sig_freq) + est_to_s
+        start_pos_all_new = Config.nsampf * pidx * (1 - est_cfo_f / Config.sig_freq) + est_to_s
         start_pos = round(start_pos_all_new)
         cfoppm1 = (1 + est_cfo_f / Config.sig_freq)  # TODO!!!
         tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1] + (start_pos - start_pos_all_new) / Config.fs
         if pidx <= Config.preamble_len:
-            refchirp = mychirp(tstandard, f0=-Config.bw / 2 * cfoppm1 + est_cfo_f, f1=Config.bw / 2 * cfoppm1 + est_cfo_f,
-                                t1=2 ** Config.sf / Config.bw * cfoppm1)
+            refchirp = mychirp(tstandard, f0=-Config.bw / 2 * cfoppm1 + est_cfo_f,
+                               f1=Config.bw / 2 * cfoppm1 + est_cfo_f,
+                               t1=2 ** Config.sf / Config.bw * cfoppm1)
         else:
             refchirp = mychirp(tstandard, f0=Config.bw / 2 * cfoppm1 + est_cfo_f,
                                f1=-Config.bw / 2 * cfoppm1 + est_cfo_f,
