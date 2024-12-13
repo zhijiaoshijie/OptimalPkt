@@ -42,32 +42,18 @@ if __name__ == "__main__":
             for tryi in range(trytimes):
 
                     # main detection function with up-down
-                    f, t, retval = work(data1, est_cfo_f, est_to_s,  tryi >= 1)
+                    f, t, retval = work(data1, est_cfo_f, est_to_s)
 
-                    if t < 0:
+                    if t <= 0:
                         logger.error(f"ERROR in {est_cfo_f=} {est_to_s=} out {f=} {t=} {file_path=} {pkt_idx=}")
                         break
 
-            # compute angles
-            if False:
-                data_angles = []
-                est_cfo_f, est_to_s = f, t
-                for pidx in range(10, Config.total_len):
-                    sig1 = data1[Config.nsamp * pidx + est_to_s: Config.nsamp * (pidx + 1) + est_to_s]
-                    sig2 = data2[Config.nsamp * pidx + est_to_s: Config.nsamp * (pidx + 1) + est_to_s]
-                    sigtimes = sig1 * sig2.conj()
-                    sigangles = cp.cumsum(sigtimes[::-1])[::-1]
-                    fig.add_trace(go.Scatter(y=cp.angle(sigangles).get(), mode="lines"))
-                    break
-                    # fig.add_trace(go.Scatter(y=cp.unwrap(cp.angle(sig2)).get()))
-
-                    # save data for output line
             if t > 0 and abs(f + 38000) < 4000:
                 est_cfo_f, est_to_s = f, t
                 est_to_s_full = est_to_s + (read_idx * Config.nsamp)
                 logger.warning(f"est f{file_path_id:3d} {est_cfo_f=:.6f} {est_to_s=:.6f} {pkt_idx=:3d} {read_idx=:5d} tot {est_to_s_full:15.2f} {retval=:.6f}")
                 fulldata.append([file_path_id, pkt_idx, est_cfo_f, est_to_s_full , retval])
-                if True:
+                if False:
                     sig1 = data1[round(est_to_s): Config.nsamp * (Config.total_len ) + round(est_to_s)]
                     sig2 = data2[round(est_to_s): Config.nsamp * (Config.total_len ) + round(est_to_s)]
                     sig1.tofile(f"fout/data0_test_{file_path_id}_pkt_{pkt_idx}")
@@ -75,15 +61,7 @@ if __name__ == "__main__":
             else:
                 est_cfo_f, est_to_s = f, t
                 logger.error(f"ERR f{file_path_id} {est_cfo_f=} {est_to_s=} {pkt_idx=} {read_idx=} tot {est_to_s + read_idx * Config.nsamp} {retval=}")
-            # save data for plotting
-            # ps.extend(data_angles)
-            # psa1.append(len(ps))
-            # ps2.append(est_cfo_f)
-            # ps3.append(est_to_s)
-            # print("only compute 1 pkt, ending")
-            # sys.exit(0)
-        # the length of each pkt (for plotting)
-                # save info of all the file to csv (done once each packet, overwrite old)
+
             if False:  # !!!!!!
                 header = ["fileID", "pktID", "CFO", "Time offset", "Power"]
                 # header.extend([f"Angle{x}" for x in range(Config.total_len)])
@@ -114,12 +92,4 @@ if __name__ == "__main__":
             rawdata = cp.frombuffer(data, dtype=cp.complex64)
             rawdata.tofile(f"fout/dataZ_test_{file_path_id}_pkt_{pkt_idx}")
 
-        if False:
-            fig = go.Figure(layout_title_text=f"decode angles")
-            for i in range(len(codescl)):
-                codes = codescl[i]
-                angdiffs = canglescl[i]
-                fig.add_trace(go.Scatter(x=codes, y=angdiffs, mode="markers"))
-            # fig.write_html("codeangles.html")
-            fig.show()
 

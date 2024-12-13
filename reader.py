@@ -29,7 +29,6 @@ def preprocess_file(file_path):
     sorted_indices = np.argsort(means)
     mean1, mean2 = means[sorted_indices]
     covariance1, covariance2 = covariances[sorted_indices]
-    weight1, weight2 = weights[sorted_indices]
     # threshold to divide the noise power from signal power
     thresh = (mean1 * covariance2 + mean2 * covariance1) / (covariance1 + covariance2)
     # if threshold may not work set this to True
@@ -51,21 +50,15 @@ def preprocess_file(file_path):
 
 def read_large_file(file_path_in):
     with open(file_path_in, 'rb') as file:
-        # t = 1.45e6
         while True:
             try:
                 rawdata = cp.fromfile(file, dtype=cp.complex64, count=Config.nsamp)
-                # t-=len(rawdata)
             except EOFError:
                 logger.info(f"file complete with EOF {file_path_in=}")
                 break
             if len(rawdata) < Config.nsamp:
                 logger.info(f"file complete{file_path_in=}, {len(rawdata)=}")
                 break
-            # if t<0:
-            #     plt.scatter(x=np.arange(Config.nsamp - 1),
-            #                 y=cp.diff(cp.unwrap(cp.angle(rawdata[:Config.nsamp]))).get(), s=0.2)
-            #     plt.show()
             yield rawdata
 
 

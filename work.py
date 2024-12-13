@@ -1,7 +1,7 @@
 from objective import *
 
 
-def work(pktdata_in, fstart, tstart, sigD=False):
+def work(pktdata_in, fstart, tstart):
     assert tstart >= 0
 
     est_cfo_f, est_to_s, retval = coarse_updown_detect(pktdata_in, fstart, tstart)
