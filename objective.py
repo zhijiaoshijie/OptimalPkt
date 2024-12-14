@@ -106,8 +106,15 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
             # fig.update_layout(yaxis=dict(range=[-0.2, 0.2]))
             fig.show()
     fig = FigureResampler(go.Figure(layout_title_text=f"OL coeffs1 {est_cfo_f=:.3f} {est_to_s=:.3f}"))
-    fig.add_trace(go.Scatter(y=np.unwrap(dvx)))
+    dvx = np.unwrap(dvx)
+    fig.add_trace(go.Scatter(y=dvx))
 
+    x_data = np.arange(8, Config.preamble_len)
+    y_data = dvx[x_data]
+    coefficients = np.polyfit(x_data, y_data, 2)
+    print("Fitted parameters:", coefficients)
+    x_data = np.arange(0, Config.preamble_len)
+    fig.add_trace(go.Scatter(x=x_data, y=np.polyval(coefficients,x_data), mode="lines", name="Fitted Curve"))
     fig.show()
 
 
