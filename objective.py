@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly_resampler import FigureResampler
 
 from utils import *
 
@@ -10,10 +11,10 @@ def objective_linear(cfofreq, time_error, pktdata2a):
                                calctime=0)
     detect_symb_concat = cp.concatenate(detect_symb, axis=0)
     tint = math.ceil(time_error)
-    logger.info(f"ObjLinear {time_error=} {tint=} {len(pktdata2a)=}")
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(y=cp.unwrap(cp.angle(pktdata2a[tint:tint + len(detect_symb_concat)]))))
-    fig.add_trace(go.Scatter(y=cp.unwrap(cp.angle(detect_symb_concat))))
+    logger.info(f"ObjLinear {cfofreq=} {time_error=} {tint=} {len(pktdata2a)=}")
+    fig = FigureResampler(go.Figure(layout_title_text=f"{cfofreq=:.3f} {time_error=:.3f}"))
+    fig.add_trace(go.Scatter(y=tocpu(cp.unwrap(cp.angle(pktdata2a[tint:tint + len(detect_symb_concat)])))))
+    fig.add_trace(go.Scatter(y=tocpu(cp.unwrap(cp.angle(detect_symb_concat)))))
     fig.show()
     ress2 = -cp.unwrap(cp.angle(pktdata2a[tint:tint + len(detect_symb_concat)])) + cp.unwrap(cp.angle(detect_symb_concat))
 
