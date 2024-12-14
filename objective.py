@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly_resampler import FigureResampler
+import sys
 
 from utils import *
 
@@ -12,10 +13,10 @@ def objective_linear(cfofreq, time_error, pktdata2a):
     detect_symb_concat = cp.concatenate(detect_symb, axis=0)
     tint = math.ceil(time_error)
     logger.info(f"ObjLinear {cfofreq=} {time_error=} {tint=} {len(pktdata2a)=}")
-    fig = FigureResampler(go.Figure(layout_title_text=f"{cfofreq=:.3f} {time_error=:.3f}"))
-    fig.add_trace(go.Scatter(y=tocpu(cp.unwrap(cp.angle(pktdata2a[tint:tint + len(detect_symb_concat)])))))
-    fig.add_trace(go.Scatter(y=tocpu(cp.unwrap(cp.angle(detect_symb_concat)))))
-    fig.show()
+    # fig = FigureResampler(go.Figure(layout_title_text=f"OL fit {cfofreq=:.3f} {time_error=:.3f}"))
+    # fig.add_trace(go.Scatter(y=tocpu(cp.unwrap(cp.angle(pktdata2a[tint:tint + len(detect_symb_concat)])))))
+    # fig.add_trace(go.Scatter(y=tocpu(cp.unwrap(cp.angle(detect_symb_concat)))))
+    # fig.show()
     ress2 = -cp.unwrap(cp.angle(pktdata2a[tint:tint + len(detect_symb_concat)])) + cp.unwrap(cp.angle(detect_symb_concat))
 
 
@@ -39,9 +40,9 @@ def objective_linear(cfofreq, time_error, pktdata2a):
         # print(f"fitted curve {est_ufreq=:.2f} Hz")
     ret_ufreq = np.mean(est_ups)
     ret_dfreq = np.mean(est_dfreqs[Config.skip_preambles:])
-    fig = px.scatter(y=est_dfreqs, title=f"objlinear {cfofreq:.3f} {time_error:.3f}")
-    fig.add_hline(y=ret_dfreq)
-    fig.show()
+    # fig = px.scatter(y=est_dfreqs, title=f"objlinear {cfofreq:.3f} {time_error:.3f}")
+    # fig.add_hline(y=ret_dfreq)
+    # fig.show()
 
     beta = Config.bw / ((2 ** Config.sf) / Config.bw) / Config.fs
     ret_freq = (ret_ufreq + ret_dfreq)/2
@@ -68,56 +69,40 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     codes = []
     angdiffs = []
     amaxdfs = []
-    for pidx in range(Config.sfdpos + 2, round(Config.total_len)):
-        dv1 = []
-        dv2 = []
-        freqrange = np.arange(0, 90, 0.1)
-        start_pos_all_new = nsamp_small * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
+    # for pidx in range(Config.sfdpos + 2, round(Config.total_len)):
+    dvx = []
+    for pidx in range(0, Config.preamble_len):
+        start_pos_all_new = nsamp_small * (pidx ) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
         start_pos = round(start_pos_all_new)
-        # plt.plot(np.unwrap(np.angle(pktdata_in[start_pos - Config.nsamp: start_pos + Config.nsamp].get())))
-        # plt.show()
-        for debugfreq in freqrange:
 
-            dt = (start_pos - start_pos_all_new) / Config.fs
-            decode_matrix_a, decode_matrix_b = Config.decode_matrix_a, Config.decode_matrix_b
+        tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
+        refchirp = mychirp(tstandard, f0=Config.bw * -0.5 , f1=Config.bw * 0.5, t1=2 ** Config.sf / Config.bw)
+        dt = (start_pos - start_pos_all_new) / Config.fs
+        beta = Config.bw / ((2 ** Config.sf) / Config.bw)
+        df = -(est_cfo_f + dt * beta)
+        sig1 = add_freq(pktdata_in[start_pos: Config.nsamp + start_pos], 0)
+        refchirp = add_freq(refchirp, -df)
 
-            beta = Config.bw / ((2 ** Config.sf) / Config.bw)
-
-            df = -(est_cfo_f + dt * beta)
-            # cfosymb = cp.exp(
-            #     2j * cp.pi * df * cp.linspace(0, Config.nsamp / Config.fs, num=Config.nsamp, endpoint=False)).astype(
-            #     cp.complex64)
-
-
-            sig1 = add_freq(pktdata_in[start_pos: Config.nsamp + start_pos], debugfreq + df)
-            sig2 = sig1.dot(decode_matrix_a.T)
-            sig3 = sig1.dot(decode_matrix_b.T)
-
-            codesv = cp.abs(sig2) ** 2 + cp.abs(sig3) ** 2
-            angdv = cp.angle(sig3) - cp.angle(sig2)
-            # fig = go.Figure(layout_title_text=f"decode {pidx=}")
-            # fig.add_trace(go.Scatter(y=cp.abs(sig2).get(), mode="lines"))
-            # fig.add_trace(go.Scatter(y=cp.abs(sig3).get(), mode="lines"))
-            # fig.show()
-            coderet = cp.argmax(cp.array(codesv))
-            # coderet = cp.array(2732)
-            # if abs(debugfreq)<1e-2: print("coderet", coderet)
-            codes.append(coderet.item())
-            angdiffs.append(angdv[coderet].item())
-
-            debugval2 = cp.abs(sig2[coderet])
-            debugval3 = cp.abs(sig3[coderet])
-            dv1.append(debugval2.item())
-            dv2.append(debugval3.item())
-            # logger.warning(f"WO106 {debugfreq=} {pidx=}, {coderet=} {debugval2=} {debugval3=} {df=}")
-        # fig = go.Figure(layout_title_text=f"decode angles")
-        # fig.add_trace(go.Scatter(x=freqrange, y=dv1, mode="lines"))
-        # fig.add_trace(go.Scatter(x=freqrange, y=dv2, mode="lines"))
+        logger.warning(f"standard a1={np.pi * beta / Config.fs**2} b1={2*np.pi*(Config.bw*-0.5-df)/Config.fs} c1=0")
+        y_val = tocpu(cp.unwrap(cp.angle(sig1)))
+        x_val = np.arange(Config.nsamp)
+        coefficients = np.polyfit(x_val, y_val, 2)
+        logger.warning(f"ours a={coefficients[0]} b={coefficients[1]} c={coefficients[2]})")
+        # fig = FigureResampler(go.Figure(layout_title_text=f"OL fit {pidx=} {est_cfo_f=:.3f} {est_to_s=:.3f}"))
+        # fig.add_trace(go.Scatter(y=y_val))
+        # fig.add_trace(go.Scatter(y=np.polyval(coefficients, x_val)))
+        # fig.add_trace(go.Scatter(y=y_val - np.polyval(coefficients, x_val)))
         # fig.show()
-        amaxdf = freqrange[np.argmax(np.array(dv1) ** 2 + np.array(dv2)**2)]
-        print(f"{pidx=} {dt=} {dt*beta=} {est_cfo_f=} amax_df={amaxdf}")
-        amaxdfs.append(amaxdf)
-        # print(max(dv1), max(dv2), max(dv2)/(max(dv1)+max(dv2))*Config.n_classes)
+        dvx.append(coefficients)
+    dvx = np.array(dvx)
+    fig = FigureResampler(go.Figure(layout_title_text=f"OL coeffs0 {est_cfo_f=:.3f} {est_to_s=:.3f}"))
+    fig.add_trace(go.Scatter(y=dvx[:, 0]))
+    estc1 = (1 + est_cfo_f/Config.sig_freq * 2) * np.pi * beta / Config.fs**2
+
+    fig.add_hline(y=estc1)
+    fig.add_hline(y=np.pi * beta / Config.fs**2)
+    fig.show()
+    logger.warning(f"mean coeff 1 {np.mean(dvx[Config.skip_preambles:, 0])} {estc1}")
 
     # fig = go.Figure(layout_title_text=f"decode angles")
     # fig.add_trace(go.Scatter(y=amaxdfs, mode="markers"))
