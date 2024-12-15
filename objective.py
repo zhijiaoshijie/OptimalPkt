@@ -71,34 +71,6 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     amaxdfs = []
     # for pidx in range(Config.sfdpos + 2, round(Config.total_len)):
     dvx = []
-    prms = [8.90090457e-05, 2.29088882e+00, 4.79346248e-01,- 1.53961725e+00]
-    a, b, c, d = prms
-
-    x = np.arange(math.ceil(Config.nsampf))# * Config.preamble_len))
-    osc_freq = (a * np.log(b / Config.nsampf * x + c) + d)
-    logger.warning(f"OL coeffs1 {est_cfo_f=:.3f} {est_to_s=:.3f} {2*np.pi*(Config.bw*-0.5+est_cfo_f)/Config.fs} {d}")
-    osc_real_freq = osc_freq * Config.fs / 2 / np.pi + Config.bw * 0.5
-    fig = FigureResampler(go.Figure(layout_title_text=f"OL coeffs1 {est_cfo_f=:.3f} {est_to_s=:.3f} {2*np.pi*(Config.bw*-0.5+est_cfo_f)/Config.fs}"))
-    fig.add_trace(go.Scatter(y=osc_real_freq,))
-    fig.show()
-        # start_pos_all_new = nsamp_small * (pidx ) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
-    ofreq = -0.5*Config.bw + (x - est_to_s) / Config.nsampf * Config.bw + Config.sig_freq
-    fi = ofreq * (1 + osc_real_freq / Config.sig_freq) - Config.sig_freq # todo X not arange, is slower
-    yi = np.cumsum(2 * np.pi * fi)
-    fig = FigureResampler(go.Figure(layout_title_text=f"OL coeffs1 {est_cfo_f=:.3f} {est_to_s=:.3f} {2*np.pi*(Config.bw*-0.5+est_cfo_f)/Config.fs}"))
-    fig.add_trace(go.Scatter(y=fi,))
-    # fig.add_trace(go.Scatter(y=tocpu(cp.unwrap(cp.angle(pktdata_in[:Config.nsamp])))))
-    fig.show()
-
-    # beta = (f1 - f0) / t1
-    # phase = 2 * cp.pi * (f0 * t + 0.5 * beta * t * t)
-    # sig = cp.exp(1j * togpu(phase))
-    # return sig
-
-
-    sys.exit(1)
-    # estc1 = (1 + osc_freq / Config.sig_freq * 2) * np.pi * beta / Config.fs ** 2
-
     for pidx in range(0, Config.preamble_len):
         start_pos_all_new = nsamp_small * (pidx ) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
         start_pos = round(start_pos_all_new)
@@ -114,13 +86,6 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         logger.warning(f"standard a1={np.pi * beta / Config.fs**2} b1={2*np.pi*(Config.bw*-0.5-df)/Config.fs} c1=0")
         estc1 = (1 + est_cfo_f/Config.sig_freq * 2) * np.pi * beta / Config.fs**2
         x_val = np.arange(Config.nsamp) + dt * Config.fs
-        a, b, c, d = prms
-        y_val = tocpu(cp.unwrap(cp.angle(sig1))) - np.polyval((estc1, (a * np.log(b * pidx + c) + d), 0) , x_val)
-        cefs = (estc1, (a * np.log(b * pidx + c) + d), 0)
-        print(cefs)
-        refc =  cp.exp(1j * cp.polyval(cp.array(cefs), x_val))
-        anglec = np.angle(tocpu(sig1.dot(refc.conj())))
-        dvx.append(anglec)
 
         # coefficients = np.polyfit(x_val, y_val, 1)
         # logger.warning(f"ours a={coefficients[0]} b={coefficients[1]})")
@@ -128,7 +93,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
             fig = FigureResampler(go.Figure(layout_title_text=f"OL fit {pidx=} {est_cfo_f=:.3f} {est_to_s=:.3f}"))
             # fig.add_trace(go.Scatter(y=y_val))
             # fig.add_trace(go.Scatter(y=np.polyval(coefficients, x_val)))
-            fig.add_trace(go.Scatter(y=y_val))
+            fig.add_trace(go.Scatter(y=tocpu(cp.diff(cp.unwrap(cp.angle(sig1)))), mode="markers"))
             # fig.update_layout(yaxis=dict(range=[-0.2, 0.2]))
             fig.show()
     fig = FigureResampler(go.Figure(layout_title_text=f"OL coeffs1 {est_cfo_f=:.3f} {est_to_s=:.3f}"))

@@ -38,15 +38,15 @@ class Config:
     fs = 1e6
     sig_freq = 2.4e9
     # sig_freq = 2400000030.517578#-52e6/(2**18)
-    preamble_len = 64  # TODO!!!!
+    preamble_len = 16  # TODO!!!!
     skip_preambles = 8  # skip first 8 preambles ## TODO
-    total_len = 90.25-16+64
+    total_len = 90.25
     thresh = None# 0.03
     # file_paths = ['/data/djl/temp/OptimalPkt/fingerprint_data/data0_test_3',]
     cfo_range = bw // 8
     outfolder = "fout"
 
-    wired = True
+    wired = False
     if not wired:
         base_path = '/data/djl/temp/OptimalPkt/fingerprint_data/'
         temp_list = []
