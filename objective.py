@@ -4,6 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly_resampler import FigureResampler
 import sys
+from scipy.optimize import minimize
 
 from utils import *
 
@@ -62,8 +63,33 @@ def gen_matrix2(dt, est_cfo_f):
     return decode_matrix_a, decode_matrix_b
 
 # todo 斜率是否不受cfo sfo影响
+def objective(prms, est_to_s, pktdata_in):
+    a, b, c, d = prms
+    a/=1e5
+    x = np.arange(round(est_to_s), round(est_to_s)+math.ceil(Config.nsampf) * Config.preamble_len)
+    osc_freq = (a * np.log(b / Config.nsampf * x + c) + d)
+    osc_real_freq = osc_freq * Config.fs / 2 / np.pi + Config.bw * 0.5
+    ofreq = -0.5*Config.bw + (x - est_to_s) / Config.nsampf * Config.bw + Config.sig_freq
+    fi = ofreq * (1 + osc_real_freq / Config.sig_freq) - Config.sig_freq # todo X not arange, is slower
+    for i in range(1, Config.preamble_len):
+        fi[x > est_to_s + i * Config.nsampf] -= Config.bw
+    yi = np.cumsum(2 * np.pi * fi / Config.fs)
+    diffdata = np.diff(yi - tocpu(cp.unwrap(cp.angle(pktdata_in[x]))), prepend=0 )
+    d2data = np.ones_like(diffdata)
+    for i in range(1, Config.preamble_len):
+        d2data[abs(x - est_to_s - i * Config.nsampf) < Config.gen_refchirp_deadzone] = 0
+    p2 = pktdata_in[x] * togpu(d2data)
+    val = tocpu(cp.abs(cp.conj(togpu(yi)).dot(p2)))
+    return -val
+
 def objective_decode(est_cfo_f, est_to_s, pktdata_in):
-    # tstandard = cp.arange(len(pktdata_in))
+    initial_prms = [8.90091896, 2.28698507e+00, 4.78538888e-01, -1.53961710e+00]
+    # bounds = [(1e-1, 1e1), (0.1, 10), (0.1, 1), (-1.55, -1.5)]
+    result = minimize(objective, initial_prms, args=(est_to_s, pktdata_in), method='L-BFGS-B')#, bounds=bounds)
+    optimized_prms = result.x
+
+    print("Optimized parameters:", optimized_prms, objective(optimized_prms, est_to_s, pktdata_in), objective(initial_prms, est_to_s, pktdata_in))
+
     nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
     # pstart = nsamp_small * (0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
     # pktdata_in *= np.exp(1j * np.pi * Config.cfo_change_rate * (tstandard - pstart) ** 2 / Config.fs)
@@ -72,20 +98,22 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     amaxdfs = []
     # for pidx in range(Config.sfdpos + 2, round(Config.total_len)):
     dvx = []
-    prms = [8.90090457e-05, 2.29088882e+00, 4.79346248e-01,- 1.53961725e+00]
+    prms = optimized_prms
     a, b, c, d = prms
+    a/=1e5
 
-    x = np.arange(round(est_to_s), round(est_to_s)+math.ceil(Config.nsampf) * Config.preamble_len)
+    x = np.arange(round(est_to_s), round(est_to_s) + math.ceil(Config.nsampf) * Config.preamble_len)
     osc_freq = (a * np.log(b / Config.nsampf * x + c) + d)
-    logger.warning(f"OL coeffs1 {est_cfo_f=:.3f} {est_to_s=:.3f} {2*np.pi*(Config.bw*-0.5+est_cfo_f)/Config.fs} {d}")
+    logger.warning(
+        f"OL coeffs1 {est_cfo_f=:.3f} {est_to_s=:.3f} {2 * np.pi * (Config.bw * -0.5 + est_cfo_f) / Config.fs} {d}")
     osc_real_freq = osc_freq * Config.fs / 2 / np.pi + Config.bw * 0.5
-    ofreq = -0.5*Config.bw + (x - est_to_s) / Config.nsampf * Config.bw + Config.sig_freq
-    fi = ofreq * (1 + osc_real_freq / Config.sig_freq) - Config.sig_freq # todo X not arange, is slower
+    ofreq = -0.5 * Config.bw + (x - est_to_s) / Config.nsampf * Config.bw + Config.sig_freq
+    fi = ofreq * (1 + osc_real_freq / Config.sig_freq) - Config.sig_freq  # todo X not arange, is slower
     for i in range(1, Config.preamble_len):
         fi[x > est_to_s + i * Config.nsampf] -= Config.bw
     yi = np.cumsum(2 * np.pi * fi / Config.fs)
     fig = FigureResampler(go.Figure(layout_title_text=f"OL {a=:.3e} {b=:.3e} {c=:.3e} {d=:.3e}"))
-    diffdata = np.diff(yi - tocpu(cp.unwrap(cp.angle(pktdata_in[x]))), prepend=0 )
+    diffdata = np.diff(yi - tocpu(cp.unwrap(cp.angle(pktdata_in[x]))), prepend=0)
     d2data = np.ones_like(diffdata)
     for i in range(1, Config.preamble_len):
         d2data[abs(x - est_to_s - i * Config.nsampf) < Config.gen_refchirp_deadzone] = 0
@@ -94,7 +122,6 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     val2 = cp.cumsum(cp.conj(togpu(yi)) * p2)
     fig.add_trace(go.Scatter(x=x[:30000], y=tocpu(cp.abs(val2))[:30000]))
     fig.show()
-
 
     # beta = (f1 - f0) / t1
     # phase = 2 * cp.pi * (f0 * t + 0.5 * beta * t * t)
