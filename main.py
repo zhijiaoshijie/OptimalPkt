@@ -33,6 +33,8 @@ if __name__ == "__main__":
             # normalization
             data1 /= cp.mean(cp.abs(data1))
             data2 /= cp.mean(cp.abs(data1))
+            objective_decode(-41890.277, 12802.113, data1)
+            sys.exit(0)
 
             nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
             logger.warning(f"Prework {pkt_idx=} {len(data1)/nsamp_small=}")

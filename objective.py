@@ -85,16 +85,16 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
 
         logger.warning(f"standard a1={np.pi * beta / Config.fs**2} b1={2*np.pi*(Config.bw*-0.5-df)/Config.fs} c1=0")
         estc1 = (1 + est_cfo_f/Config.sig_freq * 2) * np.pi * beta / Config.fs**2
+        estc2 = est_cfo_f/Config.sig_freq * Config.bw/Config.fs/np.pi*pidx + est_cfo_f/Config.fs
         x_val = np.arange(Config.nsamp) + dt * Config.fs
-        y_val = tocpu(cp.unwrap(cp.angle(sig1))) - np.polyval((estc1, 0, 0), x_val)
-        coefficients = np.polyfit(x_val, y_val, 1)
-        logger.warning(f"ours a={coefficients[0]} b={coefficients[1]})")
-        if False:#pidx % 10 == 0:
+        y_val = tocpu(cp.unwrap(cp.angle(sig1))) - np.polyval((estc1, estc2, 0), x_val)
+        coefficients = np.mean(y_val)
+        logger.warning(f"ours a={coefficients})")
+        if pidx % 10 == 0:
             fig = FigureResampler(go.Figure(layout_title_text=f"OL fit {pidx=} {est_cfo_f=:.3f} {est_to_s=:.3f}"))
             # fig.add_trace(go.Scatter(y=y_val))
             # fig.add_trace(go.Scatter(y=np.polyval(coefficients, x_val)))
-            fig.add_trace(go.Scatter(y=y_val - np.polyval(coefficients, x_val), mode="markers"))
-            fig.update_layout(yaxis=dict(range=[-0.2, 0.2]))
+            fig.add_trace(go.Scatter(y=y_val - coefficients, mode="markers"))
             fig.show()
         dvx.append(coefficients)
     dvx = np.array(dvx)
