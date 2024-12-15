@@ -79,18 +79,18 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     osc_freq = (a * np.log(b / Config.nsampf * x + c) + d)
     logger.warning(f"OL coeffs1 {est_cfo_f=:.3f} {est_to_s=:.3f} {2*np.pi*(Config.bw*-0.5+est_cfo_f)/Config.fs} {d}")
     osc_real_freq = osc_freq * Config.fs / 2 / np.pi + Config.bw * 0.5
-    fig = FigureResampler(go.Figure(layout_title_text=f"OL coeffs1 {est_cfo_f=:.3f} {est_to_s=:.3f} {2*np.pi*(Config.bw*-0.5+est_cfo_f)/Config.fs}"))
-    fig.add_trace(go.Scatter(x=x, y=osc_real_freq,))
-    fig.show()
+    # fig = FigureResampler(go.Figure(layout_title_text=f"OL coeffs1 {est_cfo_f=:.3f} {est_to_s=:.3f} {2*np.pi*(Config.bw*-0.5+est_cfo_f)/Config.fs}"))
+    # fig.add_trace(go.Scatter(x=x, y=osc_real_freq,))
+    # fig.show()
         # start_pos_all_new = nsamp_small * (pidx ) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
     ofreq = -0.5*Config.bw + (x - est_to_s) / Config.nsampf * Config.bw + Config.sig_freq
-    plt.plot(x, ofreq * (1 + osc_real_freq / Config.sig_freq) )
-    plt.show()
+    # plt.plot(x, ofreq * (1 + osc_real_freq / Config.sig_freq) )
+    # plt.show()
     fi = ofreq * (1 + osc_real_freq / Config.sig_freq) - Config.sig_freq # todo X not arange, is slower
     for i in range(1, Config.preamble_len):
         fi[x > est_to_s + i * Config.nsampf] -= Config.bw
     yi = np.cumsum(2 * np.pi * fi / Config.fs)
-    fig = FigureResampler(go.Figure(layout_title_text=f"OL coeffs1 {est_cfo_f=:.3f} {est_to_s=:.3f} {2*np.pi*(Config.bw*-0.5+est_cfo_f)/Config.fs}"))
+    fig = FigureResampler(go.Figure(layout_title_text=f"OL {a=:.3e} {b=:.3e} {c=:.3e} {d=:.3e}"))
     # fig = go.Figure(layout_title_text=f"OL coeffs1 {est_cfo_f=:.3f} {est_to_s=:.3f} {2*np.pi*(Config.bw*-0.5+est_cfo_f)/Config.fs}")
     w2 = 32
     x2 = np.arange(round(w2 * Config.nsampf), round((w2 + 3) * Config.nsampf))
@@ -115,7 +115,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     # return sig
 
 
-    sys.exit(1)
+    sys.exit(2)
     # estc1 = (1 + osc_freq / Config.sig_freq * 2) * np.pi * beta / Config.fs ** 2
 
     for pidx in range(0, Config.preamble_len):

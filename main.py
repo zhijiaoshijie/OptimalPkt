@@ -1,6 +1,6 @@
 import time
 import csv
-
+import glob
 from work import *
 from reader import *
 
@@ -8,10 +8,18 @@ from reader import *
 if __name__ == "__main__":
     if not os.path.exists(Config.outfolder): os.makedirs(Config.outfolder)
 
-    script_path = __file__
-    mod_time = os.path.getmtime(script_path)
-    readable_time = time.ctime(mod_time)
-    logger.warning(f"Last modified time of the script: {readable_time}")
+    py_files = glob.glob('*.py')
+
+    # Check if there are any .py files in the directory
+    if not py_files:
+        logger.warning("No .py files found in the current directory.")
+    else:
+        # Find the .py file with the most recent modification time
+        latest_file = max(py_files, key=os.path.getmtime)
+        mod_time = os.path.getmtime(latest_file)
+        readable_time = time.ctime(mod_time)
+        logger.warning(f"Most recently modified .py file: {latest_file}")
+        logger.warning(f"Last modified time: {readable_time}")
 
     fulldata = []
     # Main loop read files
@@ -33,6 +41,8 @@ if __name__ == "__main__":
             # normalization
             data1 /= cp.mean(cp.abs(data1))
             data2 /= cp.mean(cp.abs(data1))
+            objective_decode(-41890.277, 12802.113, data1)
+            sys.exit(0)
 
             nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
             logger.warning(f"Prework {pkt_idx=} {len(data1)/nsamp_small=}")
