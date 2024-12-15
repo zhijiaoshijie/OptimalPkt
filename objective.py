@@ -62,10 +62,10 @@ def gen_matrix2(dt, est_cfo_f):
 
 # todo 斜率是否不受cfo sfo影响
 def objective_decode(est_cfo_f, est_to_s, pktdata_in):
-    tstandard = cp.arange(len(pktdata_in))
+    # tstandard = cp.arange(len(pktdata_in))
     nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
-    pstart = nsamp_small * (0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
-    pktdata_in *= np.exp(1j * np.pi * Config.cfo_change_rate * (tstandard - pstart) ** 2 / Config.fs)
+    # pstart = nsamp_small * (0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
+    # pktdata_in *= np.exp(1j * np.pi * Config.cfo_change_rate * (tstandard - pstart) ** 2 / Config.fs)
     codes = []
     angdiffs = []
     amaxdfs = []

@@ -72,7 +72,7 @@ class Config:
     tguess = nsamp / 2
     code_len = 2
 
-    cfo_change_rate = 46/(60* n_classes * fs / bw) # Hz/sps
+    # cfo_change_rate = 46/(60* n_classes * fs / bw) # Hz/sps
 
     tstandard = cp.linspace(0, nsamp / fs, nsamp + 1)[:-1]
     decode_matrix_a = cp.zeros((n_classes, nsamp), dtype=cp.complex64)
