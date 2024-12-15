@@ -252,19 +252,13 @@ def objective_core(cfofreq, time_error, pktdata2a):
     print(res)
     ret =  - tocpu(cp.abs(cp.sum(res)) / len(res-2)) # two zero codes
     print('ret', cfofreq, time_error, ret)
-    if ret<-0.08:
-        cumulative_sums = cp.cumsum(cp.array(ress2))
-        result_gpu = cp.abs(cumulative_sums)
-        result_cpu = result_gpu.get()
-        plt.plot(result_cpu)
-        plt.axvline(Config.nsamp)
-        plt.title(f"{cfofreq:.2f} Hz {time_error:.2f} sps {ret=}")
-        plt.show()
-        # phasediff = cp.diff(cp.angle(cp.array(ress2)))
-        # fig = px.scatter(y=phasediff[:Config.nsamp*2].get())
-        # fig.update_traces(marker=dict(size=2))
-        # fig.add_vline(x=Config.nsamp, line=dict(color="black", dash="dash"))
-        # fig.show()
+    if True:#ret<-0.08:
+
+        phasediff = cp.diff(cp.angle(cp.array(ress2)))
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(y=phasediff[:Config.nsamp*2].get(), mode="markers", marker=dict(size=2)))
+        fig.add_vline(x=Config.nsamp, line=dict(color="black", dash="dash"))
+        fig.show()
 
 
 
@@ -576,10 +570,9 @@ if __name__ == "__main__":
 
     # Main loop read files
     for file_path in Config.file_paths:
-        file_path = "hou2"
 
         #  read file and count size
-        file_path_id = 0# int(file_path.split('_')[-1])
+        file_path_id = int(file_path.split('_')[-1])
 
         logger.info(f"FILEPATH { file_path}")
         pkt_cnt = 0
