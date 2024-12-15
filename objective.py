@@ -85,28 +85,28 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
 
         logger.warning(f"standard a1={np.pi * beta / Config.fs**2} b1={2*np.pi*(Config.bw*-0.5-df)/Config.fs} c1=0")
         estc1 = (1 + est_cfo_f/Config.sig_freq * 2) * np.pi * beta / Config.fs**2
-        estc2 = est_cfo_f/Config.sig_freq * Config.bw/Config.fs/np.pi*pidx + est_cfo_f/Config.fs
+        estc2 = est_cfo_f/Config.sig_freq * Config.bw/Config.fs/np.pi*pidx + (-Config.bw*0.5+est_cfo_f)*2*np.pi/Config.fs
         x_val = np.arange(Config.nsamp) + dt * Config.fs
         y_val = tocpu(cp.unwrap(cp.angle(sig1))) - np.polyval((estc1, estc2, 0), x_val)
-        coefficients = np.mean(y_val)
+        coefficients = np.polyfit(x_val, y_val, 0)
         logger.warning(f"ours a={coefficients})")
         if pidx % 10 == 0:
             fig = FigureResampler(go.Figure(layout_title_text=f"OL fit {pidx=} {est_cfo_f=:.3f} {est_to_s=:.3f}"))
             # fig.add_trace(go.Scatter(y=y_val))
             # fig.add_trace(go.Scatter(y=np.polyval(coefficients, x_val)))
-            fig.add_trace(go.Scatter(y=y_val - coefficients, mode="markers"))
+            fig.add_trace(go.Scatter(y=y_val - np.polyval(coefficients, x_val), mode="markers"))
+            fig.update_layout(yaxis=dict(range=[-0.2, 0.2]))
             fig.show()
         dvx.append(coefficients)
     dvx = np.array(dvx)
     fig = FigureResampler(go.Figure(layout_title_text=f"OL coeffs1 {est_cfo_f=:.3f} {est_to_s=:.3f}"))
-    fig.add_trace(go.Scatter(y=dvx[:, 0]))
+    fig.add_trace(go.Scatter(y=np.unwrap(dvx[:, 0])))
     # fig.add_hline(y=estc1)
     fig.add_hline(y=2*np.pi*(Config.bw*-0.5-df)/Config.fs)
     fig.show()
     # x_data = np.arange(Config.skip_preambles, Config.preamble_len)
     x_data = np.arange(0, Config.preamble_len)
     from scipy.optimize import curve_fit
-    y_data = dvx[x_data, 0]
 
     # def log_func(x, a, b, c, d):
     #     return a * np.log(b * x + c) + d
@@ -119,11 +119,11 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     # fig.show()
 
     x_data = np.arange(Config.skip_preambles * 3, Config.preamble_len)
-    y_data = dvx[x_data, 0]
+    y_data = np.unwrap(dvx[x_data, 0])
     coefficients = np.polyfit(x_data, y_data, 1)
     print("Fitted parameters:", coefficients,  est_cfo_f/Config.sig_freq * Config.bw/Config.fs/np.pi)
     x_data = np.arange(0, Config.preamble_len)
-    coefficients[0] = est_cfo_f/Config.sig_freq * Config.bw/Config.fs/np.pi
+    # coefficients[0] = est_cfo_f/Config.sig_freq * Config.bw/Config.fs/np.pi
     fig.add_trace(go.Scatter(x=x_data, y=np.poly1d(coefficients)(x_data), mode="lines", name="Fitted Curve"))
     fig.show()
 
