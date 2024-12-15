@@ -72,7 +72,7 @@ class Config:
     tguess = nsamp / 2
     code_len = 2
 
-    cfo_change_rate = 46/(60* n_classes * fs / bw) # Hz/sps
+    # cfo_change_rate = 46/(60* n_classes * fs / bw) # Hz/sps
 
     tstandard = cp.linspace(0, nsamp / fs, nsamp + 1)[:-1]
     decode_matrix_a = cp.zeros((n_classes, nsamp), dtype=cp.complex64)
@@ -88,7 +88,7 @@ class Config:
         decode_matrix_b[code, nsamples:] = cp.conj(refchirp[nsamples:])
 
 
-    gen_refchirp_deadzone = 0
+    gen_refchirp_deadzone = 20
     sfdpos = preamble_len + code_len
     sfdend = sfdpos + 3
     figpath = "fig"

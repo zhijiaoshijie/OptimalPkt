@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly_resampler import FigureResampler
@@ -62,10 +63,10 @@ def gen_matrix2(dt, est_cfo_f):
 
 # todo 斜率是否不受cfo sfo影响
 def objective_decode(est_cfo_f, est_to_s, pktdata_in):
-    tstandard = cp.arange(len(pktdata_in))
+    # tstandard = cp.arange(len(pktdata_in))
     nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
-    pstart = nsamp_small * (0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
-    pktdata_in *= np.exp(1j * np.pi * Config.cfo_change_rate * (tstandard - pstart) ** 2 / Config.fs)
+    # pstart = nsamp_small * (0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
+    # pktdata_in *= np.exp(1j * np.pi * Config.cfo_change_rate * (tstandard - pstart) ** 2 / Config.fs)
     codes = []
     angdiffs = []
     amaxdfs = []
@@ -74,21 +75,39 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     prms = [8.90090457e-05, 2.29088882e+00, 4.79346248e-01,- 1.53961725e+00]
     a, b, c, d = prms
 
-    x = np.arange(math.ceil(Config.nsampf))# * Config.preamble_len))
+    x = np.arange(round(est_to_s), round(est_to_s)+math.ceil(Config.nsampf) * Config.preamble_len)
     osc_freq = (a * np.log(b / Config.nsampf * x + c) + d)
     logger.warning(f"OL coeffs1 {est_cfo_f=:.3f} {est_to_s=:.3f} {2*np.pi*(Config.bw*-0.5+est_cfo_f)/Config.fs} {d}")
     osc_real_freq = osc_freq * Config.fs / 2 / np.pi + Config.bw * 0.5
     fig = FigureResampler(go.Figure(layout_title_text=f"OL coeffs1 {est_cfo_f=:.3f} {est_to_s=:.3f} {2*np.pi*(Config.bw*-0.5+est_cfo_f)/Config.fs}"))
-    fig.add_trace(go.Scatter(y=osc_real_freq,))
+    fig.add_trace(go.Scatter(x=x, y=osc_real_freq,))
     fig.show()
         # start_pos_all_new = nsamp_small * (pidx ) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
     ofreq = -0.5*Config.bw + (x - est_to_s) / Config.nsampf * Config.bw + Config.sig_freq
+    plt.plot(x, ofreq * (1 + osc_real_freq / Config.sig_freq) )
+    plt.show()
     fi = ofreq * (1 + osc_real_freq / Config.sig_freq) - Config.sig_freq # todo X not arange, is slower
-    yi = np.cumsum(2 * np.pi * fi)
+    for i in range(1, Config.preamble_len):
+        fi[x > est_to_s + i * Config.nsampf] -= Config.bw
+    yi = np.cumsum(2 * np.pi * fi / Config.fs)
     fig = FigureResampler(go.Figure(layout_title_text=f"OL coeffs1 {est_cfo_f=:.3f} {est_to_s=:.3f} {2*np.pi*(Config.bw*-0.5+est_cfo_f)/Config.fs}"))
-    fig.add_trace(go.Scatter(y=fi,))
-    # fig.add_trace(go.Scatter(y=tocpu(cp.unwrap(cp.angle(pktdata_in[:Config.nsamp])))))
+    # fig = go.Figure(layout_title_text=f"OL coeffs1 {est_cfo_f=:.3f} {est_to_s=:.3f} {2*np.pi*(Config.bw*-0.5+est_cfo_f)/Config.fs}")
+    w2 = 32
+    x2 = np.arange(round(w2 * Config.nsampf), round((w2 + 3) * Config.nsampf))
+    # fig.add_trace(go.Scatter(x=x[x2], y=yi[x2],))
+    # fig.add_trace(go.Scatter(x=x[x2], y=tocpu(cp.unwrap(cp.angle(pktdata_in[x][x2])))))
+    # fig.add_trace(go.Scatter(x=x[x2], y=yi[x2] - tocpu(cp.unwrap(cp.angle(pktdata_in[x][x2])))))
+    # fig.show()
+    diffdata = np.diff(yi - tocpu(cp.unwrap(cp.angle(pktdata_in[x]))), prepend=0 )
+
+    d2data = np.ones_like(diffdata)
+    for i in range(1, Config.preamble_len):
+        d2data[abs(x - est_to_s - i * Config.nsampf) < Config.gen_refchirp_deadzone] = 0
+    newdata = np.cumsum(diffdata * d2data)
+
+    fig.add_trace(go.Scatter(x=x, y=newdata))
     fig.show()
+
 
     # beta = (f1 - f0) / t1
     # phase = 2 * cp.pi * (f0 * t + 0.5 * beta * t * t)
