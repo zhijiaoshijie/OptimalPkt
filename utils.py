@@ -64,6 +64,7 @@ class Config:
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples
     nsamp = round(n_classes * fs / bw)
+    nsampf = n_classes * fs / bw
     # f_lower, f_upper = -50000, -30000
     f_lower, f_upper = -38000, -34000
     t_lower, t_upper = 0, nsamp
