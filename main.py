@@ -33,7 +33,16 @@ if __name__ == "__main__":
             # normalization
             data1 /= cp.mean(cp.abs(data1))
             data2 /= cp.mean(cp.abs(data1))
-            objective_decode(-41890.277+25, 12802.113, data1)
+            xval = np.arange(-200, 200, 1) -41890.277+25
+            xval2 = []
+            yval2 = []
+            for x in xval:
+                ret = objective_decode(x, 12802.113, data1)
+                if ret:
+                    xval2.append(ret[0])
+                    yval2.append(ret[1])
+            fig = px.scatter(x=xval2, y=yval2)
+            fig.show()
             sys.exit(0)
 
             nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
@@ -46,7 +55,7 @@ if __name__ == "__main__":
             for tryi in range(trytimes):
 
                     # main detection function with up-down
-                    f, t, retval = coarse_work_fast(data1, est_cfo_f, est_to_s,  tryi >= 1)
+                    f, t, retval = coarse_work_fast(data1, est_cfo_f, est_to_s, False)# tryi >= 1)
 
                     if t < 0:
                         logger.error(f"ERROR in {est_cfo_f=} {est_to_s=} out {f=} {t=} {file_path=} {pkt_idx=}")
@@ -71,7 +80,7 @@ if __name__ == "__main__":
                 est_to_s_full = est_to_s + (read_idx * Config.nsamp)
                 logger.warning(f"est f{file_path_id:3d} {est_cfo_f=:.6f} {est_to_s=:.6f} {pkt_idx=:3d} {read_idx=:5d} tot {est_to_s_full:15.2f} {retval=:.6f}")
                 fulldata.append([file_path_id, pkt_idx, est_cfo_f, est_to_s_full , retval])
-                if True:
+                if False:
                     sig1 = data1[round(est_to_s): Config.nsamp * math.ceil(Config.total_len) + round(est_to_s)]
                     sig2 = data2[round(est_to_s): Config.nsamp * math.ceil(Config.total_len) + round(est_to_s)]
                     sig1.tofile(os.path.join(Config.outfolder, f"data0_test_{file_path_id}_pkt_{pkt_idx}"))
@@ -88,7 +97,7 @@ if __name__ == "__main__":
             # sys.exit(0)
         # the length of each pkt (for plotting)
                 # save info of all the file to csv (done once each packet, overwrite old)
-            if True:  # !!!!!!
+            if False:  # !!!!!!
                 header = ["fileID", "pktID", "CFO", "Time offset", "Power"]
                 # header.extend([f"Angle{x}" for x in range(Config.total_len)])
                 # header.extend([f"Abs{x}" for x in range(Config.total_len)])

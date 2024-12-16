@@ -99,10 +99,8 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
                 t1 = t0 * Config.tsig + tstart + detect_pkt * nsamp_small
 
                 linear_dfreq, linear_dtime = objective_linear(f1, t1, pktdata_in)
-                logger.info(f"linear optimization {f1=} {t1=} {linear_dfreq=} {linear_dtime=}")
-                f1 -= linear_dfreq
-                t1 -= linear_dtime
-                retval, f2, t2 = objective_core_new(f1, t1, pktdata_in)
+                retval, f2, t2 = objective_core_new(f1 - linear_dfreq, t1 - linear_dtime, pktdata_in)
+                logger.warning(f"linear optimization {f1=} {t1=} {linear_dfreq=} {linear_dtime=} {f2=} {t2=} {retval=}")
 
                 values[i][j] = [f2, t2, retval]
 
@@ -116,17 +114,17 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
     detect_pkt_max = np.argmax(detect_vals[:, 0])
     est_cfo_f, est_to_s = detect_vals[detect_pkt_max, 1], detect_vals[detect_pkt_max, 2]
 
-    logger.info(f"updown result:{est_cfo_f=} {est_to_s=}")
+    logger.warning(f"updown result:{est_cfo_f=} {est_to_s=}")
 
     linear_dfreq, linear_dtime = objective_linear(est_cfo_f, est_to_s, pktdata_in)
-    logger.info(f"linear optimization {linear_dfreq=} {linear_dtime=}")
+    logger.warning(f"linear optimization {linear_dfreq=} {linear_dtime=}")
     est_cfo_f -= linear_dfreq
     est_to_s -= linear_dtime
 
     if est_to_s < 0: return 0, 0, None  # !!!
 
     if sigD:
-        logger.info(f"pre sigD parameters:{est_cfo_f=} {est_to_s=}")
+        logger.warning(f"pre sigD parameters:{est_cfo_f=} {est_to_s=}")
         dphaselist = []
         for pidx in range(Config.preamble_len):  # assume chirp start at one in [0, Config.detect_range_pkts) possible windows
             start_pos_all = nsamp_small * pidx + est_to_s
@@ -191,10 +189,10 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
             fig.show()
         retval, est_cfo_f, est_to_s = objective_core_new(est_cfo_f, est_to_s, pktdata_in)
         # retval2, est_cfo_f, est_to_s = objective_core_new(est_cfo_f, est_to_s, pktdata_in)
-        logger.info(f"final fit dphase {coefficients=} {fit_dfreq=} {retval=} {est_cfo_f=} {est_to_s=}")
-        codes, codeangles = objective_decode(est_cfo_f, est_to_s, pktdata_in)
-        print("work ending")
-        sys.exit(0)
+        logger.warning(f"final fit dphase {coefficients=} {fit_dfreq=} {retval=} {est_cfo_f=} {est_to_s=}")
+    codes, codeangles = objective_decode(est_cfo_f, est_to_s, pktdata_in)
+    print("work ending")
+    sys.exit(0)
 
         # print(f"sigd preobj {objective_core(est_cfo_f - fit_dfreq, est_to_s - fit_dfreq / beta, pktdata_in)=}")
         # print(f"sigd preobj {objective_core(est_cfo_f + fit_dfreq, est_to_s + fit_dfreq / beta, pktdata_in)=}")

@@ -13,7 +13,7 @@ def objective_linear(cfofreq, time_error, pktdata2a):
                                calctime=0)
     detect_symb_concat = cp.concatenate(detect_symb, axis=0)
     tint = math.ceil(time_error)
-    logger.info(f"ObjLinear {cfofreq=} {time_error=} {tint=} {len(pktdata2a)=}")
+    # logger.warning(f"ObjLinear {cfofreq=} {time_error=} {tint=} {len(pktdata2a)=}")
     # fig = FigureResampler(go.Figure(layout_title_text=f"OL fit {cfofreq=:.3f} {time_error=:.3f}"))
     # fig.add_trace(go.Scatter(y=tocpu(cp.unwrap(cp.angle(pktdata2a[tint:tint + len(detect_symb_concat)])))))
     # fig.add_trace(go.Scatter(y=tocpu(cp.unwrap(cp.angle(detect_symb_concat)))))
@@ -48,6 +48,7 @@ def objective_linear(cfofreq, time_error, pktdata2a):
     beta = Config.bw / ((2 ** Config.sf) / Config.bw) / Config.fs
     ret_freq = (ret_ufreq + ret_dfreq)/2
     ret_tdiff = (ret_ufreq - ret_dfreq)/2 / beta
+    # logger.warning(f"linear {ret_freq=} {ret_tdiff=}")
 
     return ret_freq, ret_tdiff
 
@@ -73,36 +74,56 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     # for pidx in range(Config.sfdpos + 2, round(Config.total_len)):
     dvx = []
     for pidx in range(0, Config.preamble_len):
-        start_pos_all_new = nsamp_small * (pidx ) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
-        start_pos = round(start_pos_all_new)
+        # fig = FigureResampler(go.Figure(layout_title_text=f"OL fit {pidx=} {est_cfo_f=:.3f} {est_to_s=:.3f}"))
+        if True:# for deltaf in np.arange(0, 200, 10):
+            deltaf = 0
+            estf = est_cfo_f + deltaf
+            start_pos_all_new = nsamp_small * (pidx ) * (1 - estf / Config.sig_freq) + est_to_s
+            start_pos = round(start_pos_all_new)
 
-        tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
-        refchirp = mychirp(tstandard, f0=Config.bw * -0.5 , f1=Config.bw * 0.5, t1=2 ** Config.sf / Config.bw)
-        dt = (start_pos - start_pos_all_new) / Config.fs
-        beta = Config.bw / ((2 ** Config.sf) / Config.bw)
-        df = -est_cfo_f #+ dt * beta)
-        sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
+            tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
+            refchirp = mychirp(tstandard, f0=Config.bw * -0.5 , f1=Config.bw * 0.5, t1=2 ** Config.sf / Config.bw)
+            dt = (start_pos - start_pos_all_new) / Config.fs
+            beta = Config.bw / ((2 ** Config.sf) / Config.bw)
+            df = -estf #+ dt * beta)
+            sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
 
-        x = (cp.arange(len(pktdata_in)) - est_to_s) * (1 + est_cfo_f / Config.sig_freq)
-        yi = cp.zeros_like(x, dtype=np.complex64)
-        bwnew = Config.bw * (1 + est_cfo_f / Config.sig_freq)
-        betanew = beta * (1 + 2 * est_cfo_f / Config.sig_freq)
-        for i in range(Config.preamble_len):
-            mask = (i * Config.nsampf < x) & (x <= (i + 1) * Config.nsampf)
-            yi[mask] = cp.exp(2j * cp.pi * (betanew / 2 * (x[mask] - i * Config.nsampf) ** 2 / Config.fs**2 + (- bwnew / 2 + est_cfo_f) * (x[mask] - i * Config.nsampf)/Config.fs))
-        xv = cp.arange(start_pos, start_pos + Config.preamble_len * Config.nsamp)
-        diffdata = np.diff(tocpu(cp.unwrap(cp.angle(pktdata_in[xv]*cp.conj(yi[xv])))), prepend=0)
-        d2data = np.ones_like(diffdata)
-        for i in range(1, Config.preamble_len):
-            d2data[abs(x[xv] - i * Config.nsampf) < Config.gen_refchirp_deadzone] = 0
-        p2 = pktdata_in[xv] * togpu(d2data)
-        # val = cp.abs(cp.conj(togpu(yi[xv])).dot(p2))
-        val2 = cp.abs(cp.cumsum(cp.conj(togpu(yi[xv])) * p2))
-        fig = FigureResampler(go.Figure(layout_title_text=f"OL fit {pidx=} {est_cfo_f=:.3f} {est_to_s=:.3f}"))
-        # fig.add_trace(go.Scatter(x=x[xv][:30000], y=tocpu(cp.unwrap(cp.angle(yi[xv])))[:30000]))
-        # fig.add_trace(go.Scatter(x=x[xv][:30000], y=tocpu(cp.unwrap(cp.angle(pktdata_in[xv])))[:30000]))
-        fig.add_trace(go.Scatter(x=x[xv][:30000], y=tocpu(val2)[:30000]))
-        fig.show()
+            x = (cp.arange(len(pktdata_in)) - est_to_s) * (1 + estf / Config.sig_freq)
+            yi = cp.zeros_like(x, dtype=np.complex64)
+            bwnew = Config.bw * (1 + estf / Config.sig_freq)
+            betanew = beta * (1 + 2 * estf / Config.sig_freq)
+            for i in range(Config.preamble_len):
+                mask = (i * Config.nsampf < x) & (x <= (i + 1) * Config.nsampf)
+                yi[mask] = cp.exp(2j * cp.pi * (betanew / 2 * (x[mask] - i * Config.nsampf) ** 2 / Config.fs**2 + (- bwnew / 2 + estf) * (x[mask] - i * Config.nsampf)/Config.fs))
+            xv = cp.arange(start_pos , start_pos + Config.preamble_len * Config.nsamp)
+            diffdata = np.diff(tocpu(cp.unwrap(cp.angle(pktdata_in[xv]*cp.conj(yi[xv])))), prepend=0)
+            d2data = np.ones_like(diffdata)
+            for i in range(1, Config.preamble_len):
+                d2data[abs(x[xv] - i * Config.nsampf) < Config.gen_refchirp_deadzone] = 0
+            p2 = pktdata_in[xv] * togpu(d2data)
+            # val = cp.abs(cp.conj(togpu(yi[xv])).dot(p2))
+            val2 = cp.concatenate( [cp.abs(cp.cumsum(cp.conj(togpu(yi[xv][round(i * Config.nsampf): round((i+1)*Config.nsampf)])) * p2[round(i * Config.nsampf): round((i+1)*Config.nsampf)])) for i in range(0, Config.preamble_len)])
+            val3 = cp.array( [cp.angle(cp.conj(togpu(yi[xv][round(i * Config.nsampf): round((i+1)*Config.nsampf)])) .dot( p2[round(i * Config.nsampf): round((i+1)*Config.nsampf)])) for i in range(0, Config.preamble_len)])
+
+            # fig.add_trace(go.Scatter(x=x[xv], y=tocpu(cp.unwrap(cp.angle(yi[xv])))))
+            # fig.add_trace(go.Scatter(x=x[xv], y=tocpu(cp.unwrap(cp.angle(pktdata_in[xv])))))
+            # fig.add_trace(go.Scatter(x=x[xv], y=tocpu(val2), name=f"{estf=:.3f}"))
+        # fig.show()
+        x_data = np.arange(Config.skip_preambles*4, Config.preamble_len-1)
+        y_data = np.unwrap(np.diff(tocpu(val3)))[x_data]
+        coefficients = np.polyfit(x_data, y_data, 1)
+        return (est_cfo_f, coefficients[0])
+        if abs(coefficients[0] + 0.025)>0.001:
+            logger.warning(f"Fitted parameters:  {coefficients} {est_cfo_f=}")
+            x_data = np.arange(0, Config.preamble_len)
+            fig=px.scatter(y=tocpu(cp.unwrap(cp.diff(val3))))
+            fig.add_trace(go.Scatter(x=x_data, y=np.polyval(coefficients, x_data), mode="lines", name="Fitted Curve"))
+            fig.show()
+            return None
+        else: return (est_cfo_f, coefficients[0])
+        # coefficients[0] = est_cfo_f/Config.sig_freq * Config.bw/Config.fs/np.pi
+
+        sys.exit(0)
 
         # logger.warning(f"standard a1={np.pi * beta / Config.fs**2} b1={2*np.pi*(Config.bw*-0.5-df)/Config.fs} c1=0")
         estc1 = (1 + est_cfo_f/Config.sig_freq * 2) * np.pi * beta / Config.fs**2
