@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly_resampler import FigureResampler
@@ -80,17 +81,38 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         dt = (start_pos - start_pos_all_new) / Config.fs
         beta = Config.bw / ((2 ** Config.sf) / Config.bw)
         df = -est_cfo_f #+ dt * beta)
-        sig1 = add_freq(pktdata_in[start_pos: Config.nsamp + start_pos], 0)
-        refchirp = add_freq(refchirp, -df)
+        sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
 
-        logger.warning(f"standard a1={np.pi * beta / Config.fs**2} b1={2*np.pi*(Config.bw*-0.5-df)/Config.fs} c1=0")
+        x = (cp.arange(len(pktdata_in)) - est_to_s) * (1 + est_cfo_f / Config.sig_freq)
+        yi = cp.zeros_like(x, dtype=np.complex64)
+        bwnew = Config.bw * (1 + est_cfo_f / Config.sig_freq)
+        betanew = beta * (1 + 2 * est_cfo_f / Config.sig_freq)
+        for i in range(Config.preamble_len):
+            mask = (i * Config.nsampf < x) & (x <= (i + 1) * Config.nsampf)
+            yi[mask] = cp.exp(2j * cp.pi * (betanew / 2 * (x[mask] - i * Config.nsampf) ** 2 / Config.fs**2 + (- bwnew / 2 + est_cfo_f) * (x[mask] - i * Config.nsampf)/Config.fs))
+        xv = cp.arange(start_pos, start_pos + Config.preamble_len * Config.nsamp)
+        diffdata = np.diff(tocpu(cp.unwrap(cp.angle(pktdata_in[xv]*cp.conj(yi[xv])))), prepend=0)
+        d2data = np.ones_like(diffdata)
+        for i in range(1, Config.preamble_len):
+            d2data[abs(x[xv] - i * Config.nsampf) < Config.gen_refchirp_deadzone] = 0
+        p2 = pktdata_in[xv] * togpu(d2data)
+        # val = cp.abs(cp.conj(togpu(yi[xv])).dot(p2))
+        val2 = cp.abs(cp.cumsum(cp.conj(togpu(yi[xv])) * p2))
+        fig = FigureResampler(go.Figure(layout_title_text=f"OL fit {pidx=} {est_cfo_f=:.3f} {est_to_s=:.3f}"))
+        # fig.add_trace(go.Scatter(x=x[xv][:30000], y=tocpu(cp.unwrap(cp.angle(yi[xv])))[:30000]))
+        # fig.add_trace(go.Scatter(x=x[xv][:30000], y=tocpu(cp.unwrap(cp.angle(pktdata_in[xv])))[:30000]))
+        fig.add_trace(go.Scatter(x=x[xv][:30000], y=tocpu(val2)[:30000]))
+        fig.show()
+
+        # logger.warning(f"standard a1={np.pi * beta / Config.fs**2} b1={2*np.pi*(Config.bw*-0.5-df)/Config.fs} c1=0")
         estc1 = (1 + est_cfo_f/Config.sig_freq * 2) * np.pi * beta / Config.fs**2
         estc2 = est_cfo_f/Config.sig_freq * Config.bw/Config.fs/np.pi*pidx + (-Config.bw*0.5+est_cfo_f)*2*np.pi/Config.fs
-        x_val = np.arange(Config.nsamp) + dt * Config.fs
+        print(estc1, estc2)
+        x_val = np.arange(Config.nsamp) + dt * Config.fs #- pidx
         y_val = tocpu(cp.unwrap(cp.angle(sig1))) - np.polyval((estc1, estc2, 0), x_val)
         coefficients = np.polyfit(x_val, y_val, 0)
-        logger.warning(f"ours a={coefficients})")
-        if pidx % 10 == 0:
+        # logger.warning(f"ours a={coefficients})")
+        if False:#pidx % 10 == 0:
             fig = FigureResampler(go.Figure(layout_title_text=f"OL fit {pidx=} {est_cfo_f=:.3f} {est_to_s=:.3f}"))
             # fig.add_trace(go.Scatter(y=y_val))
             # fig.add_trace(go.Scatter(y=np.polyval(coefficients, x_val)))
