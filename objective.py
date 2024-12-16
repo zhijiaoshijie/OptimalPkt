@@ -102,8 +102,8 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     fig = FigureResampler(go.Figure(layout_title_text=f"OL coeffs1 {est_cfo_f=:.3f} {est_to_s=:.3f}"))
     fig.add_trace(go.Scatter(y=np.unwrap(dvx[:, 0])))
     # fig.add_hline(y=estc1)
-    fig.add_hline(y=2*np.pi*(Config.bw*-0.5-df)/Config.fs)
-    fig.show()
+    # fig.add_hline(y=2*np.pi*(Config.bw*-0.5-df)/Config.fs)
+    # fig.show()
     # x_data = np.arange(Config.skip_preambles, Config.preamble_len)
     x_data = np.arange(0, Config.preamble_len)
     from scipy.optimize import curve_fit
@@ -119,12 +119,12 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     # fig.show()
 
     x_data = np.arange(Config.skip_preambles * 3, Config.preamble_len)
-    y_data = np.unwrap(dvx[x_data, 0])
-    coefficients = np.polyfit(x_data, y_data, 1)
+    y_data = np.unwrap(dvx[:, 0])[x_data]
+    coefficients = np.polyfit(x_data, y_data, 2)
     print("Fitted parameters:", coefficients,  est_cfo_f/Config.sig_freq * Config.bw/Config.fs/np.pi)
     x_data = np.arange(0, Config.preamble_len)
     # coefficients[0] = est_cfo_f/Config.sig_freq * Config.bw/Config.fs/np.pi
-    fig.add_trace(go.Scatter(x=x_data, y=np.poly1d(coefficients)(x_data), mode="lines", name="Fitted Curve"))
+    fig.add_trace(go.Scatter(x=x_data, y=np.polyval(coefficients, x_data), mode="lines", name="Fitted Curve"))
     fig.show()
 
 

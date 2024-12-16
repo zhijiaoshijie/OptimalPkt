@@ -3,7 +3,7 @@ import os
 import math
 import numpy as np
 
-use_gpu = True
+use_gpu = False
 if use_gpu:
     import cupy as cp
     import cupyx.scipy.fft as fft
