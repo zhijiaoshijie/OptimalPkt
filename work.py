@@ -36,8 +36,8 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
         x1.append(tocpu(cp.argmax(cp.abs(data0[:len(data0)//2]))))
         x2.append(tocpu(cp.argmax(cp.abs(data0[len(data0)//2:]))+len(data0)//2))
     fig = px.line(y=np.array(x1)-np.array(x2))
-    bwnew = Config.bw * (1 - 4e4 / Config.sig_freq)
-    print(np.mean(np.array(x1)-np.array(x2)), bwnew)
+    bwnew = Config.bw * (1 - 8e4 / Config.sig_freq)
+    print(-np.mean(np.array(x1)-np.array(x2))-Config.bw, bwnew-Config.bw)
     fig.add_hline(y=-bwnew)
     fig.show()
 
@@ -46,8 +46,8 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
         Config.fft_downs_x[pidx - Config.sfdpos] = data0
 
     # todo SFO是否会导致bw不是原来的bw
-    fft_ups_add = (Config.fft_ups_x[:-1, :round(-Config.bw / Config.fs * Config.fft_n)] +
-                   Config.fft_ups_x[1:, round(Config.bw / Config.fs * Config.fft_n):])
+    fft_ups_add = (Config.fft_ups_x[:-1, :round(-bwnew / Config.fs * Config.fft_n)] +
+                   Config.fft_ups_x[1:, round(bwnew / Config.fs * Config.fft_n):])
 
     # fig = FigureResampler(go.Figure(layout_title_text=f"fft_ups values"))
     # fig = go.Figure(layout_title_text=f"fft_ups values")
@@ -79,6 +79,9 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
         y_value = tocpu(cp.argmax(cp.sum(
             cp.abs(fft_ups_add[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt, lower:higher]),
             axis=0))) + lower
+        # y_value_debug = tocpu(cp.argmax(
+        #     cp.abs(fft_ups_add[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt, lower:higher]),
+        #     axis=0))) + lower
         if y_value > - Config.bw // 2 * Config.fft_n / Config.fs + Config.fft_n // 2:
             y_value_secondary = -1
         else:
