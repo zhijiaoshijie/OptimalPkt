@@ -33,21 +33,24 @@ if __name__ == "__main__":
             # normalization
             data1 /= cp.mean(cp.abs(data1))
             data2 /= cp.mean(cp.abs(data1))
-            xval = np.arange(-200, 200, 1) -41890.277+25
-            xval2 = []
-            yval2 = []
-            for x in xval:
-                ret = objective_decode(x, 12802.113, data1)
-                if ret:
-                    xval2.append(ret[0])
-                    yval2.append(ret[1])
-            fig = px.scatter(x=xval2, y=yval2)
-            fig.show()
-            sys.exit(0)
+            # objective_decode(-41890.277+25, 12802.113, data1)
+            # continue#sys.exit(0)
+
+            # xval = np.arange(-200, 200, 1) -41890.277+25
+            # xval2 = []
+            # yval2 = []
+            # for x in xval:
+            #     ret = objective_decode(x, 12802.113, data1)
+            #     if ret:
+            #         xval2.append(ret[0])
+            #         yval2.append(ret[1])
+            # fig = px.scatter(x=xval2, y=yval2)
+            # fig.show()
+            # sys.exit(0)
 
             nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
             logger.warning(f"Prework {pkt_idx=} {len(data1)/nsamp_small=}")
-            est_cfo_f = 0
+            est_cfo_f = -40000
             est_to_s = 0
             trytimes = 2
             vals = np.zeros((trytimes, 3))
@@ -57,10 +60,26 @@ if __name__ == "__main__":
                     # main detection function with up-down
                     f, t, retval = coarse_work_fast(data1, est_cfo_f, est_to_s, False)# tryi >= 1)
 
+
+                    estf = f
+                    start_pos_all_new = t
+                    start_pos = round(start_pos_all_new)
+
+                    pktdata_in = data1
+                    yi = gen_refchirp(f, t, len(pktdata_in))
+                    xv = cp.arange(start_pos - 30000, start_pos + Config.preamble_len * Config.nsamp + 50000)
+                    fig = FigureResampler(go.Figure(layout_title_text=f"mainplt {pkt_idx=} {f=:.3f} {t=:.3f}"))
+                    fig.add_trace(go.Scatter(x=xv, y=tocpu(cp.unwrap(cp.angle(pktdata_in)[xv]))))
+                    fig.add_trace(go.Scatter(x=xv, y=tocpu(cp.unwrap(cp.angle(yi)[xv]))))
+                    fig.add_vline(x=t+Config.nsampf)
+                    fig.add_vline(x=t+Config.nsampf*2)
+                    fig.show()
+
                     if t < 0:
                         logger.error(f"ERROR in {est_cfo_f=} {est_to_s=} out {f=} {t=} {file_path=} {pkt_idx=}")
                         break
 
+            objective_decode(f, t, data1)
             # compute angles
             if False:
                 data_angles = []

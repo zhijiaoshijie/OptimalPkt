@@ -60,6 +60,7 @@ class Config:
     else:
         # file_paths_zip = (("/data/djl/temp/OptimalPkt/hou2", 0),) # !!! TODO FOR DEBUG
         file_paths_zip = (("/data/djl/OptimalPkt/wired_1213", 0),) # !!! TODO FOR DEBUG
+        # file_paths_zip = (("/data/djl/OptimalPkt/test_1218", 0),) # !!! TODO FOR DEBUG
 
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples

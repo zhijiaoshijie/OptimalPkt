@@ -26,10 +26,20 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
     fft_sig_n = Config.bw / Config.fs * Config.fft_n  # round(Config.bw / Config.fs * Config.fft_n) # 4096 fft_n=nsamp*fft_upsamp, nsamp=t*fs=2**sf/bw*fs, fft_sig_n=2**sf * fft_upsamp
 
     # upchirp dechirp
-    for pidx in range(
-            Config.preamble_len + Config.detect_range_pkts):  # assume chirp start at one in [0, Config.detect_range_pkts) possible windows
+    x1 = []
+    x2 = []
+    # assume chirp start at one in [0, Config.detect_range_pkts) possible windows
+    downchirp = cp.conj(gen_refchirp(0, -4e4, Config.nsamp))
+    for pidx in range(Config.skip_preambles, Config.preamble_len + Config.detect_range_pkts-10):
         data0 = dechirp_fft(tstart, fstart, pktdata_in, downchirp, pidx, True)
         Config.fft_ups_x[pidx] = data0
+        x1.append(tocpu(cp.argmax(cp.abs(data0[:len(data0)//2]))))
+        x2.append(tocpu(cp.argmax(cp.abs(data0[len(data0)//2:]))+len(data0)//2))
+    fig = px.line(y=np.array(x1)-np.array(x2))
+    bwnew = Config.bw * (1 - 4e4 / Config.sig_freq)
+    print(np.mean(np.array(x1)-np.array(x2)), bwnew)
+    fig.add_hline(y=-bwnew)
+    fig.show()
 
     for pidx in range(Config.sfdpos, Config.sfdpos + 2 + Config.detect_range_pkts):
         data0 = dechirp_fft(tstart, fstart, pktdata_in, upchirp, pidx, False)
@@ -38,12 +48,21 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
     # todo SFO是否会导致bw不是原来的bw
     fft_ups_add = (Config.fft_ups_x[:-1, :round(-Config.bw / Config.fs * Config.fft_n)] +
                    Config.fft_ups_x[1:, round(Config.bw / Config.fs * Config.fft_n):])
+
+    # fig = FigureResampler(go.Figure(layout_title_text=f"fft_ups values"))
+    # fig = go.Figure(layout_title_text=f"fft_ups values")
+    # for i in range(5):
+    #     fig.add_trace(go.Scatter(y=tocpu(cp.abs(fft_ups_add[i]))))
+    # fig.write_html("fft_ups values.html")
+    # fig.show()
+    # sys.exit(2)
     # fft_downs_add = Config.fft_downs_x[:-1, :-Config.bw / Config.fs * Config.fft_n] + Config.fft_downs_x[1:, Config.bw / Config.fs * Config.fft_n:]
 
     # fit the up chirps with linear, intersect with downchirp
     detect_vals = np.zeros((Config.detect_range_pkts, 3))
-    for detect_pkt in range(
-            Config.detect_range_pkts - 1):  # try all possible starting windows, signal start at detect_pkt th window
+
+    # try all possible starting windows, signal start at detect_pkt th window
+    for detect_pkt in range(Config.detect_range_pkts - 1):
 
         if False:
             fig = go.Figure(layout_title_text="plot fft ups add")
@@ -68,6 +87,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
         k = fstart / Config.sig_freq * Config.bw
         coefficients = (k, y_value - (Config.skip_preambles + detect_pkt) * k)
         polynomial = np.poly1d(coefficients)
+        logger.warning(f"Wpoly {coefficients} {-41774.000/Config.sig_freq * Config.bw}")
 
         # up-down algorithm
         # the fitted line intersect with the fft_val_down, compute the fft_val_up in the same window with fft_val_down (at fdown_pos)
@@ -98,9 +118,9 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
                 f1 = f0 * Config.bw
                 t1 = t0 * Config.tsig + tstart + detect_pkt * nsamp_small
 
-                linear_dfreq, linear_dtime = objective_linear(f1, t1, pktdata_in)
+                linear_dfreq, linear_dtime = 0, 0#objective_linear(f1, t1, pktdata_in)
                 retval, f2, t2 = objective_core_new(f1 - linear_dfreq, t1 - linear_dtime, pktdata_in)
-                logger.warning(f"linear optimization {f1=} {t1=} {linear_dfreq=} {linear_dtime=} {f2=} {t2=} {retval=}")
+                logger.warning(f"linear optimization {retval=:8.5f} {f1=:11.3f} {t1=:11.3f} {linear_dfreq=} {linear_dtime=} {f2=:11.3f} {t2=:11.3f} ")
 
                 values[i][j] = [f2, t2, retval]
 
@@ -190,9 +210,9 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
         retval, est_cfo_f, est_to_s = objective_core_new(est_cfo_f, est_to_s, pktdata_in)
         # retval2, est_cfo_f, est_to_s = objective_core_new(est_cfo_f, est_to_s, pktdata_in)
         logger.warning(f"final fit dphase {coefficients=} {fit_dfreq=} {retval=} {est_cfo_f=} {est_to_s=}")
-    codes, codeangles = objective_decode(est_cfo_f, est_to_s, pktdata_in)
-    print("work ending")
-    sys.exit(0)
+    # codes, codeangles = objective_decode(est_cfo_f, est_to_s, pktdata_in)
+    # print("work ending")
+    # sys.exit(0)
 
         # print(f"sigd preobj {objective_core(est_cfo_f - fit_dfreq, est_to_s - fit_dfreq / beta, pktdata_in)=}")
         # print(f"sigd preobj {objective_core(est_cfo_f + fit_dfreq, est_to_s + fit_dfreq / beta, pktdata_in)=}")
