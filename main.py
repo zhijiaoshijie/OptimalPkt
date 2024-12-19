@@ -250,7 +250,8 @@ def objective_core(cfofreq, time_error, pktdata2a):
     # TODO qian zhui he plot
     # TODO remove **2 because res[sidx] is sum not sumofsquare
     # TODO phase consistency?
-    ret =  - tocpu(cp.abs(cp.sum(res)) / len(res))
+    ret =  - tocpu(cp.mean(cp.abs(res)))
+    logger.error(f"retall={' '.join([f'{x:8.5f}' for x in tocpu(cp.abs(res))])} {ret=}")
     # print('ret', cfofreq, time_error, ret)
     return ret
 
