@@ -131,11 +131,12 @@ class Config:
     fs = 1e6
     sig_freq = 2.4e9
     # sig_freq = 2400000030.517578#-52e6/(2**18)
-    preamble_len = 16  # TODO!!!!
+    preamble_len = 14  # TODO!!!!
     total_len = 89
     thresh = None# 0.03
-    # file_paths = ['/data/djl/temp/OptimalPkt/fingerprint_data/data0_test_3',]
-    base_path = '/data/djl/temp/OptimalPkt/fingerprint_data/'
+    file_paths = ['/data/djl/OptimalPkt/fout/test_1218_4',]
+    outfolder = 'fout'
+    # base_path = '/data/djl/temp/OptimalPkt/fingerprint_data/'
 
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples
@@ -174,7 +175,7 @@ class Config:
     if not os.path.exists(figpath): os.mkdir(figpath)
 
     fft_upsamp = 1024
-    detect_range_pkts = 1
+    detect_range_pkts = 2
     detect_to_max = nsamp * 2
     fft_n = nsamp * fft_upsamp
     plan = fft.get_fft_plan(cp.zeros(fft_n, dtype=cp.complex64))
@@ -185,8 +186,8 @@ class Config:
 if use_gpu:
     cp.cuda.Device(0).use()
 Config = Config()
-file_paths = [os.path.join(Config.base_path, x) for x in os.listdir(Config.base_path) if 'data0' in x]
-Config.file_paths = sorted(file_paths, key=lambda x: int(x.split('_')[-1])) # TODO!
+# file_paths = [os.path.join(Config.base_path, x) for x in os.listdir(Config.base_path) if 'data0' in x]
+# Config.file_paths = sorted(file_paths, key=lambda x: int(x.split('_')[-1])) # TODO!
 
 
 
@@ -851,7 +852,7 @@ if __name__ == "__main__":
     ps3 = []
     fulldata = []
     for file_path in Config.file_paths:
-        file_path_id = int(file_path.split('_')[-1])
+        file_path_id = 0#int(file_path.split('_')[-1])
 
         logger.info(f"FILEPATH { file_path}")
         pkt_cnt = 0
@@ -1019,6 +1020,9 @@ if __name__ == "__main__":
             for pidx in range(Config.total_len):#Config.sfdend):
                 sig1 = data1[Config.nsamp * pidx + tstart: Config.nsamp * (pidx + 1) + tstart]
                 sig2 = data2[Config.nsamp * pidx + tstart: Config.nsamp * (pidx + 1) + tstart]
+                sig1.tofile(os.path.join(Config.outfolder, f"data0_test_{file_path_id}_pkt_{pkt_idx}"))
+                sig2.tofile(os.path.join(Config.outfolder, f"data1_test_{file_path_id}_pkt_{pkt_idx}"))
+
                 data_angles.append((sig1.dot(sig2.conj())).item())
             ps.extend(data_angles)
             fulldata.append([file_path_id, cfo_freq_est, time_error, *(np.angle(np.array(data_angles))), *(np.abs(np.array(data_angles))) ])
