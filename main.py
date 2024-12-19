@@ -1,5 +1,6 @@
 import time
 import csv
+import matplotlib.pyplot as plt
 
 from work import *
 from reader import *
@@ -25,17 +26,34 @@ if __name__ == "__main__":
 
             # read data: read_idx is the index of packet end window in the file
             read_idx, data1, data2 = pkt_data
+
+
+
             # (Optional) skip the first pkt because it may be half a pkt. read_idx == len(data1) means this pkt start from start of file
-            if read_idx == len(data1) // Config.nsamp: continue
+            if read_idx == 0: continue#len(data1) // Config.nsamp: continue
             # if pkt_idx < 2: continue
             # if pkt_idx > 2: break
-
+            if True:
+                data1.tofile(os.path.join(Config.outfolder, f"data_test"))
+            if True:
+                plt.plot(tocpu(cp.unwrap(cp.angle(data1))))
+                plt.show()
+                print(read_idx, len(data1)/Config.nsamp, Config.total_len)
+                sig1 = data1[Config.nsamp * 3: Config.nsamp * math.ceil(Config.total_len) - 3]
+                sig2 = data2[Config.nsamp * 3: Config.nsamp * math.ceil(Config.total_len) - 3]
+                sigangle = [tocpu(sig1[Config.nsamp * i: Config.nsamp * (i+1)].dot(cp.conj(sig2[Config.nsamp * i: Config.nsamp * (i+1)])))
+                            for i in range(math.ceil(Config.total_len) - 6)]
+                plt.plot(np.abs(sigangle)/Config.nsamp)
+                plt.show()
+                plt.plot(np.angle(sigangle))
+                plt.show()
+                sys.exit(3)
             # normalization
             data1 /= cp.mean(cp.abs(data1))
             data2 /= cp.mean(cp.abs(data1))
 
             logger.info(f"Prework {pkt_idx=} {len(data1)=}")
-            est_cfo_f = 0
+            est_cfo_f = -40000
             est_to_s = 0
             trytimes = 2
             vals = np.zeros((trytimes, 3))
@@ -63,7 +81,7 @@ if __name__ == "__main__":
                     # fig.add_trace(go.Scatter(y=cp.unwrap(cp.angle(sig2)).get()))
 
                     # save data for output line
-            if t > 0 and abs(f + 38000) < 4000:
+            if t > 0 and abs(f + 38000) < 8000:
                 est_cfo_f, est_to_s = f, t
                 est_to_s_full = est_to_s + (read_idx * Config.nsamp)
                 logger.warning(f"est f{file_path_id:3d} {est_cfo_f=:.6f} {est_to_s=:.6f} {pkt_idx=:3d} {read_idx=:5d} tot {est_to_s_full:15.2f} {retval=:.6f}")
@@ -73,6 +91,7 @@ if __name__ == "__main__":
                     sig2 = data2[round(est_to_s): Config.nsamp * math.ceil(Config.total_len) + round(est_to_s)]
                     sig1.tofile(os.path.join(Config.outfolder, f"data0_test_{file_path_id}_pkt_{pkt_idx}"))
                     sig2.tofile(os.path.join(Config.outfolder, f"data1_test_{file_path_id}_pkt_{pkt_idx}"))
+                    # logger.warning(f"write {len(sig1)} {round(est_to_s)-Config.nsamp} {Config.nsamp * math.ceil(Config.total_len) + round(est_to_s)}")
             else:
                 est_cfo_f, est_to_s = f, t
                 logger.error(f"ERR f{file_path_id} {est_cfo_f=} {est_to_s=} {pkt_idx=} {read_idx=} tot {est_to_s + read_idx * Config.nsamp} {retval=}")

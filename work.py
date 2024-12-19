@@ -20,14 +20,15 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
     tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
     cfoppm = fstart / Config.sig_freq
     t1 = 2 ** Config.sf / Config.bw * (1 - cfoppm)
-    upchirp = mychirp(tstandard, f0=-Config.bw / 2, f1=Config.bw / 2, t1=t1)
-    downchirp = mychirp(tstandard, f0=Config.bw / 2, f1=-Config.bw / 2, t1=t1)
+    upchirp = mychirp(tstandard, f0=-Config.bw / 2*(1+cfoppm), f1=Config.bw / 2*(1+cfoppm), t1=t1)
+    downchirp = mychirp(tstandard, f0=Config.bw / 2*(1+cfoppm), f1=-Config.bw / 2*(1+cfoppm), t1=t1)
 
-    fft_sig_n = Config.bw / Config.fs * Config.fft_n  # round(Config.bw / Config.fs * Config.fft_n) # 4096 fft_n=nsamp*fft_upsamp, nsamp=t*fs=2**sf/bw*fs, fft_sig_n=2**sf * fft_upsamp
+    # fft_sig_n = Config.bw * freq_per_bin  # round(Config.bw * freq_per_bin) # 4096 fft_n=nsamp*fft_upsamp, nsamp=t*fs=2**sf/bw*fs, fft_sig_n=2**sf * fft_upsamp
+    freq_per_bin = Config.fs / Config.fft_n
 
     # upchirp dechirp
-    for pidx in range(
-            Config.preamble_len + Config.detect_range_pkts):  # assume chirp start at one in [0, Config.detect_range_pkts) possible windows
+    # assume chirp start at one in [0, Config.detect_range_pkts) possible windows
+    for pidx in range(Config.preamble_len + Config.detect_range_pkts):
         data0 = dechirp_fft(tstart, fstart, pktdata_in, downchirp, pidx, True)
         Config.fft_ups_x[pidx] = data0
 
@@ -36,57 +37,59 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
         Config.fft_downs_x[pidx - Config.sfdpos] = data0
 
     # todo SFO是否会导致bw不是原来的bw
-    fft_ups_add = (Config.fft_ups_x[:-1, :round(-Config.bw / Config.fs * Config.fft_n)] +
-                   Config.fft_ups_x[1:, round(Config.bw / Config.fs * Config.fft_n):])
-    # fft_downs_add = Config.fft_downs_x[:-1, :-Config.bw / Config.fs * Config.fft_n] + Config.fft_downs_x[1:, Config.bw / Config.fs * Config.fft_n:]
+    fft_ups_add = (Config.fft_ups_x[:-1, :round(-Config.bw * freq_per_bin)] +
+                   Config.fft_ups_x[1:, round(Config.bw * freq_per_bin):])
+    fft_downs_add = Config.fft_downs_x[:-1, :round(-Config.bw * freq_per_bin)] + Config.fft_downs_x[1:, round(Config.bw * freq_per_bin):]
 
     # fit the up chirps with linear, intersect with downchirp
     detect_vals = np.zeros((Config.detect_range_pkts, 3))
-    for detect_pkt in range(
-            Config.detect_range_pkts - 1):  # try all possible starting windows, signal start at detect_pkt th window
+    for detect_pkt in range(Config.detect_range_pkts - 1):  # try all possible starting windows, signal start at detect_pkt th window
 
         if False:
             fig = go.Figure(layout_title_text="plot fft ups add")
             for i in range(Config.skip_preambles + detect_pkt, Config.preamble_len + detect_pkt):
                 fig.add_trace(go.Scatter(x=np.arange(0, fft_ups_add.shape[1], 10), y=np.abs(fft_ups_add[i, ::10].get()),
                                          mode="lines"))
-            fig.update_layout(xaxis=dict(range=[y_value_debug - 500, y_value_debug + 500]))
+            fig.update_layout(xaxis=dict(range=[upfreq_debug - 500, upfreq_debug + 500]))
             fig.show()
         # for direct add # x[d] + roll(x[d+1], -bw). peak at (-bw, 0), considering CFO, peak at (-3bw/2, bw/2). # argmax = yvalue.
         # if yvalue > -bw/2, consider possibility of yvalue - bw; else consider yvalue + bw.
-        buff_freqs = round(Config.cfo_range * Config.fft_n / Config.fs)
-        lower = - Config.bw - buff_freqs + Config.fft_n // 2
-        higher = buff_freqs + Config.fft_n // 2
-        y_value = tocpu(cp.argmax(cp.sum(
+        buff_bins = round(Config.cfo_range / freq_per_bin)
+        lower = round(- Config.bw*freq_per_bin - buff_bins + Config.fft_n // 2)
+        assert lower>0
+        higher = round(buff_bins + Config.fft_n // 2)
+        upfreq = (tocpu(cp.argmax(cp.sum(
             cp.abs(fft_ups_add[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt, lower:higher]),
-            axis=0))) + lower
-        if y_value > - Config.bw // 2 * Config.fft_n / Config.fs + Config.fft_n // 2:
-            y_value_secondary = -1
+            axis=0))) + lower) * freq_per_bin
+        if upfreq > - Config.bw // 2 + Config.fs // 2:
+            upfreq_secondary = -1
         else:
-            y_value_secondary = 1
+            upfreq_secondary = 1
 
         k = fstart / Config.sig_freq * Config.bw
-        coefficients = (k, y_value - (Config.skip_preambles + detect_pkt) * k)
+        coefficients = (k, upfreq - (Config.skip_preambles + detect_pkt) * k)
         polynomial = np.poly1d(coefficients)
 
         # up-down algorithm
         # the fitted line intersect with the fft_val_down, compute the fft_val_up in the same window with fft_val_down (at fdown_pos)
         # find the best downchirp among all possible downchirp windows
-        fdown_pos, fdown = cp.unravel_index(cp.argmax(cp.abs(Config.fft_downs_x[detect_pkt: detect_pkt + 2])),
-                                            Config.fft_downs_x[detect_pkt: detect_pkt + 2].shape)
+        fdown_pos, fdown = cp.unravel_index(cp.argmax(cp.abs(fft_downs_add[detect_pkt: detect_pkt + 2, lower:higher])),
+                                            fft_downs_add[detect_pkt: detect_pkt + 2].shape)
         fdown_pos = fdown_pos.item() + detect_pkt + Config.sfdpos  # position of best downchirp
-        fdown = fdown.item()  # freq of best downchirp
-        if fdown > Config.fft_n // 2:
+        fdown = (fdown.item() + lower) * freq_per_bin  # freq of best downchirp
+        if fdown > Config.fs // 2:
             fdown2 = -1
         else:
             fdown2 = 1
 
-        fft_val_up = (polynomial(fdown_pos) - (
-                    Config.fft_n // 2)) / fft_sig_n  # rate, [-0.5, 0.5) if no cfo and to it should be zero  #!!! because previous +0.5
-        fft_val_down = (fdown - (Config.fft_n // 2)) / fft_sig_n
+
+        fft_val_up = (polynomial(Config.preamble_len//2) - (Config.fs // 2)) / Config.bw
+        # rate, [-0.5, 0.5) if no cfo and to it should be zero  #!!! because previous +0.5
+        fft_val_down = (fdown - (Config.fs // 2)) / Config.bw
+        logger.warning(f"updown {fft_val_up=} {fft_val_down=} {fdown_pos=} {fdown=} {upfreq=} {lower=} {higher=} {buff_bins=}")
 
         # try all possible variations (unwrap f0, t0 if their real value exceed [-0.5, 0.5))
-        deltaf, deltat = np.meshgrid(np.array((0, y_value_secondary)), np.array((0, fdown2)))
+        deltaf, deltat = np.meshgrid(np.array((0, upfreq_secondary)), np.array((0, fdown2)))
         values = np.zeros((2, 2, 3)).astype(float)
         nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
         for i in range(deltaf.shape[0]):
@@ -98,13 +101,14 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
                 f1 = f0 * Config.bw
                 t1 = t0 * Config.tsig + tstart + detect_pkt * nsamp_small
 
-                linear_dfreq, linear_dtime = objective_linear(f1, t1, pktdata_in)
-                logger.info(f"linear optimization {f1=} {t1=} {linear_dfreq=} {linear_dtime=}")
+                linear_dfreq, linear_dtime = 0, 0#objective_linear(f1, t1, pktdata_in)
                 f1 -= linear_dfreq
                 t1 -= linear_dtime
                 retval, f2, t2 = objective_core_new(f1, t1, pktdata_in)
+                if True:#abs(f1 + 40000) < 10000:
+                    logger.warning(f"linear optimization {detect_pkt=} {f1=:11.3f} {t1=:11.3f} {linear_dfreq=:8.3f} {linear_dtime=:8.3f} {retval=:9.5f} {f2=:11.3f} {t2=:11.3f} ")
 
-                values[i][j] = [f2, t2, retval]
+                values[i][j] = [f1, t1, retval]
 
         best_idx = np.argmax(values[:, :, 2])
         est_cfo_f = values[:, :, 0].flat[best_idx]
@@ -116,12 +120,12 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
     detect_pkt_max = np.argmax(detect_vals[:, 0])
     est_cfo_f, est_to_s = detect_vals[detect_pkt_max, 1], detect_vals[detect_pkt_max, 2]
 
-    logger.info(f"updown result:{est_cfo_f=} {est_to_s=}")
+    logger.warning(f"updown result:{est_cfo_f=} {est_to_s=}")
 
-    linear_dfreq, linear_dtime = objective_linear(est_cfo_f, est_to_s, pktdata_in)
-    logger.info(f"linear optimization {linear_dfreq=} {linear_dtime=}")
-    est_cfo_f -= linear_dfreq
-    est_to_s -= linear_dtime
+    # linear_dfreq, linear_dtime = objective_linear(est_cfo_f, est_to_s, pktdata_in)
+    # logger.warning(f"linear optimization {linear_dfreq=} {linear_dtime=}")
+    # est_cfo_f -= linear_dfreq
+    # est_to_s -= linear_dtime
 
     if est_to_s < 0: return 0, 0, None  # !!!
 

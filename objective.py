@@ -59,7 +59,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     tstandard = cp.arange(len(pktdata_in))
     nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
     pstart = nsamp_small * (0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
-    pktdata_in *= np.exp(1j * np.pi * Config.cfo_change_rate * (tstandard - pstart) ** 2 / Config.fs)
+    # pktdata_in *= np.exp(1j * np.pi * Config.cfo_change_rate * (tstandard - pstart) ** 2 / Config.fs)
     codes = []
     angdiffs = []
     amaxdfs = []
@@ -138,11 +138,11 @@ def objective_core_new(est_cfo_f, est_to_s, pktdata_in):
         tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1] + (start_pos - start_pos_all_new) / Config.fs
         if pidx <= Config.preamble_len:
             refchirp = mychirp(tstandard, f0=-Config.bw / 2 * cfoppm1 + est_cfo_f, f1=Config.bw / 2 * cfoppm1 + est_cfo_f,
-                                t1=2 ** Config.sf / Config.bw * cfoppm1)
+                                t1=2 ** Config.sf / Config.bw * (1 - est_cfo_f / Config.sig_freq))
         else:
             refchirp = mychirp(tstandard, f0=Config.bw / 2 * cfoppm1 + est_cfo_f,
                                f1=-Config.bw / 2 * cfoppm1 + est_cfo_f,
-                               t1=2 ** Config.sf / Config.bw * cfoppm1)
+                               t1=2 ** Config.sf / Config.bw * (1 - est_cfo_f / Config.sig_freq))
         sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
         sig2 = sig1 * cp.conj(refchirp) / cp.sum(cp.abs(sig1))
 

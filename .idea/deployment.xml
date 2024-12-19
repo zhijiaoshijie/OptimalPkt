@@ -5,7 +5,7 @@
       <paths name="dujialuo@danlu.aiot.so:2222 key">
         <serverdata>
           <mappings>
-            <mapping deploy="/data/djl/OptimalPkt" local="$PROJECT_DIR$" web="/" />
+            <mapping deploy="." local="$PROJECT_DIR$" web="/" />
           </mappings>
         </serverdata>
       </paths>

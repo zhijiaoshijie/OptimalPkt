@@ -37,9 +37,9 @@ class Config:
     fs = 1e6
     sig_freq = 2.4e9
     # sig_freq = 2400000030.517578#-52e6/(2**18)
-    preamble_len = 16  # TODO!!!!
+    preamble_len = 16-2  # TODO!!!!
     skip_preambles = 8  # skip first 8 preambles ## TODO
-    total_len = 90.25
+    total_len = 90.25-2
     thresh = None# 0.03
     # file_paths = ['/data/djl/temp/OptimalPkt/fingerprint_data/data0_test_3',]
     cfo_range = bw // 8
@@ -78,10 +78,10 @@ class Config:
     if not os.path.exists(figpath): os.mkdir(figpath)
 
     fft_upsamp = 1024
-    detect_range_pkts = 4
+    detect_range_pkts = 5
     assert detect_range_pkts >= 2 # add 1, for buffer of cross-add
     detect_to_max = nsamp * 2
-    fft_n = int(fs) #nsamp * fft_upsamp
+    fft_n = 2*int(fs) #nsamp * fft_upsamp
     if use_gpu: plan = fft.get_fft_plan(cp.zeros(fft_n, dtype=cp.complex64))
     else: plan = None
     fft_ups = cp.zeros((preamble_len + detect_range_pkts, fft_n), dtype=cp.float32)
@@ -101,7 +101,7 @@ class Config:
         file_paths_zip = sorted(temp_list, key=lambda pair: pair[1])
 
     else:
-        file_paths_zip = (("/data/djl/temp/OptimalPkt/hou2", 0),) # !!! TODO FOR DEBUG
+        file_paths_zip = (("/data/djl/OptimalPkt/fout/test_1218_4", 0),) # !!! TODO FOR DEBUG
 
 logger = logging.getLogger('my_logger')
 level = logging.WARNING
