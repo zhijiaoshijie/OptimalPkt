@@ -17,22 +17,32 @@ if __name__ == "__main__":
     # Main loop read files
     for file_path, file_path_id in Config.file_paths_zip:
         thresh = preprocess_file(file_path)
+        # if file_path_id < 89: continue
 
         # loop for demodulating all decoded packets: iterate over pkts with energy>thresh and length>min_length
         codescl = []
         canglescl = []
+        fig = go.Figure(layout_title_text=f"Angle {file_path_id=}")
+        fig.add_vline(x=Config.preamble_len)
+        fig.add_vline(x=Config.sfdpos + 2)
         for pkt_idx, pkt_data in enumerate(read_pkt(file_path, file_path.replace("data0", "data1"), thresh, min_length=30)):
 
             # read data: read_idx is the index of packet end window in the file
             read_idx, data1, data2 = pkt_data
             # (Optional) skip the first pkt because it may be half a pkt. read_idx == len(data1) means this pkt start from start of file
             if read_idx == 0: continue
-            # if pkt_idx < 2: continue
+            # plt.plot(tocpu(cp.unwrap(cp.angle(data1[:200000]))))
+            # plt.show()
+            # plt.plot(tocpu(cp.unwrap(cp.angle(data2[:200000]))))
+            # plt.show()
+            if pkt_idx < 1: continue
             # if pkt_idx > 2: break
 
             # normalization
+            nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
+            logger.warning(f"Prework {pkt_idx=} {len(data1)/nsamp_small=} {cp.mean(cp.abs(data1))=} {cp.mean(cp.abs(data2))=}")
             data1 /= cp.mean(cp.abs(data1))
-            data2 /= cp.mean(cp.abs(data1))
+            data2 /= cp.mean(cp.abs(data2))
             # objective_decode(-41890.277+25, 12802.113, data1)
             # continue#sys.exit(0)
 
@@ -48,9 +58,7 @@ if __name__ == "__main__":
             # fig.show()
             # sys.exit(0)
 
-            nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
-            logger.warning(f"Prework {pkt_idx=} {len(data1)/nsamp_small=}")
-            est_cfo_f = -40000
+            est_cfo_f = -44000
             est_to_s = 0
             trytimes = 2
             vals = np.zeros((trytimes, 3))
@@ -59,32 +67,60 @@ if __name__ == "__main__":
 
                     # main detection function with up-down
                     f, t, retval = coarse_work_fast(data1, est_cfo_f, est_to_s, False)# tryi >= 1)
+                    pktlen = int((len(data1) - t) / Config.nsampf - 0.25)
+                    logger.warning(f"coarsework {f=} {t=} {retval=} {pktlen=}")
 
 
-                    estf = f
-                    start_pos_all_new = t
-                    start_pos = round(start_pos_all_new)
 
-                    pktdata_in = data1
-                    yi = gen_refchirp(f, t, len(pktdata_in))
-                    xv = cp.arange(start_pos - 30000, start_pos + Config.preamble_len * Config.nsamp + 50000)
-                    fig = FigureResampler(go.Figure(layout_title_text=f"mainplt {pkt_idx=} {f=:.3f} {t=:.3f}"))
-                    fig.add_trace(go.Scatter(x=xv, y=tocpu(cp.unwrap(cp.angle(pktdata_in)[xv]))))
-                    fig.add_trace(go.Scatter(x=xv, y=tocpu(cp.unwrap(cp.angle(yi)[xv]))))
-                    fig.add_vline(x=t+Config.nsampf)
-                    fig.add_vline(x=t+Config.nsampf*2)
-                    fig.show()
 
                     if t < 0:
                         logger.error(f"ERROR in {est_cfo_f=} {est_to_s=} out {f=} {t=} {file_path=} {pkt_idx=}")
                         break
+            estf = f
+            start_pos_all_new = t
+            start_pos = round(start_pos_all_new)
 
-            objective_decode(f, t, data1)
+            pktdata_in = data1
+            yi = gen_refchirp(f, t, len(pktdata_in))
+            xv = cp.arange(start_pos - 30000, start_pos + Config.preamble_len * Config.nsamp + 50000)
+            if True:#pkt_idx==2:
+                fig2 = FigureResampler(go.Figure(layout_title_text=f"mainplt {pkt_idx=} {f=:.3f} {t=:.3f}"))
+                fig2.add_trace(go.Scatter(x=xv, y=tocpu(cp.unwrap(cp.angle(pktdata_in)[xv]))))
+                fig2.add_trace(go.Scatter(x=xv, y=tocpu(cp.unwrap(cp.angle(data2)[xv]))))
+                # fig.add_trace(go.Scatter(x=xv, y=tocpu(cp.unwrap(cp.angle(yi)[xv]))))
+                fig2.add_vline(x=t)
+                fig2.add_vline(x=t + Config.nsampf)
+                fig2.add_vline(x=t + Config.nsampf * 2)
+                fig2.add_vline(x=t + Config.nsampf * Config.preamble_len + 2)
+                fig2.show()
+            pktlen2 = min(pktlen, int(Config.total_len))
+            data_angles=cp.zeros(pktlen2, dtype=cp.complex64)
+
+            for pidx in range(pktlen2):
+                pidx2 = pidx
+                if pidx > Config.sfdpos: pidx2 += 0.25
+                xrange = cp.arange(round(Config.nsampf * pidx2 + t), round(Config.nsampf * (pidx2 + 1) + t))
+                sig1 = data1[xrange]
+                sig2 = data2[xrange]
+                data_angles[pidx] = (sig1.dot(sig2.conj()))/len(sig1)
+                # if pidx > 85:
+                #     plt.plot(tocpu(cp.unwrap(cp.angle(sig1))))
+                #     plt.title(f"{pidx=}")
+                #     plt.show()
+            if False:
+                fig.add_trace(go.Scatter(y=tocpu(cp.angle(data_angles))))
+                fig.show()
+            # plt.plot(tocpu(cp.abs(data_angles)))
+            # plt.title("abs")
+            # plt.show()
+
+
+            # objective_decode(f, t, data1)
             # compute angles
             if False:
                 data_angles = []
                 est_cfo_f, est_to_s = f, t
-                for pidx in range(10, Config.total_len):
+                for pidx in range(10, math.ceil(Config.total_len)):
                     sig1 = data1[Config.nsamp * pidx + est_to_s: Config.nsamp * (pidx + 1) + est_to_s]
                     sig2 = data2[Config.nsamp * pidx + est_to_s: Config.nsamp * (pidx + 1) + est_to_s]
                     sigtimes = sig1 * sig2.conj()
@@ -99,7 +135,7 @@ if __name__ == "__main__":
                 est_to_s_full = est_to_s + (read_idx * Config.nsamp)
                 logger.warning(f"est f{file_path_id:3d} {est_cfo_f=:.6f} {est_to_s=:.6f} {pkt_idx=:3d} {read_idx=:5d} tot {est_to_s_full:15.2f} {retval=:.6f}")
                 fulldata.append([file_path_id, pkt_idx, est_cfo_f, est_to_s_full , retval])
-                if False:
+                if True:
                     sig1 = data1[round(est_to_s): Config.nsamp * math.ceil(Config.total_len) + round(est_to_s)]
                     sig2 = data2[round(est_to_s): Config.nsamp * math.ceil(Config.total_len) + round(est_to_s)]
                     sig1.tofile(os.path.join(Config.outfolder, f"data0_test_{file_path_id}_pkt_{pkt_idx}"))
@@ -116,7 +152,7 @@ if __name__ == "__main__":
             # sys.exit(0)
         # the length of each pkt (for plotting)
                 # save info of all the file to csv (done once each packet, overwrite old)
-            if False:  # !!!!!!
+            if True:  # !!!!!!
                 header = ["fileID", "pktID", "CFO", "Time offset", "Power"]
                 # header.extend([f"Angle{x}" for x in range(Config.total_len)])
                 # header.extend([f"Abs{x}" for x in range(Config.total_len)])

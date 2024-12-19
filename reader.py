@@ -34,9 +34,12 @@ def preprocess_file(file_path):
     weight1, weight2 = weights[sorted_indices]
     # threshold to divide the noise power from signal power
     thresh = (mean1 * covariance2 + mean2 * covariance1) / (covariance1 + covariance2)
+    if thresh < 0.01:
+        logger.error(f"ERR too small thresh check {thresh=} {mean1=} {mean2=}")
+    # thresh = max(thresh, 0.01)
     # if threshold may not work set this to True
     # plot the power map
-    if False:
+    if True:
         counts, bins = cp.histogram(nmaxs, bins=100)
         # logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
         threshpos = np.searchsorted(tocpu(bins), thresh).item()

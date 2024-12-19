@@ -210,16 +210,17 @@ def objective_core_new(est_cfo_f, est_to_s, pktdata_in):
     for i in range(Config.preamble_len):
         xv = cp.arange(round(est_to_s + i * Config.nsamp), round(est_to_s + (i+1) * Config.nsamp))
         retvals += cp.abs(pktdata_in[xv].dot(cp.conj(yi[xv]))) / len(xv)
-        if i>=Config.preamble_len - 2:
-            logger.warning(f"objcorenew {est_cfo_f=:11.3f} {est_to_s=:11.3f} {i=} {cp.abs(pktdata_in[xv].dot(cp.conj(yi[xv]))) / len(xv)}")
+        # if i>=Config.preamble_len - 2:
+        #     logger.warning(f"objcorenew {est_cfo_f=:11.3f} {est_to_s=:11.3f} {i=} {cp.abs(pktdata_in[xv].dot(cp.conj(yi[xv]))) / len(xv)}")
     for i in range(Config.sfdpos, Config.sfdpos + 3):
         xv = cp.arange(round(est_to_s + i * Config.nsamp), round(est_to_s + (i+1) * Config.nsamp))
         if i == Config.sfdpos + 2:
             xv = cp.arange(round(est_to_s + i * Config.nsamp), round(est_to_s + (i + 0.25) * Config.nsamp))
         retvals += cp.abs(pktdata_in[xv].dot(cp.conj(yi[xv]))) / len(xv)
-        logger.warning(f"objcorenew {est_cfo_f=:11.3f} {est_to_s=:11.3f} {i=} {cp.abs(pktdata_in[xv].dot(cp.conj(yi[xv]))) / len(xv)}")
+        # logger.warning(f"objcorenew {est_cfo_f=:11.3f} {est_to_s=:11.3f} {i=} {cp.abs(pktdata_in[xv].dot(cp.conj(yi[xv]))) / len(xv)}")
+    # logger.warning(f"objcorenew {est_cfo_f=:11.3f} {est_to_s=:11.3f} {retvals=}")
 
-    return retvals, est_cfo_f, est_to_s
+    return retvals
 
 
 

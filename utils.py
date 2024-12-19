@@ -2,6 +2,7 @@ import logging
 import os
 import math
 import numpy as np
+import matplotlib.pyplot as plt
 
 use_gpu = False
 if use_gpu:
@@ -38,9 +39,9 @@ class Config:
     fs = 1e6
     sig_freq = 2.4e9
     # sig_freq = 2400000030.517578#-52e6/(2**18)
-    preamble_len = 15#64  # TODO!!!!
+    preamble_len = 14#64  # TODO!!!!
     skip_preambles = 8  # skip first 8 preambles ## TODO
-    total_len = 90.25-1#-16+64
+    total_len = 90.25-2#-16+64
     thresh = None# 0.03
     # file_paths = ['/data/djl/temp/OptimalPkt/fingerprint_data/data0_test_3',]
     cfo_range = bw // 8
@@ -48,7 +49,8 @@ class Config:
 
     wired = True
     if not wired:
-        base_path = '/data/djl/temp/OptimalPkt/fingerprint_data/'
+        # base_path = '/data/djl/temp/OptimalPkt/fingerprint_data/'
+        base_path = '/data/djl/OptimalPkt/fin'
         temp_list = []
         for filename in os.listdir(base_path):
             if 'data0' in filename:
@@ -59,8 +61,12 @@ class Config:
 
     else:
         # file_paths_zip = (("/data/djl/temp/OptimalPkt/hou2", 0),) # !!! TODO FOR DEBUG
+        # file_paths_zip = (("/data/djl/OptimalPkt/test_1218_4", 0),) # !!! TODO FOR DEBUG
+        file_paths_zip = (("/data/djl/OptimalPkt/fin/data0_test_20", 0),)  # !!! TODO FOR DEBUG
+    if False:
+        preamble_len = 64
+        total_len = 90.25-16+64
         file_paths_zip = (("/data/djl/OptimalPkt/wired_1213", 0),) # !!! TODO FOR DEBUG
-        # file_paths_zip = (("/data/djl/OptimalPkt/test_1218", 0),) # !!! TODO FOR DEBUG
 
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples
@@ -207,16 +213,21 @@ def myfft(chirp_data, n, plan):
 
 
 def dechirp_fft(tstart, fstart, pktdata_in, refchirp, pidx, ispreamble):
-    nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
+    nsamp_small = 2 ** Config.sf / Config.bw * Config.fs# * (1 + fstart / Config.sig_freq)
     start_pos_all = nsamp_small * pidx + tstart
     start_pos = round(start_pos_all)
     start_pos_d = start_pos_all - start_pos
     sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
+    # plt.plot(tocpu(cp.unwrap(cp.angle(refchirp))))
+    # plt.plot(tocpu(cp.unwrap(cp.angle(sig1))))
+    # plt.show()
     sig2 = sig1 * refchirp
     freqdiff = start_pos_d / nsamp_small * Config.bw / Config.fs * Config.fft_n
     if ispreamble: freqdiff -= fstart / Config.sig_freq * Config.bw * pidx
     else: freqdiff += fstart / Config.sig_freq * Config.bw * pidx
     sig2 = add_freq(sig2,freqdiff)
     data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
+    # plt.plot(tocpu(cp.abs(data0)))
+    # plt.show()
     return data0
 
