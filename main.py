@@ -41,8 +41,8 @@ if __name__ == "__main__":
             # normalization
             nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
             logger.info(f"Prework {pkt_idx=} {len(data1)/nsamp_small=} {cp.mean(cp.abs(data1))=} {cp.mean(cp.abs(data2))=}")
-            data1 /= cp.mean(cp.abs(data1))
-            data2 /= cp.mean(cp.abs(data2))
+            # data1 /= cp.mean(cp.abs(data1))
+            # data2 /= cp.mean(cp.abs(data2))
             # objective_decode(-41890.277+25, 12802.113, data1)
             # continue#sys.exit(0)
 
@@ -116,25 +116,13 @@ if __name__ == "__main__":
 
 
             # objective_decode(f, t, data1)
-            # compute angles
-            if False:
-                data_angles = []
-                est_cfo_f, est_to_s = f, t
-                for pidx in range(10, math.ceil(Config.total_len)):
-                    sig1 = data1[Config.nsamp * pidx + est_to_s: Config.nsamp * (pidx + 1) + est_to_s]
-                    sig2 = data2[Config.nsamp * pidx + est_to_s: Config.nsamp * (pidx + 1) + est_to_s]
-                    sigtimes = sig1 * sig2.conj()
-                    sigangles = cp.cumsum(sigtimes[::-1])[::-1]
-                    fig.add_trace(go.Scatter(y=cp.angle(sigangles).get(), mode="lines"))
-                    break
-                    # fig.add_trace(go.Scatter(y=cp.unwrap(cp.angle(sig2)).get()))
-
-                    # save data for output line
+            # save data for output line
             if t > 0 and abs(f + 38000) < 10000:
                 est_cfo_f, est_to_s = f, t
                 est_to_s_full = est_to_s + (read_idx * Config.nsamp)
                 logger.warning(f"est f{file_path_id:3d} {est_cfo_f=:.6f} {est_to_s=:.6f} {pkt_idx=:3d} {read_idx=:5d} tot {est_to_s_full:15.2f} {retval=:.6f}")
-                fulldata.append([file_path_id, pkt_idx, est_cfo_f, est_to_s_full , retval])
+
+                fulldata.append([file_path_id, pkt_idx, est_cfo_f, est_to_s_full , retval,  *(np.angle(np.array(data_angles))), *(np.abs(np.array(data_angles)))])
                 if True:
                     sig1 = data1[round(est_to_s): Config.nsamp * math.ceil(Config.total_len) + round(est_to_s)]
                     sig2 = data2[round(est_to_s): Config.nsamp * math.ceil(Config.total_len) + round(est_to_s)]
@@ -154,8 +142,8 @@ if __name__ == "__main__":
                 # save info of all the file to csv (done once each packet, overwrite old)
             if True:  # !!!!!!
                 header = ["fileID", "pktID", "CFO", "Time offset", "Power"]
-                # header.extend([f"Angle{x}" for x in range(Config.total_len)])
-                # header.extend([f"Abs{x}" for x in range(Config.total_len)])
+                header.extend([f"Angle{x}" for x in range(int(Config.total_len))])
+                header.extend([f"Abs{x}" for x in range(int(Config.total_len))])
                 csv_file_path = 'data_out.csv'
                 with open(csv_file_path, 'w', newline='') as csvfile:
                     csvwriter = csv.writer(csvfile)
