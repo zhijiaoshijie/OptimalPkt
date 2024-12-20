@@ -35,21 +35,20 @@ def preprocess_file(file_path):
     # threshold to divide the noise power from signal power
     thresh = (mean1 * covariance2 + mean2 * covariance1) / (covariance1 + covariance2)
     thresh_manual = None
-    if "_farest" in file_path:
-        thresh_manual = 0.02
+    # if "_farest" in file_path: thresh_manual = 0.02
     if thresh < 0.01:
         logger.error(f"ERR too small thresh check {thresh=} {mean1=} {mean2=} {file_path=}")
-        if False:
-            counts, bins = cp.histogram(nmaxs, bins=100)
-            # logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
-            threshpos = np.searchsorted(tocpu(bins), thresh).item()
-            logger.debug(f"lower: {cp_str(counts[:threshpos])}")
-            logger.debug(f"higher: {cp_str(counts[threshpos:])}")
-            fig = px.line(nmaxs)
-            fig.add_hline(y=thresh, line_color='Black')
-            if thresh_manual is not None: fig.add_hline(y=thresh_manual, line_color='Red')
-            fig.update_layout(title=f"powermap of {file_path} length {len(nmaxs)}")
-            fig.show()
+    if False:
+        counts, bins = cp.histogram(nmaxs, bins=100)
+        # logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
+        threshpos = np.searchsorted(tocpu(bins), thresh).item()
+        logger.debug(f"lower: {cp_str(counts[:threshpos])}")
+        logger.debug(f"higher: {cp_str(counts[threshpos:])}")
+        fig = px.line(nmaxs)
+        fig.add_hline(y=thresh, line_color='Black')
+        if thresh_manual is not None: fig.add_hline(y=thresh_manual, line_color='Red')
+        fig.update_layout(title=f"powermap of {file_path} length {len(nmaxs)}")
+        fig.show()
     # thresh = max(thresh, 0.01)
     # if threshold may not work set this to True
     # plot the power map

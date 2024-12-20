@@ -41,10 +41,29 @@ if __name__ == "__main__":
             # normalization
             nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
             logger.info(f"Prework {pkt_idx=} {len(data1)/nsamp_small=} {cp.mean(cp.abs(data1))=} {cp.mean(cp.abs(data2))=}")
-            # data1 /= cp.mean(cp.abs(data1))
-            # data2 /= cp.mean(cp.abs(data2))
+            data1 /= cp.mean(cp.abs(data1))
+            data2 /= cp.mean(cp.abs(data2)) # TODO remove normalization for production
+
             # objective_decode(-41890.277+25, 12802.113, data1)
-            # continue#sys.exit(0)
+            f = -33846.500
+            t = 29624.555-Config.nsamp
+            pktdata_in = data1
+            yi = gen_refchirp(f, t, 20*Config.nsamp)
+            estf = f
+            start_pos_all_new = t
+            start_pos = round(start_pos_all_new)
+            xv = cp.arange(start_pos - 30000, start_pos + 10 * Config.nsamp)
+            if True:#pkt_idx==2:
+                fig2 = FigureResampler(go.Figure(layout_title_text=f"mainplt {pkt_idx=} {f=:.3f} {t=:.3f}"))
+                fig2.add_trace(go.Scatter(x=xv, y=tocpu(cp.unwrap(cp.angle(pktdata_in)[xv]))))
+                fig2.add_trace(go.Scatter(x=xv, y=tocpu(cp.unwrap(cp.angle(data2)[xv]))))
+                # fig.add_trace(go.Scatter(x=xv, y=tocpu(cp.unwrap(cp.angle(yi)[xv]))))
+                fig2.add_vline(x=t)
+                fig2.add_vline(x=t + Config.nsampf)
+                fig2.add_vline(x=t + Config.nsampf * 2)
+                fig2.show()
+            objective_decode(f, t, data1)
+            # sys.exit(0)
 
             # xval = np.arange(-200, 200, 1) -41890.277+25
             # xval2 = []
@@ -82,7 +101,7 @@ if __name__ == "__main__":
             pktdata_in = data1
             yi = gen_refchirp(f, t, len(pktdata_in))
             xv = cp.arange(start_pos - 30000, start_pos + Config.preamble_len * Config.nsamp + 60000)
-            if False:#pkt_idx==2:
+            if True:#pkt_idx==2:
                 fig2 = FigureResampler(go.Figure(layout_title_text=f"mainplt {pkt_idx=} {f=:.3f} {t=:.3f}"))
                 fig2.add_trace(go.Scatter(x=xv, y=tocpu(cp.unwrap(cp.angle(pktdata_in)[xv]))))
                 fig2.add_trace(go.Scatter(x=xv, y=tocpu(cp.unwrap(cp.angle(data2)[xv]))))
@@ -123,7 +142,7 @@ if __name__ == "__main__":
                 logger.warning(f"est f{file_path_id:3d} {est_cfo_f=:.6f} {est_to_s=:.6f} {pkt_idx=:3d} {read_idx=:5d} tot {est_to_s_full:15.2f} {retval=:.6f}")
 
                 fulldata.append([file_path_id, pkt_idx, est_cfo_f, est_to_s_full , retval,  *(np.angle(np.array(data_angles))), *(np.abs(np.array(data_angles)))])
-                if True:
+                if False:
                     sig1 = data1[round(est_to_s): Config.nsamp * math.ceil(Config.total_len) + round(est_to_s)]
                     sig2 = data2[round(est_to_s): Config.nsamp * math.ceil(Config.total_len) + round(est_to_s)]
                     sig1.tofile(os.path.join(Config.outfolder, f"{os.path.basename(file_path)}_pkt_{pkt_idx}"))
@@ -140,7 +159,7 @@ if __name__ == "__main__":
             # sys.exit(0)
         # the length of each pkt (for plotting)
                 # save info of all the file to csv (done once each packet, overwrite old)
-            if True:  # !!!!!!
+            if False:  # !!!!!!
                 header = ["fileID", "pktID", "CFO", "Time offset", "Power"]
                 header.extend([f"Angle{x}" for x in range(int(Config.total_len))])
                 header.extend([f"Abs{x}" for x in range(int(Config.total_len))])

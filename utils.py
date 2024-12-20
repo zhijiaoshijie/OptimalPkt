@@ -45,7 +45,7 @@ class Config:
     thresh = None# 0.03
     # file_paths = ['/data/djl/temp/OptimalPkt/fingerprint_data/data0_test_3',]
     cfo_range = bw // 8
-    outfolder = "fout"
+    outfolder = "fout_test"
 
     wired = False
     if not wired:
@@ -69,12 +69,12 @@ class Config:
 
     else:
         # file_paths_zip = (("/data/djl/temp/OptimalPkt/hou2", 0),) # !!! TODO FOR DEBUG
-        # file_paths_zip = (("/data/djl/OptimalPkt/test_1218_4", 0),) # !!! TODO FOR DEBUG
-        file_paths_zip = (("/data/djl/OptimalPkt/fin/data0_test_200", 0),)  # !!! TODO FOR DEBUG
-    if False:
-        preamble_len = 64
-        total_len = 90.25-16+64
-        file_paths_zip = (("/data/djl/OptimalPkt/wired_1213", 0),) # !!! TODO FOR DEBUG
+        file_paths_zip = (("/data/djl/OptimalPkt/test_1218_4", 0),) # !!! TODO FOR DEBUG
+        # file_paths_zip = (("/data/djl/OptimalPkt/fin/data0_test_200", 0),)  # !!! TODO FOR DEBUG
+    if True:
+        preamble_len = 512
+        total_len = 90.25-16+512
+        file_paths_zip = (("/data/djl/OptimalPkt/test_1218_3", 0),) # !!! TODO FOR DEBUG
 
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples

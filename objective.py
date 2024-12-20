@@ -101,7 +101,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
                 d2data[abs(x[xv] - i * Config.nsampf) < Config.gen_refchirp_deadzone] = 0
             p2 = pktdata_in[xv] * togpu(d2data)
             # val = cp.abs(cp.conj(togpu(yi[xv])).dot(p2))
-            val2 = cp.concatenate( [cp.abs(cp.cumsum(cp.conj(togpu(yi[xv][round(i * Config.nsampf): round((i+1)*Config.nsampf)])) * p2[round(i * Config.nsampf): round((i+1)*Config.nsampf)])) for i in range(0, Config.preamble_len)])
+            # val2 = cp.concatenate( [cp.abs(cp.cumsum(cp.conj(togpu(yi[xv][round(i * Config.nsampf): round((i+1)*Config.nsampf)])) * p2[round(i * Config.nsampf): round((i+1)*Config.nsampf)])) for i in range(0, Config.preamble_len)])
             val3 = cp.array( [cp.angle(cp.conj(togpu(yi[xv][round(i * Config.nsampf): round((i+1)*Config.nsampf)])) .dot( p2[round(i * Config.nsampf): round((i+1)*Config.nsampf)])) for i in range(0, Config.preamble_len)])
 
             # fig.add_trace(go.Scatter(x=x[xv], y=tocpu(cp.unwrap(cp.angle(yi[xv])))))
