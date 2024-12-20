@@ -16,15 +16,15 @@ if __name__ == "__main__":
     fulldata = []
     # Main loop read files
     for file_path, file_path_id in Config.file_paths_zip:
+        # if file_path_id < 24: continue
         thresh = preprocess_file(file_path)
-        # if file_path_id < 89: continue
 
         # loop for demodulating all decoded packets: iterate over pkts with energy>thresh and length>min_length
         codescl = []
         canglescl = []
-        fig = go.Figure(layout_title_text=f"Angle {file_path_id=}")
-        fig.add_vline(x=Config.preamble_len)
-        fig.add_vline(x=Config.sfdpos + 2)
+        # fig = go.Figure(layout_title_text=f"Angle {file_path_id=}")
+        # fig.add_vline(x=Config.preamble_len)
+        # fig.add_vline(x=Config.sfdpos + 2)
         for pkt_idx, pkt_data in enumerate(read_pkt(file_path, file_path.replace("data0", "data1"), thresh, min_length=30)):
 
             # read data: read_idx is the index of packet end window in the file
@@ -40,7 +40,7 @@ if __name__ == "__main__":
 
             # normalization
             nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
-            logger.warning(f"Prework {pkt_idx=} {len(data1)/nsamp_small=} {cp.mean(cp.abs(data1))=} {cp.mean(cp.abs(data2))=}")
+            logger.info(f"Prework {pkt_idx=} {len(data1)/nsamp_small=} {cp.mean(cp.abs(data1))=} {cp.mean(cp.abs(data2))=}")
             data1 /= cp.mean(cp.abs(data1))
             data2 /= cp.mean(cp.abs(data2))
             # objective_decode(-41890.277+25, 12802.113, data1)
@@ -68,10 +68,9 @@ if __name__ == "__main__":
                     # main detection function with up-down
                     f, t, retval = coarse_work_fast(data1, est_cfo_f, est_to_s, False)# tryi >= 1)
                     pktlen = int((len(data1) - t) / Config.nsampf - 0.25)
-                    logger.warning(f"coarsework {f=} {t=} {retval=} {pktlen=}")
-
-
-
+                    est_cfo_f, est_to_s = f, t
+                    # est_to_s_full = est_to_s + (read_idx * Config.nsamp)
+                    # logger.warning(f"est f{file_path_id:3d} {est_cfo_f=:.6f} {est_to_s=:.6f} {pkt_idx=:3d} {read_idx=:5d} tot {est_to_s_full:15.2f} {retval=:.6f}")
 
                     if t < 0:
                         logger.error(f"ERROR in {est_cfo_f=} {est_to_s=} out {f=} {t=} {file_path=} {pkt_idx=}")
@@ -82,8 +81,8 @@ if __name__ == "__main__":
 
             pktdata_in = data1
             yi = gen_refchirp(f, t, len(pktdata_in))
-            xv = cp.arange(start_pos - 30000, start_pos + Config.preamble_len * Config.nsamp + 50000)
-            if True:#pkt_idx==2:
+            xv = cp.arange(start_pos - 30000, start_pos + Config.preamble_len * Config.nsamp + 60000)
+            if False:#pkt_idx==2:
                 fig2 = FigureResampler(go.Figure(layout_title_text=f"mainplt {pkt_idx=} {f=:.3f} {t=:.3f}"))
                 fig2.add_trace(go.Scatter(x=xv, y=tocpu(cp.unwrap(cp.angle(pktdata_in)[xv]))))
                 fig2.add_trace(go.Scatter(x=xv, y=tocpu(cp.unwrap(cp.angle(data2)[xv]))))
@@ -91,7 +90,8 @@ if __name__ == "__main__":
                 fig2.add_vline(x=t)
                 fig2.add_vline(x=t + Config.nsampf)
                 fig2.add_vline(x=t + Config.nsampf * 2)
-                fig2.add_vline(x=t + Config.nsampf * Config.preamble_len + 2)
+                fig2.add_vline(x=t + Config.nsampf * (Config.preamble_len + 2))
+                fig2.add_vline(x=t + Config.nsampf * (Config.preamble_len + 4.25))
                 fig2.show()
             pktlen2 = min(pktlen, int(Config.total_len))
             data_angles=cp.zeros(pktlen2, dtype=cp.complex64)
@@ -103,13 +103,13 @@ if __name__ == "__main__":
                 sig1 = data1[xrange]
                 sig2 = data2[xrange]
                 data_angles[pidx] = (sig1.dot(sig2.conj()))/len(sig1)
-                # if pidx > 85:
-                #     plt.plot(tocpu(cp.unwrap(cp.angle(sig1))))
-                #     plt.title(f"{pidx=}")
-                #     plt.show()
-            if False:
-                fig.add_trace(go.Scatter(y=tocpu(cp.angle(data_angles))))
-                fig.show()
+                if False:# pidx > 85:
+                    plt.plot(tocpu(cp.unwrap(cp.angle(sig1))))
+                    plt.plot(tocpu(cp.unwrap(cp.angle(sig2))))
+                    plt.title(f"{pidx=}")
+                    plt.show()
+            # if True:
+            #     fig.add_trace(go.Scatter(y=tocpu(cp.angle(data_angles))))
             # plt.plot(tocpu(cp.abs(data_angles)))
             # plt.title("abs")
             # plt.show()
@@ -130,7 +130,7 @@ if __name__ == "__main__":
                     # fig.add_trace(go.Scatter(y=cp.unwrap(cp.angle(sig2)).get()))
 
                     # save data for output line
-            if t > 0 and abs(f + 38000) < 4000:
+            if t > 0 and abs(f + 38000) < 10000:
                 est_cfo_f, est_to_s = f, t
                 est_to_s_full = est_to_s + (read_idx * Config.nsamp)
                 logger.warning(f"est f{file_path_id:3d} {est_cfo_f=:.6f} {est_to_s=:.6f} {pkt_idx=:3d} {read_idx=:5d} tot {est_to_s_full:15.2f} {retval=:.6f}")
@@ -138,8 +138,8 @@ if __name__ == "__main__":
                 if True:
                     sig1 = data1[round(est_to_s): Config.nsamp * math.ceil(Config.total_len) + round(est_to_s)]
                     sig2 = data2[round(est_to_s): Config.nsamp * math.ceil(Config.total_len) + round(est_to_s)]
-                    sig1.tofile(os.path.join(Config.outfolder, f"data0_test_{file_path_id}_pkt_{pkt_idx}"))
-                    sig2.tofile(os.path.join(Config.outfolder, f"data1_test_{file_path_id}_pkt_{pkt_idx}"))
+                    sig1.tofile(os.path.join(Config.outfolder, f"{os.path.basename(file_path)}_pkt_{pkt_idx}"))
+                    sig2.tofile(os.path.join(Config.outfolder, f"{os.path.basename(file_path)}_pkt_{pkt_idx}"))
             else:
                 est_cfo_f, est_to_s = f, t
                 logger.error(f"ERR f{file_path_id} {est_cfo_f=} {est_to_s=} {pkt_idx=} {read_idx=} tot {est_to_s + read_idx * Config.nsamp} {retval=}")
@@ -162,6 +162,7 @@ if __name__ == "__main__":
                     csvwriter.writerow(header)  # Write the header
                     for row in fulldata:
                         csvwriter.writerow(row)
+        # fig.show()
         if False:
             bytes_per_complex = 8
             byte_offset = round(est_to_s_full) * bytes_per_complex

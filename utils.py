@@ -47,14 +47,22 @@ class Config:
     cfo_range = bw // 8
     outfolder = "fout"
 
-    wired = True
+    wired = False
     if not wired:
         # base_path = '/data/djl/temp/OptimalPkt/fingerprint_data/'
         base_path = '/data/djl/OptimalPkt/fin'
         temp_list = []
         for filename in os.listdir(base_path):
             if 'data0' in filename:
-                file_tuple = (os.path.join(base_path, filename), int(filename.split('_')[-1]))
+                filename = os.path.join(base_path, filename)
+                fileidx = filename.split('_')[-1]
+                if fileidx.isnumeric():
+                    if 'wavelen' in filename:
+                        file_tuple = (filename, -int(fileidx)-1)
+                    else:
+                        file_tuple = (filename, int(fileidx))
+                else:
+                    file_tuple = (filename, -10)
                 temp_list.append(file_tuple)
 
         file_paths_zip = sorted(temp_list, key=lambda pair: pair[1])
@@ -62,7 +70,7 @@ class Config:
     else:
         # file_paths_zip = (("/data/djl/temp/OptimalPkt/hou2", 0),) # !!! TODO FOR DEBUG
         # file_paths_zip = (("/data/djl/OptimalPkt/test_1218_4", 0),) # !!! TODO FOR DEBUG
-        file_paths_zip = (("/data/djl/OptimalPkt/fin/data0_test_20", 0),)  # !!! TODO FOR DEBUG
+        file_paths_zip = (("/data/djl/OptimalPkt/fin/data0_test_200", 0),)  # !!! TODO FOR DEBUG
     if False:
         preamble_len = 64
         total_len = 90.25-16+64

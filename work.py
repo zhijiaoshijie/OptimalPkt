@@ -159,7 +159,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
     detect_pkt_max = np.argmax(detect_vals[:, 0])
     est_cfo_f, est_to_s = detect_vals[detect_pkt_max, 1], detect_vals[detect_pkt_max, 2]
 
-    logger.warning(f"updown result:{est_cfo_f=} {est_to_s=}")
+    logger.info(f"updown result:{est_cfo_f=} {est_to_s=}")
 
     # linear_dfreq, linear_dtime = objective_linear(est_cfo_f, est_to_s, pktdata_in)
     # logger.warning(f"linear optimization {linear_dfreq=} {linear_dtime=}")
