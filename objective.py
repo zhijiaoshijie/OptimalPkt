@@ -72,19 +72,38 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     amaxdfs = []
     # for pidx in range(Config.sfdpos + 2, round(Config.total_len)):
     dvx = []
-    for pidx in range(32, Config.preamble_len):
-            estf = est_cfo_f
-            start_pos_all_new = nsamp_small * pidx * (1 - estf / Config.sig_freq) + est_to_s
-            start_pos = round(start_pos_all_new)
-            x_data = np.arange(start_pos + 100, start_pos + Config.nsamp - 100)
-            y_data = np.unwrap(np.angle(tocpu(pktdata_in[x_data])))
-            beta = Config.bw / ((2 ** Config.sf) / Config.bw) / Config.fs / Config.fs * np.pi
-            betanew = beta * (1 + 2 * estf / Config.sig_freq)
-            y_data_1d = y_data - np.polyval((betanew, 0, 0), x_data)
-            coefficients_1d = np.polyfit(x_data, y_data_1d, 1)
-            dvx.append(coefficients_1d[0])
+    pidx_range = np.arange(32, Config.preamble_len)
+    beta = Config.bw / ((2 ** Config.sf) / Config.bw) * np.pi
+    estf = est_cfo_f #- 12000
+    # est_to_s += 1000
+    betanew = beta * (1 + 2 * estf / Config.sig_freq)
+    x_data = (np.arange(len(pktdata_in)) - est_to_s) / Config.fs #* (1 + estf / Config.sig_freq)
+    for pidx in pidx_range:
+        start_pos_all_new = nsamp_small * pidx * (1 - estf / Config.sig_freq) + est_to_s
+        start_pos = round(start_pos_all_new)
+        xv = np.arange(start_pos + 1000, start_pos + Config.nsamp - 1000)
+        y_data = np.unwrap(np.angle(tocpu(pktdata_in[xv])))
+        coefficients_2d = np.polyfit(x_data[xv], y_data, 2)
+        y_data_1d = y_data - np.polyval((betanew, 0, 0), x_data[xv])
+        coefficients_1d = np.polyfit(x_data[xv], y_data_1d, 1)
+        # print(coefficients_2d, betanew, )
+        dvx.append(coefficients_1d[0])
+        # if pidx % 100 == 0:
+        #     plt.plot(x_data[xv], y_data)
+        #     plt.title(f"{pidx=}")
+        #     plt.show()
 
-    fig = px.line(dvx)
+
+    coefficients_1dfit = np.polyfit(pidx_range, dvx, 1)
+    dvx = np.array(dvx)
+    fig = go.Figure(layout_title_text="1d")
+    # fig.add_trace(go.Scatter(x=pidx_range, y=- dvx / (2 * betanew), mode='lines',))
+    # fig.add_trace(go.Scatter(x=pidx_range, y=- np.poly1d(coefficients_1dfit)(pidx_range) / (2 * betanew), mode='lines',))
+    fig.add_trace(go.Scatter(x=pidx_range, y=dvx - np.poly1d(coefficients_1dfit)(pidx_range), mode='lines',))
+    print(coefficients_1dfit)
+    timediff = - coefficients_1dfit[0] / (2 * betanew)
+    freqdiff = (timediff - Config.tsig / Config.fs) / Config.nsampf * Config.fs * Config.sig_freq
+    print(timediff, Config.tsig / Config.fs, (timediff - Config.tsig / Config.fs) / Config.nsampf * Config.fs, freqdiff)
     fig.show()
     sys.exit(0)
 

@@ -45,7 +45,7 @@ if __name__ == "__main__":
             data2 /= cp.mean(cp.abs(data2)) # TODO remove normalization for production
 
             # objective_decode(-41890.277+25, 12802.113, data1)
-            f = -31528
+            f = -43441.83333760181
             t = 19447.437-69
             pktlen = int((len(data1) - t) / Config.nsampf - 0.25)
             if False:
