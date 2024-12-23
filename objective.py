@@ -82,23 +82,11 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
             betanew = beta * (1 + 2 * estf / Config.sig_freq)
             y_data_1d = y_data - np.polyval((betanew, 0, 0), x_data)
             coefficients_1d = np.polyfit(x_data, y_data_1d, 1)
-            print(coefficients_1d)
-            coefficients = (betanew, *coefficients_1d)
-
-            fig = go.Figure(layout_title_text=f"{pidx=} head")
-            fig.add_trace(go.Scatter(x=x_data, y=y_data - np.polyval(coefficients, x_data), mode='lines'))
-            fig.show()
-            y_val2 = cp.exp(1j * togpu(np.polyval(coefficients, x_data)))
-            fig = px.line(x=x_data, y=tocpu(cp.abs(cp.cumsum(pktdata_in[x_data] * y_val2))))
-            fig.show()
+            dvx.append(coefficients_1d[0])
 
     fig = px.line(dvx)
-    beta = Config.bw / ((2 ** Config.sf) / Config.bw) / Config.fs / Config.fs * np.pi
-    betanew = beta * (1 + 2 * est_cfo_f / Config.sig_freq)
-    fig.add_hline(betanew)
     fig.show()
-    print((np.mean(dvx) / beta - 1) * Config.sig_freq / 2)
-    return
+    sys.exit(0)
 
 
 
