@@ -144,8 +144,8 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
                 f1 = f0 * Config.bw
                 t1 = t0 * Config.tsig + tstart + detect_pkt * nsamp_small
 
-                retval= objective_core_new(f1 , t1, pktdata_in)
-                # logger.warning(f"linear optimization {retval=:8.5f} {f1=:11.3f} {t1=:11.3f}")
+                retval= 0#objective_core_new(f1 , t1, pktdata_in)
+                logger.warning(f"linear optimization {retval=:8.5f} {f1=:11.3f} {t1=:11.3f}") # TODO debug
 
                 values[i][j] = [f1, t1, retval]
 
