@@ -184,6 +184,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     betanew = beta * (1 + 2 * estf / Config.sig_freq)
     fig.add_hline(betanew)
     fig.show()
+    print((np.mean(dvx) / beta - 1) * Config.sig_freq / 2)
     return
 
 
