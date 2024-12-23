@@ -187,75 +187,49 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     return
 
 
-# def log_func(x, a, b, c, d):
-#     return a * np.log(b * x + c) + d
-# # Fit the curve
-# initial_guess = [ 8.90091896e-05, 2.28698507e+00 , 4.78538888e-01, -1.53961710e+00] # Initial guess for the parameters [a, b, c, d]
-# params, covariance = curve_fit(log_func, x_data, y_data, p0=initial_guess)
-# print("Fitted parameters:", params)
-# y_fit = log_func(x_data, *params)
-# fig.add_trace(go.Scatter(x=x_data, y=y_fit, mode="lines", name="Fitted Curve"))
-# fig.show()
-
-x_data = np.arange(Config.skip_preambles * 3, Config.preamble_len)
-y_data = np.unwrap(dvx[:, 0])[x_data]
-coefficients = np.polyfit(x_data, y_data, 2)
-print("Fitted parameters:", coefficients,  est_cfo_f/Config.sig_freq * Config.bw/Config.fs/np.pi)
-x_data = np.arange(0, Config.preamble_len)
-# coefficients[0] = est_cfo_f/Config.sig_freq * Config.bw/Config.fs/np.pi
-fig.add_trace(go.Scatter(x=x_data, y=np.polyval(coefficients, x_data), mode="lines", name="Fitted Curve"))
-fig.show()
-
-
-
-
-# fig = go.Figure(layout_title_text=f"decode angles")
-# fig.add_trace(go.Scatter(y=amaxdfs, mode="markers"))
-# fig.show()
-return codes, angdiffs
 
 def gen_refchirp(est_to_s, estf, length):
-beta = Config.bw / ((2 ** Config.sf) / Config.bw)
-x = (cp.arange(length) - est_to_s) * (1 + estf / Config.sig_freq)
-yi = cp.zeros_like(x, dtype=np.complex64)
-bwnew = Config.bw * (1 + estf / Config.sig_freq)
-betanew = beta * (1 + 2 * estf / Config.sig_freq)
-for i in range(Config.preamble_len):
-    mask = (i * Config.nsampf < x) & (x <= (i + 1) * Config.nsampf)
-    yi[mask] = cp.exp(2j * cp.pi * (
-            betanew / 2 * (x[mask] - i * Config.nsampf) ** 2 / Config.fs ** 2 + (- bwnew / 2 + estf) * (
-            x[mask] - i * Config.nsampf) / Config.fs))
-for i in range(Config.sfdpos, Config.sfdpos + 3):
-    mask = (i * Config.nsampf < x) & (x <= (i + 1) * Config.nsampf) & (x <= (Config.sfdpos + 2.25) * Config.nsampf)
-    yi[mask] = cp.exp(2j * cp.pi * (
-            -betanew / 2 * (x[mask] - i * Config.nsampf) ** 2 / Config.fs ** 2 + (bwnew / 2 + estf) * (
-            x[mask] - i * Config.nsampf) / Config.fs))
-return yi
+    beta = Config.bw / ((2 ** Config.sf) / Config.bw)
+    x = (cp.arange(length) - est_to_s) * (1 + estf / Config.sig_freq)
+    yi = cp.zeros_like(x, dtype=np.complex64)
+    bwnew = Config.bw * (1 + estf / Config.sig_freq)
+    betanew = beta * (1 + 2 * estf / Config.sig_freq)
+    for i in range(Config.preamble_len):
+        mask = (i * Config.nsampf < x) & (x <= (i + 1) * Config.nsampf)
+        yi[mask] = cp.exp(2j * cp.pi * (
+                betanew / 2 * (x[mask] - i * Config.nsampf) ** 2 / Config.fs ** 2 + (- bwnew / 2 + estf) * (
+                x[mask] - i * Config.nsampf) / Config.fs))
+    for i in range(Config.sfdpos, Config.sfdpos + 3):
+        mask = (i * Config.nsampf < x) & (x <= (i + 1) * Config.nsampf) & (x <= (Config.sfdpos + 2.25) * Config.nsampf)
+        yi[mask] = cp.exp(2j * cp.pi * (
+                -betanew / 2 * (x[mask] - i * Config.nsampf) ** 2 / Config.fs ** 2 + (bwnew / 2 + estf) * (
+                x[mask] - i * Config.nsampf) / Config.fs))
+    return yi
 
 
 def objective_core_new(est_cfo_f, est_to_s, pktdata_in):
-deltaf = 0
-estf = est_cfo_f + deltaf
-start_pos_all_new = est_to_s
-start_pos = round(start_pos_all_new)
+    deltaf = 0
+    estf = est_cfo_f + deltaf
+    start_pos_all_new = est_to_s
+    start_pos = round(start_pos_all_new)
 
-yi = gen_refchirp(est_to_s, estf, len(pktdata_in))
+    yi = gen_refchirp(est_to_s, estf, len(pktdata_in))
 
-retvals = 0
-for i in range(Config.preamble_len):
-    xv = cp.arange(round(est_to_s + i * Config.nsamp), round(est_to_s + (i+1) * Config.nsamp))
-    retvals += cp.abs(pktdata_in[xv].dot(cp.conj(yi[xv]))) / len(xv)
-    # if i>=Config.preamble_len - 2:
-    #     logger.warning(f"objcorenew {est_cfo_f=:11.3f} {est_to_s=:11.3f} {i=} {cp.abs(pktdata_in[xv].dot(cp.conj(yi[xv]))) / len(xv)}")
-for i in range(Config.sfdpos, Config.sfdpos + 3):
-    xv = cp.arange(round(est_to_s + i * Config.nsamp), round(est_to_s + (i+1) * Config.nsamp))
-    if i == Config.sfdpos + 2:
-        xv = cp.arange(round(est_to_s + i * Config.nsamp), round(est_to_s + (i + 0.25) * Config.nsamp))
-    retvals += cp.abs(pktdata_in[xv].dot(cp.conj(yi[xv]))) / len(xv)
-    # logger.warning(f"objcorenew {est_cfo_f=:11.3f} {est_to_s=:11.3f} {i=} {cp.abs(pktdata_in[xv].dot(cp.conj(yi[xv]))) / len(xv)}")
-# logger.warning(f"objcorenew {est_cfo_f=:11.3f} {est_to_s=:11.3f} {retvals=}")
+    retvals = 0
+    for i in range(Config.preamble_len):
+        xv = cp.arange(round(est_to_s + i * Config.nsamp), round(est_to_s + (i+1) * Config.nsamp))
+        retvals += cp.abs(pktdata_in[xv].dot(cp.conj(yi[xv]))) / len(xv)
+        # if i>=Config.preamble_len - 2:
+        #     logger.warning(f"objcorenew {est_cfo_f=:11.3f} {est_to_s=:11.3f} {i=} {cp.abs(pktdata_in[xv].dot(cp.conj(yi[xv]))) / len(xv)}")
+    for i in range(Config.sfdpos, Config.sfdpos + 3):
+        xv = cp.arange(round(est_to_s + i * Config.nsamp), round(est_to_s + (i+1) * Config.nsamp))
+        if i == Config.sfdpos + 2:
+            xv = cp.arange(round(est_to_s + i * Config.nsamp), round(est_to_s + (i + 0.25) * Config.nsamp))
+        retvals += cp.abs(pktdata_in[xv].dot(cp.conj(yi[xv]))) / len(xv)
+        # logger.warning(f"objcorenew {est_cfo_f=:11.3f} {est_to_s=:11.3f} {i=} {cp.abs(pktdata_in[xv].dot(cp.conj(yi[xv]))) / len(xv)}")
+    # logger.warning(f"objcorenew {est_cfo_f=:11.3f} {est_to_s=:11.3f} {retvals=}")
 
-return retvals
+    return retvals
 
 
 
