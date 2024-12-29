@@ -97,21 +97,47 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         # print(coefficients_2d, betanew, coefficients_1d )
         dvx.append((betanew, *coefficients_1d))
         # dvx.append(coefficients_2d)
-        if False:#pidx % 100 == 0:
-            xv = np.arange(start_pos - 1000, start_pos + Config.nsamp + 1000)
-            # plt.plot(np.unwrap(np.angle(tocpu(pktdata_in[start_pos - 100: start_pos + 100]))))
-            fig = px.line(x=xv, y=np.unwrap(np.angle(tocpu(pktdata_in[xv]))))
-            fig.add_vline(x=start_pos + 1000)
-            fig.add_vline(x=start_pos + Config.nsamp - 1000)
-            fig.update_layout(title=f"{pidx=}")
+        if pidx % 100 == 0:
+            symb_in = pktdata_in[xv]
+            symb2 = symb_in * mychirp(np.arange(len(symb_in)) / Config.fs, 0, -betanew/np.pi, 1)
+            fig = px.line(x=xv, y=np.unwrap(np.angle(tocpu(symb_in))))
+            fig.update_layout(title=f"{pidx=} orig")
             fig.show()
+
+            # xv = np.arange(start_pos - 1000, start_pos + Config.nsamp + 1000)
+            # plt.plot(np.unwrap(np.angle(tocpu(pktdata_in[start_pos - 100: start_pos + 100]))))
+            fig = px.line(x=xv, y=np.unwrap(np.angle(tocpu(symb2))))
+            # fig.add_vline(x=start_pos + 1000)
+            # fig.add_vline(x=start_pos + Config.nsamp - 1000)
+            fig.update_layout(title=f"{pidx=} addchirp")
+            fig.show()
+            coefficients_2d = np.polyfit(x_data[xv], np.unwrap(np.angle(tocpu(symb2))), 2)
+            print(coefficients_2d, betanew)
+            coefficients_1d = np.polyfit(x_data[xv], np.unwrap(np.angle(tocpu(symb2))), 1)
+            print(coefficients_1d, betanew)
+            coefficients_1d[1] = 0
+            fig = px.line(x=xv, y=np.angle(tocpu(symb2) / np.exp(1j * np.polyval(coefficients_1d, x_data[xv]))))
+            fig.update_layout(title=f"{pidx=} diffline")
+            fig.show()
+            fig = px.line(x=xv, y=np.abs(np.cumsum(tocpu(symb2) / np.exp(1j * np.polyval(coefficients_1d, x_data[xv])))))
+            fig.add_trace(go.Scatter(x=xv, y=np.cumsum(np.abs(tocpu(symb_in))), mode='lines'))
+            fig.update_layout(title=f"{pidx=} cumsum")
+            fig.show()
+            fig = px.line(x=xv, y=tocpu(cp.abs(symb_in)))
+            fig.update_layout(title=f"{pidx=} symb abs {len(symb_in)=}")
+            fig.show()
+            print("addpow", np.abs(tocpu(symb2).dot(np.exp(-1j * np.polyval(coefficients_1d, x_data[xv]))))/len(symb_in), tocpu(cp.mean(cp.abs(symb_in))), "freq", coefficients_1d[0]/2/np.pi)
+
     dvx = np.array(dvx)
 
-    fig = go.Figure(layout_title_text="coeff2d 0")
-    fig.add_trace(go.Scatter(y=dvx[:, 0]))
-    fig.add_hline(y=betanew, line=dict(color='black', dash='dot'))
-    fig.add_hline(y=beta, line=dict(color='black', dash='dot'))
+    fig = go.Figure(layout_title_text="coeff2d 1")
+    fig.add_trace(go.Scatter(y=dvx[:, 2]))
+    # fig.add_hline(y=betanew, line=dict(color='black', dash='dot'))
+    # fig.add_hline(y=beta, line=dict(color='black', dash='dot'))
     fig.show()
+
+
+    sys.exit(0)
 
 
 
