@@ -72,30 +72,94 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     amaxdfs = []
     # for pidx in range(Config.sfdpos + 2, round(Config.total_len)):
     dvx = []
-    pidx_range = np.arange(32, Config.preamble_len)
+    pidx_range = np.arange(Config.preamble_len)
     beta = Config.bw / ((2 ** Config.sf) / Config.bw) * np.pi
-    estf = est_cfo_f #- 12000
-    # est_to_s += 1000
+    estf = -43462.671492551664+2786#est_cfo_f #- 12000
+    # est_to_s += 1004.44
     betanew = beta * (1 + 2 * estf / Config.sig_freq)
-    x_data = (np.arange(len(pktdata_in)) - est_to_s) / Config.fs #* (1 + estf / Config.sig_freq)
+    x_data = (np.arange(len(pktdata_in))) / Config.fs #* (1 + estf / Config.sig_freq)
+    pktdata_shift = add_freq(pktdata_in, -estf)
+    y_data_all = np.unwrap(np.angle(tocpu(pktdata_shift.astype(np.complex128))))
+    x_data_all = np.arange(0, len(pktdata_in), 1000)
+    if False:
+        fig = go.Figure(layout_title_text="y data all")
+        fig.add_trace(go.Scatter(x=x_data_all, y=y_data_all[x_data_all]))
+        fig.show()
     for pidx in pidx_range:
         start_pos_all_new = nsamp_small * pidx * (1 - estf / Config.sig_freq) + est_to_s
         start_pos = round(start_pos_all_new)
         xv = np.arange(start_pos + 1000, start_pos + Config.nsamp - 1000)
-        y_data = np.unwrap(np.angle(tocpu(pktdata_in[xv])))
+        y_data = y_data_all[xv]
+        # y_data = np.unwrap(np.angle(tocpu(pktdata_in[xv])))
         coefficients_2d = np.polyfit(x_data[xv], y_data, 2)
         y_data_1d = y_data - np.polyval((betanew, 0, 0), x_data[xv])
         coefficients_1d = np.polyfit(x_data[xv], y_data_1d, 1)
-        # print(coefficients_2d, betanew, )
-        dvx.append(coefficients_1d[0])
-        # if pidx % 100 == 0:
-        #     plt.plot(x_data[xv], y_data)
-        #     plt.title(f"{pidx=}")
-        #     plt.show()
-
-
-    coefficients_1dfit = np.polyfit(pidx_range, dvx, 1)
+        # print(coefficients_2d, betanew, coefficients_1d )
+        dvx.append((betanew, *coefficients_1d))
+        # dvx.append(coefficients_2d)
+        if False:#pidx % 100 == 0:
+            xv = np.arange(start_pos - 1000, start_pos + Config.nsamp + 1000)
+            # plt.plot(np.unwrap(np.angle(tocpu(pktdata_in[start_pos - 100: start_pos + 100]))))
+            fig = px.line(x=xv, y=np.unwrap(np.angle(tocpu(pktdata_in[xv]))))
+            fig.add_vline(x=start_pos + 1000)
+            fig.add_vline(x=start_pos + Config.nsamp - 1000)
+            fig.update_layout(title=f"{pidx=}")
+            fig.show()
     dvx = np.array(dvx)
+
+    fig = go.Figure(layout_title_text="coeff2d 0")
+    fig.add_trace(go.Scatter(y=dvx[:, 0]))
+    fig.add_hline(y=betanew, line=dict(color='black', dash='dot'))
+    fig.add_hline(y=beta, line=dict(color='black', dash='dot'))
+    fig.show()
+
+
+
+    diffs = []
+    for pidx in pidx_range[1:]:
+        # coeffs1 = (betanew, *dvx[pidx - 1])
+        # coeffs2 = (betanew, *dvx[pidx])
+        coeffs1 = dvx[pidx - 1]
+        coeffs2 = dvx[pidx]
+        coeffs_diff = np.polysub(coeffs1, coeffs2)
+        intersection_x_vals = np.roots(coeffs_diff)
+        if len(intersection_x_vals) == 2:
+            if abs(intersection_x_vals[0]) < abs(intersection_x_vals[1]):
+                diffs.append(intersection_x_vals[0])
+            else:
+                diffs.append(intersection_x_vals[1])
+        else:
+            diffs.append(intersection_x_vals[0])
+        if False:#pidx > pidx_range[1]:# True:#pidx % 100 == 0:
+            start_pos_all_new = nsamp_small * (pidx-1) * (1 - estf / Config.sig_freq) + est_to_s
+            start_pos = round(start_pos_all_new)
+            xv = np.arange(start_pos - 1000, start_pos + Config.nsamp + 1000)
+            fig = px.line(x=xv, y=np.unwrap(np.angle(tocpu(pktdata_in)))[xv])
+            y_data1 = np.polyval(coeffs1,x_data[xv])
+            y_data2 = np.polyval(coeffs2,x_data[xv])
+            # fig.add_trace(go.Scatter(x=xv, y=y_data1))
+            # fig.add_trace(go.Scatter(x=xv, y=y_data2))
+            fig.add_vline(x=diffs[-2]*Config.fs)
+            fig.add_vline(x=diffs[-1]*Config.fs)
+            fig.update_layout(title=f"{pidx=}")
+            fig.show()
+
+    fig = go.Figure(layout_title_text="intersect points")
+    fig.add_trace(go.Scatter(x=pidx_range[1:], y=diffs))
+    coefficients_1d = np.polyfit(pidx_range[1:], diffs, 1)
+    print(coefficients_1d)
+    print(f"estimated time:{coefficients_1d[0]} cfo ppm from time: {1-coefficients_1d[0]/Config.nsampf*Config.fs} cfo: {(1-coefficients_1d[0]/Config.nsampf*Config.fs)*Config.sig_freq}")
+    fig.add_trace(go.Scatter(x=pidx_range[1:], y=np.polyval(coefficients_1d,pidx_range[1:])))
+    fig.show()
+    fig = go.Figure(layout_title_text="intersect points diff")
+    fig.add_trace(go.Scatter(x=pidx_range[1:], y=diffs-np.polyval(coefficients_1d,pidx_range[1:])))
+    fig.show()
+
+    fig=go.Figure(layout_title_text="cfo of each symb")
+    fig.add_trace(go.Scatter(y=(np.diff(diffs)/Config.nsampf*Config.fs-1)*Config.sig_freq, mode='markers', marker=dict(size=2)))
+    fig.show()
+
+    coefficients_1dfit = np.polyfit(pidx_range, dvx[:, 0], 1)
     fig = go.Figure(layout_title_text="1d")
     # fig.add_trace(go.Scatter(x=pidx_range, y=- dvx / (2 * betanew), mode='lines',))
     # fig.add_trace(go.Scatter(x=pidx_range, y=- np.poly1d(coefficients_1dfit)(pidx_range) / (2 * betanew), mode='lines',))
@@ -104,6 +168,8 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     timediff = - coefficients_1dfit[0] / (2 * betanew)
     freqdiff = (timediff - Config.tsig / Config.fs) / Config.nsampf * Config.fs * Config.sig_freq
     print(timediff, Config.tsig / Config.fs, (timediff - Config.tsig / Config.fs) / Config.nsampf * Config.fs, freqdiff)
+    time0 = - coefficients_1dfit[1] / (2 * betanew)
+    print(time0 * Config.fs - 0.5 * nsamp_small)
     fig.show()
     sys.exit(0)
 
