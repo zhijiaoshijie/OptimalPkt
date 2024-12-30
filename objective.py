@@ -73,14 +73,16 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     # for pidx in range(Config.sfdpos + 2, round(Config.total_len)):
     dvx = []
     pidx_range = np.arange(Config.preamble_len)
-    beta = Config.bw / ((2 ** Config.sf) / Config.bw) * np.pi
+    beta = Config.bw / ((2 ** Config.sf) / Config.bw) * np.pi /Config.fs/Config.fs
     estf = -43462.671492551664+2786#est_cfo_f #- 12000
     # est_to_s += 1004.44
     betanew = beta * (1 + 2 * estf / Config.sig_freq)
-    x_data = (np.arange(len(pktdata_in))) / Config.fs #* (1 + estf / Config.sig_freq)
+    x_data = (np.arange(len(pktdata_in))) #/ Config.fs #* (1 + estf / Config.sig_freq)
     pktdata_shift = add_freq(pktdata_in, -estf)
     y_data_all = np.unwrap(np.angle(tocpu(pktdata_shift.astype(np.complex128))))
     x_data_all = np.arange(0, len(pktdata_in), 1000)
+    est_freq2 = []
+    est_pow = []
     if False:
         fig = go.Figure(layout_title_text="y data all")
         fig.add_trace(go.Scatter(x=x_data_all, y=y_data_all[x_data_all]))
@@ -96,44 +98,35 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         coefficients_1d = np.polyfit(x_data[xv], y_data_1d, 1)
         # print(coefficients_2d, betanew, coefficients_1d )
         dvx.append((betanew, *coefficients_1d))
-        # dvx.append(coefficients_2d)
-        if pidx % 100 == 0:
-            symb_in = pktdata_in[xv]
-            symb2 = symb_in * mychirp(np.arange(len(symb_in)) / Config.fs, 0, -betanew/np.pi, 1)
-            fig = px.line(x=xv, y=np.unwrap(np.angle(tocpu(symb_in))))
-            fig.update_layout(title=f"{pidx=} orig")
-            fig.show()
 
-            # xv = np.arange(start_pos - 1000, start_pos + Config.nsamp + 1000)
-            # plt.plot(np.unwrap(np.angle(tocpu(pktdata_in[start_pos - 100: start_pos + 100]))))
-            fig = px.line(x=xv, y=np.unwrap(np.angle(tocpu(symb2))))
-            # fig.add_vline(x=start_pos + 1000)
-            # fig.add_vline(x=start_pos + Config.nsamp - 1000)
-            fig.update_layout(title=f"{pidx=} addchirp")
-            fig.show()
-            coefficients_2d = np.polyfit(x_data[xv], np.unwrap(np.angle(tocpu(symb2))), 2)
-            print(coefficients_2d, betanew)
-            coefficients_1d = np.polyfit(x_data[xv], np.unwrap(np.angle(tocpu(symb2))), 1)
-            print(coefficients_1d, betanew)
-            coefficients_1d[1] = 0
-            fig = px.line(x=xv, y=np.angle(tocpu(symb2) / np.exp(1j * np.polyval(coefficients_1d, x_data[xv]))))
+
+        symb_in = pktdata_in[xv]
+        symb2 = symb_in * mychirp(np.arange(len(symb_in)) , 0, -betanew/np.pi, 1)
+
+        coefficients_1d = np.polyfit(x_data[xv], np.unwrap(np.angle(tocpu(symb2))), 1)
+
+        addpow = np.abs(tocpu(symb2).dot(np.exp(-1j * np.polyval((coefficients_1d[0], 0), x_data[xv]))))/len(symb_in)
+        freq = coefficients_1d[0]/2/np.pi
+        est_freq2.append(freq)
+        est_pow.append(addpow)
+        if pidx%100==0:#addpow < 0.5:
+            ydata = np.unwrap(np.angle(tocpu(symb2)))
+            coefficients_2d = np.polyfit(x_data[xv], ydata, 2)
+            coefficients_1d = np.polyfit(x_data[xv], ydata, 1)
+            print(pidx, coefficients_2d, coefficients_1d, betanew)
+            freqreal = np.polyval((betanew / 2 / np.pi * Config.fs, coefficients_1d[0]/ 2 / np.pi*Config.fs - start_pos * betanew / 2 / np.pi* Config.fs), x_data[xv])
+            fig = px.line(x=freqreal, y=ydata - np.polyval(coefficients_1d, x_data[xv]))
             fig.update_layout(title=f"{pidx=} diffline")
             fig.show()
-            fig = px.line(x=xv, y=np.abs(np.cumsum(tocpu(symb2) / np.exp(1j * np.polyval(coefficients_1d, x_data[xv])))))
-            fig.add_trace(go.Scatter(x=xv, y=np.cumsum(np.abs(tocpu(symb_in))), mode='lines'))
-            fig.update_layout(title=f"{pidx=} cumsum")
-            fig.show()
-            fig = px.line(x=xv, y=tocpu(cp.abs(symb_in)))
-            fig.update_layout(title=f"{pidx=} symb abs {len(symb_in)=}")
-            fig.show()
-            print("addpow", np.abs(tocpu(symb2).dot(np.exp(-1j * np.polyval(coefficients_1d, x_data[xv]))))/len(symb_in), tocpu(cp.mean(cp.abs(symb_in))), "freq", coefficients_1d[0]/2/np.pi)
+
 
     dvx = np.array(dvx)
 
-    fig = go.Figure(layout_title_text="coeff2d 1")
-    fig.add_trace(go.Scatter(y=dvx[:, 2]))
-    # fig.add_hline(y=betanew, line=dict(color='black', dash='dot'))
-    # fig.add_hline(y=beta, line=dict(color='black', dash='dot'))
+    fig = go.Figure(layout_title_text="estfreq")
+    fig.add_trace(go.Scatter(y=est_freq2))
+    fig.show()
+    fig = go.Figure(layout_title_text="addpow")
+    fig.add_trace(go.Scatter(y=est_pow))
     fig.show()
 
 
