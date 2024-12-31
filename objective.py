@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+from numpy.ma.extras import polyfit
 from plotly_resampler import FigureResampler
 import sys
 
@@ -74,7 +75,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     dvx = []
     pidx_range = np.arange(Config.preamble_len)
     beta = Config.bw / ((2 ** Config.sf) / Config.bw) * np.pi /Config.fs/Config.fs
-    estf = -43462.671492551664+2786#est_cfo_f #- 12000
+    estf = -43462.671492551664+2786-2871.857651918567#est_cfo_f #- 12000
     # est_to_s += 1004.44
     betanew = beta * (1 + 2 * estf / Config.sig_freq)
     x_data = (np.arange(len(pktdata_in))) #/ Config.fs #* (1 + estf / Config.sig_freq)
@@ -87,6 +88,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         fig = go.Figure(layout_title_text="y data all")
         fig.add_trace(go.Scatter(x=x_data_all, y=y_data_all[x_data_all]))
         fig.show()
+    pidxs = []
     for pidx in pidx_range:
         start_pos_all_new = nsamp_small * pidx * (1 - estf / Config.sig_freq) + est_to_s
         start_pos = round(start_pos_all_new)
@@ -101,14 +103,19 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
 
 
         symb_in = pktdata_in[xv]
-        symb2 = symb_in * mychirp(np.arange(len(symb_in)) , 0, -betanew/np.pi, 1)
+        t = x_data[xv] - start_pos_all_new
+        phase = 2 * cp.pi * (0 * t - 0.5 * betanew/np.pi * t * t)
+        newchirp = cp.exp(1j * togpu(phase))
+        symb2 = symb_in * newchirp
 
         coefficients_1d = np.polyfit(x_data[xv], np.unwrap(np.angle(tocpu(symb2))), 1)
 
         addpow = np.abs(tocpu(symb2).dot(np.exp(-1j * np.polyval((coefficients_1d[0], 0), x_data[xv]))))/len(symb_in)
         freq = coefficients_1d[0]/2/np.pi
-        est_freq2.append(freq)
-        est_pow.append(addpow)
+        if addpow > 0.5:
+            pidxs.append(pidx)
+            est_freq2.append(freq)
+            est_pow.append(addpow)
         if pidx%100==0:#addpow < 0.5:
             ydata = np.unwrap(np.angle(tocpu(symb2)))
             coefficients_2d = np.polyfit(x_data[xv], ydata, 2)
@@ -120,14 +127,19 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
             fig.show()
 
 
+
     dvx = np.array(dvx)
 
+    co_freq = np.polyfit(pidxs[200:], est_freq2[200:], 1)
     fig = go.Figure(layout_title_text="estfreq")
-    fig.add_trace(go.Scatter(y=est_freq2))
+    fig.add_trace(go.Scatter(x=pidxs,y=est_freq2))
+    fig.add_trace(go.Scatter(x=pidxs,y=np.polyval(co_freq, pidxs)))
     fig.show()
+    print(co_freq)
     fig = go.Figure(layout_title_text="addpow")
-    fig.add_trace(go.Scatter(y=est_pow))
+    fig.add_trace(go.Scatter(x=pidxs,y=est_pow))
     fig.show()
+
 
 
     sys.exit(0)
