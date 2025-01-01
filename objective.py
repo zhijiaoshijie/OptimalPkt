@@ -74,11 +74,11 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     # for pidx in range(Config.sfdpos + 2, round(Config.total_len)):
     dvx = []
     pidx_range = np.arange(Config.preamble_len)
-    beta = Config.bw / ((2 ** Config.sf) / Config.bw) * np.pi /Config.fs/Config.fs
+    beta = Config.bw / ((2 ** Config.sf) / Config.bw) * np.pi
     estf = -43462.671492551664+2786-2871.857651918567#est_cfo_f #- 12000
     # est_to_s += 1004.44
     betanew = beta * (1 + 2 * estf / Config.sig_freq)
-    x_data = (np.arange(len(pktdata_in))) #/ Config.fs #* (1 + estf / Config.sig_freq)
+    x_data = (np.arange(len(pktdata_in))) / Config.fs #* (1 + estf / Config.sig_freq)
     pktdata_shift = add_freq(pktdata_in, -estf)
     y_data_all = np.unwrap(np.angle(tocpu(pktdata_shift.astype(np.complex128))))
     x_data_all = np.arange(0, len(pktdata_in), 1000)
@@ -103,7 +103,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
 
 
         symb_in = pktdata_in[xv]
-        t = x_data[xv] - start_pos_all_new
+        t = x_data[xv] - start_pos_all_new/Config.fs
         phase = 2 * cp.pi * (0 * t - 0.5 * betanew/np.pi * t * t)
         newchirp = cp.exp(1j * togpu(phase))
         symb2 = symb_in * newchirp
@@ -116,7 +116,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
             pidxs.append(pidx)
             est_freq2.append(freq)
             est_pow.append(addpow)
-        if pidx%100==0:#addpow < 0.5:
+        if False:#pidx%100==0:#addpow < 0.5:
             ydata = np.unwrap(np.angle(tocpu(symb2)))
             coefficients_2d = np.polyfit(x_data[xv], ydata, 2)
             coefficients_1d = np.polyfit(x_data[xv], ydata, 1)
