@@ -75,8 +75,8 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     dvx = []
     pidx_range = np.arange(Config.preamble_len)
     beta = Config.bw / ((2 ** Config.sf) / Config.bw) * np.pi
-    estf = -43462.671492551664+2786-2871.857651918567#est_cfo_f #- 12000
-    # est_to_s += 1004.44
+    estf = -43462.671492551664+2786-2871.857651918567+3332-238#est_cfo_f #- 12000
+    est_to_s -= 0.5
     betanew = beta * (1 + 2 * estf / Config.sig_freq)
     x_data = (np.arange(len(pktdata_in))) / Config.fs #* (1 + estf / Config.sig_freq)
     pktdata_shift = add_freq(pktdata_in, -estf)
@@ -116,13 +116,19 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
             pidxs.append(pidx)
             est_freq2.append(freq)
             est_pow.append(addpow)
-        if False:#pidx%100==0:#addpow < 0.5:
-            ydata = np.unwrap(np.angle(tocpu(symb2)))
+        if pidx%100==0:#addpow < 0.5:
+            ydata = np.unwrap(np.angle(tocpu(symb_in)))
             coefficients_2d = np.polyfit(x_data[xv], ydata, 2)
-            coefficients_1d = np.polyfit(x_data[xv], ydata, 1)
-            print(pidx, coefficients_2d, coefficients_1d, betanew)
-            freqreal = np.polyval((betanew / 2 / np.pi * Config.fs, coefficients_1d[0]/ 2 / np.pi*Config.fs - start_pos * betanew / 2 / np.pi* Config.fs), x_data[xv])
-            fig = px.line(x=freqreal, y=ydata - np.polyval(coefficients_1d, x_data[xv]))
+            # coefficients_1d = np.polyfit(x_data[xv], ydata, 1)
+            # print(pidx, coefficients_2d, coefficients_1d, betanew)
+            # freqreal = np.polyval((betanew / 2 / np.pi * Config.fs, coefficients_1d[0]/ 2 / np.pi*Config.fs - start_pos * betanew / 2 / np.pi* Config.fs), x_data[xv])
+            # fig = px.line(x=freqreal, y=ydata - np.polyval(coefficients_1d, x_data[xv]))
+            fig=go.Figure()
+            xv2 = np.arange(start_pos - 1000, start_pos + Config.nsamp + 1000)
+            fig.add_trace(go.Scatter(x=x_data[xv2], y=np.unwrap(np.angle(tocpu(pktdata_in[xv2])))))
+            fig.add_trace(go.Scatter(x=x_data[xv2], y=np.polyval(coefficients_2d, x_data[xv2])))
+            fig.add_vline(x=start_pos_all_new/Config.fs)
+            fig.add_vline(x=(start_pos_all_new + nsamp_small * (1 - estf / Config.sig_freq)) /Config.fs)
             fig.update_layout(title=f"{pidx=} diffline")
             fig.show()
 
@@ -135,7 +141,9 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     fig.add_trace(go.Scatter(x=pidxs,y=est_freq2))
     fig.add_trace(go.Scatter(x=pidxs,y=np.polyval(co_freq, pidxs)))
     fig.show()
-    print(co_freq)
+    f0 = co_freq[1]+(Config.bw*(1+estf/Config.sig_freq)/2)
+    fdiff = co_freq[0]/Config.bw*Config.sig_freq
+    print(fdiff, (f0 + estf + fdiff)/beta/np.pi/2*Config.fs)
     fig = go.Figure(layout_title_text="addpow")
     fig.add_trace(go.Scatter(x=pidxs,y=est_pow))
     fig.show()
