@@ -75,7 +75,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     dvx = []
     pidx_range = np.arange(Config.preamble_len)
     beta = Config.bw / ((2 ** Config.sf) / Config.bw) * np.pi
-    estf = -43462.671492551664+2786-2871.857651918567+3332-238#est_cfo_f #- 12000
+    estf = -40454.52914447023#-43462.671492551664+2786-2871.857651918567+3332-238#est_cfo_f #- 12000
     est_to_s -= 0.5
     betanew = beta * (1 + 2 * estf / Config.sig_freq)
     x_data = (np.arange(len(pktdata_in))) / Config.fs #* (1 + estf / Config.sig_freq)
@@ -84,7 +84,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     x_data_all = np.arange(0, len(pktdata_in), 1000)
     est_freq2 = []
     est_pow = []
-    if False:
+    if True:
         if False:
             fig = go.Figure(layout_title_text="y data all")
             fig.add_trace(go.Scatter(x=x_data_all, y=y_data_all[x_data_all]))
@@ -200,9 +200,6 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
 
     # find intersections of all symbols
 
-    est_freq2 = []
-    est_pow = []
-    pidxs = []
     diffs = []
     for pidx in pidx_range[:-1]:
         start_pos_all_new = nsamp_small * pidx * (1 - estf / Config.sig_freq) + est_to_s
