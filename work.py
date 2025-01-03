@@ -38,7 +38,13 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
     betanew = beta * (1 + 2 * estf / Config.sig_freq)
     upchirp = cp.exp(2j * cp.pi * (betanew / 2 * x ** 2 / Config.fs ** 2 + (- bwnew / 2) * x / Config.fs))
     downchirp = cp.conj(upchirp)
-
+    if False: # not knowing how many preambles: search for sfd
+        maxdowns = []
+        for pidx in range(0, int((len(pktdata_in)-tstart) / Config.nsamp)-10):
+            data0 = dechirp_fft(tstart, fstart, pktdata_in, upchirp, pidx, False)
+            maxdowns.append(tocpu(cp.max(cp.abs(data0))))
+        fig=px.line(y=maxdowns)
+        fig.show()
     for pidx in range(Config.skip_preambles, Config.preamble_len + Config.detect_range_pkts):
         data0 = dechirp_fft(tstart, fstart, pktdata_in, downchirp, pidx, True)
         Config.fft_ups_x[pidx] = data0

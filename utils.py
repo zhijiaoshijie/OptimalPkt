@@ -75,6 +75,11 @@ class Config:
         preamble_len = 512
         total_len = 90.25-16+512
         file_paths_zip = (("/data/djl/OptimalPkt/test_1218_3", 0),) # !!! TODO FOR DEBUG
+    if True:
+        preamble_len = 240
+        total_len = 308.25
+        file_paths_zip = (("/data/djl/OptimalPkt/test_1226", 0),) # !!! TODO FOR DEBUG
+
 
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples
@@ -110,7 +115,7 @@ class Config:
     if not os.path.exists(figpath): os.mkdir(figpath)
 
     fft_upsamp = 1024
-    detect_range_pkts = 4
+    detect_range_pkts = 6
     assert detect_range_pkts >= 2 # add 1, for buffer of cross-add
     detect_to_max = nsamp * 2
     fft_n = int(fs) #nsamp * fft_upsamp
@@ -226,9 +231,13 @@ def dechirp_fft(tstart, fstart, pktdata_in, refchirp, pidx, ispreamble):
     start_pos = round(start_pos_all)
     start_pos_d = start_pos_all - start_pos
     sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
-    # plt.plot(tocpu(cp.unwrap(cp.angle(refchirp))))
-    # plt.plot(tocpu(cp.unwrap(cp.angle(sig1))))
-    # plt.show()
+    if len(refchirp) != len(sig1):
+        print(tstart, fstart, pidx, ispreamble)
+        print(len(refchirp), len(sig1))
+        plt.plot(tocpu(cp.unwrap(cp.angle(refchirp))))
+        plt.plot(tocpu(cp.unwrap(cp.angle(sig1))))
+        plt.show()
+
     sig2 = sig1 * refchirp
     freqdiff = start_pos_d / nsamp_small * Config.bw / Config.fs * Config.fft_n
     if ispreamble: freqdiff -= fstart / Config.sig_freq * Config.bw * pidx

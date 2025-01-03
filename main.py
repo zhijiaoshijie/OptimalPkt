@@ -44,51 +44,52 @@ if __name__ == "__main__":
             data1 /= cp.mean(cp.abs(data1))
             data2 /= cp.mean(cp.abs(data2)) # TODO remove normalization for production
 
-            # objective_decode(-41890.277+25, 12802.113, data1)
-            f = -43441.83333760181
-            t = 19447.437-69
-            pktlen = int((len(data1) - t) / Config.nsampf - 0.25)
-            if False:
-                pktdata_in = data1
-                yi = gen_refchirp(f, t, 20*Config.nsamp)
-                estf = f
-                start_pos_all_new = t
-                start_pos = round(start_pos_all_new)
-                xv = cp.arange(start_pos - 30000, start_pos + 10 * Config.nsamp)
-                if True:#pkt_idx==2:
-                    fig2 = FigureResampler(go.Figure(layout_title_text=f"mainplt {pkt_idx=} {f=:.3f} {t=:.3f}"))
-                    fig2.add_trace(go.Scatter(x=xv, y=tocpu(cp.unwrap(cp.angle(pktdata_in)[xv]))))
-                    fig2.add_trace(go.Scatter(x=xv, y=tocpu(cp.unwrap(cp.angle(data2)[xv]))))
-                    # fig.add_trace(go.Scatter(x=xv, y=tocpu(cp.unwrap(cp.angle(yi)[xv]))))
-                    fig2.add_vline(x=t)
-                    fig2.add_vline(x=t + Config.nsampf)
-                    fig2.add_vline(x=t + Config.nsampf * 2)
-                    fig2.show()
-            objective_decode(f, t, data1)
-            for pidx in range(pktlen):
-                pidx2 = pidx
-                if pidx > Config.sfdpos: pidx2 += 0.25
-                xrange = cp.arange(round(Config.nsampf * pidx2 + t), round(Config.nsampf * (pidx2 + 1) + t))
-                sig1 = data1[xrange]
-                if pidx % 10 == 0:
-                    fig = px.scatter(y=tocpu(cp.unwrap(cp.angle(sig1))), title=f"{pidx=}")
-                    fig.show()
-            # sys.exit(0)
+            if True:
+                # objective_decode(-41890.277+25, 12802.113, data1)
+                f = -40900.000
+                t = 72.197+10082
+                pktlen = int((len(data1) - t) / Config.nsampf - 0.25)
+                if False:
+                    pktdata_in = data1
+                    yi = gen_refchirp(f, t, 20*Config.nsamp)
+                    estf = f
+                    start_pos_all_new = t
+                    start_pos = round(start_pos_all_new)
+                    xv = cp.arange(start_pos - 30000, start_pos + 10 * Config.nsamp)
+                    if True:#pkt_idx==2:
+                        fig2 = FigureResampler(go.Figure(layout_title_text=f"mainplt {pkt_idx=} {f=:.3f} {t=:.3f}"))
+                        fig2.add_trace(go.Scatter(x=xv, y=tocpu(cp.unwrap(cp.angle(pktdata_in)[xv]))))
+                        fig2.add_trace(go.Scatter(x=xv, y=tocpu(cp.unwrap(cp.angle(data2)[xv]))))
+                        # fig.add_trace(go.Scatter(x=xv, y=tocpu(cp.unwrap(cp.angle(yi)[xv]))))
+                        fig2.add_vline(x=t)
+                        fig2.add_vline(x=t + Config.nsampf)
+                        fig2.add_vline(x=t + Config.nsampf * 2)
+                        fig2.show()
+                objective_decode(f, t, data1)
+                for pidx in range(pktlen):
+                    pidx2 = pidx
+                    if pidx > Config.sfdpos: pidx2 += 0.25
+                    xrange = cp.arange(round(Config.nsampf * pidx2 + t), round(Config.nsampf * (pidx2 + 1) + t))
+                    sig1 = data1[xrange]
+                    if pidx % 10 == 0:
+                        fig = px.scatter(y=tocpu(cp.unwrap(cp.angle(sig1))), title=f"{pidx=}")
+                        fig.show()
+                # sys.exit(0)
 
-            # xval = np.arange(-200, 200, 1) -41890.277+25
-            # xval2 = []
-            # yval2 = []
-            # for x in xval:
-            #     ret = objective_decode(x, 12802.113, data1)
-            #     if ret:
-            #         xval2.append(ret[0])
-            #         yval2.append(ret[1])
-            # fig = px.scatter(x=xval2, y=yval2)
-            # fig.show()
-            # sys.exit(0)
+                # xval = np.arange(-200, 200, 1) -41890.277+25
+                # xval2 = []
+                # yval2 = []
+                # for x in xval:
+                #     ret = objective_decode(x, 12802.113, data1)
+                #     if ret:
+                #         xval2.append(ret[0])
+                #         yval2.append(ret[1])
+                # fig = px.scatter(x=xval2, y=yval2)
+                # fig.show()
+                # sys.exit(0)
 
             est_cfo_f = -37661.500
-            est_to_s =  19447.437
+            est_to_s =  0
             trytimes = 2
             vals = np.zeros((trytimes, 3))
             # iterate trytimes times to detect, each time based on estimations of the last time

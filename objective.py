@@ -97,9 +97,8 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         # y_data = np.unwrap(np.angle(tocpu(pktdata_in[xv])))
         coefficients_2d = np.polyfit(x_data[xv], y_data, 2)
         y_data_1d = y_data - np.polyval((betanew, 0, 0), x_data[xv])
-        coefficients_1d = np.polyfit(x_data[xv], y_data_1d, 1)
-        # print(coefficients_2d, betanew, coefficients_1d )
-        dvx.append((betanew, *coefficients_1d))
+        coefficients_1dx = np.polyfit(x_data[xv], y_data_1d, 1)
+        dvx.append((betanew, *coefficients_1dx))
 
 
         symb_in = pktdata_in[xv]
@@ -112,11 +111,12 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
 
         addpow = np.abs(tocpu(symb2).dot(np.exp(-1j * np.polyval((coefficients_1d[0], 0), x_data[xv]))))/len(symb_in)
         freq = coefficients_1d[0]/2/np.pi
+        if pidx==199: print(pidx, coefficients_2d, betanew, coefficients_1dx, coefficients_1d, addpow, freq)
         if addpow > 0.5:
             pidxs.append(pidx)
             est_freq2.append(freq)
             est_pow.append(addpow)
-        if pidx%100==0:#addpow < 0.5:
+        if False:#pidx%100==0 or pidx<3 or pidx>237:#addpow < 0.5:
             ydata = np.unwrap(np.angle(tocpu(symb_in)))
             coefficients_2d = np.polyfit(x_data[xv], ydata, 2)
             # coefficients_1d = np.polyfit(x_data[xv], ydata, 1)
@@ -125,8 +125,8 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
             # fig = px.line(x=freqreal, y=ydata - np.polyval(coefficients_1d, x_data[xv]))
             fig=go.Figure()
             xv2 = np.arange(start_pos - 1000, start_pos + Config.nsamp + 1000)
-            fig.add_trace(go.Scatter(x=x_data[xv2], y=np.unwrap(np.angle(tocpu(pktdata_in[xv2])))))
-            fig.add_trace(go.Scatter(x=x_data[xv2], y=np.polyval(coefficients_2d, x_data[xv2])))
+            fig.add_trace(go.Scatter(x=x_data[xv2], y=np.unwrap(np.angle(tocpu(pktdata_in[xv2]))), mode='lines+markers'))
+            fig.add_trace(go.Scatter(x=x_data[xv2], y=np.polyval(coefficients_2d, x_data[xv2]), mode='lines+markers'))
             fig.add_vline(x=start_pos_all_new/Config.fs)
             fig.add_vline(x=(start_pos_all_new + nsamp_small * (1 - estf / Config.sig_freq)) /Config.fs)
             fig.update_layout(title=f"{pidx=} diffline")
@@ -134,9 +134,55 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
 
 
 
+
+
+    pidx_range2 = np.arange(Config.preamble_len+2, Config.preamble_len + 4)
+    for pidx in pidx_range2:
+        start_pos_all_new = nsamp_small * pidx * (1 - estf / Config.sig_freq) + est_to_s
+        start_pos = round(start_pos_all_new)
+        xv = np.arange(start_pos + 1000, start_pos + Config.nsamp - 1000)
+        y_data = y_data_all[xv]
+        # y_data = np.unwrap(np.angle(tocpu(pktdata_in[xv])))
+        coefficients_2d = np.polyfit(x_data[xv], y_data, 2)
+        print(pidx, coefficients_2d, betanew, beta)
+        y_data_1d = y_data - np.polyval((-betanew, 0, 0), x_data[xv])
+        coefficients_1d = np.polyfit(x_data[xv], y_data_1d, 1)
+        # print(coefficients_2d, betanew, coefficients_1d )
+        print(betanew, coefficients_1d)
+
+        symb_in = pktdata_in[xv]
+        t = x_data[xv] - start_pos_all_new/Config.fs
+        phase = 2 * cp.pi * (0 * t + 0.5 * betanew/np.pi * t * t)
+        newchirp = cp.exp(1j * togpu(phase))
+        symb2 = symb_in * newchirp
+
+        coefficients_1d = np.polyfit(x_data[xv], np.unwrap(np.angle(tocpu(symb2))), 1)
+        print(coefficients_1d)
+
+        addpow = np.abs(tocpu(symb2).dot(np.exp(-1j * np.polyval((coefficients_1d[0], 0), x_data[xv]))))/len(symb_in)
+        freq = coefficients_1d[0]/2/np.pi
+        print(addpow, freq, 2 * betanew * freq/Config.fs/Config.fs, start_pos_all_new/Config.fs)
+        pidxs.append(pidx)
+        est_freq2.append(freq - Config.bw*(1 - 2 * estf / Config.sig_freq))
+        if True:
+            ydata = np.unwrap(np.angle(tocpu(symb_in)))
+            coefficients_2d = np.polyfit(x_data[xv], ydata, 2)
+            # coefficients_1d = np.polyfit(x_data[xv], ydata, 1)
+            # print(pidx, coefficients_2d, coefficients_1d, betanew)
+            # freqreal = np.polyval((betanew / 2 / np.pi * Config.fs, coefficients_1d[0]/ 2 / np.pi*Config.fs - start_pos * betanew / 2 / np.pi* Config.fs), x_data[xv])
+            # fig = px.line(x=freqreal, y=ydata - np.polyval(coefficients_1d, x_data[xv]))
+            fig=go.Figure()
+            xv2 = np.arange(start_pos - 1000, start_pos + Config.nsamp + 1000)
+            fig.add_trace(go.Scatter(x=x_data[xv2], y=np.unwrap(np.angle(tocpu(pktdata_in[xv2]))), mode='lines+markers'))
+            fig.add_trace(go.Scatter(x=x_data[xv2], y=np.polyval(coefficients_2d, x_data[xv2]), mode='lines+markers'))
+            fig.add_vline(x=start_pos_all_new/Config.fs)
+            fig.add_vline(x=(start_pos_all_new + nsamp_small * (1 - estf / Config.sig_freq)) /Config.fs)
+            fig.update_layout(title=f"{pidx=} diffline")
+            fig.show()
+
     dvx = np.array(dvx)
 
-    co_freq = np.polyfit(pidxs[200:], est_freq2[200:], 1)
+    co_freq = np.polyfit(pidxs[100:], est_freq2[100:], 1)
     fig = go.Figure(layout_title_text="estfreq")
     fig.add_trace(go.Scatter(x=pidxs,y=est_freq2))
     fig.add_trace(go.Scatter(x=pidxs,y=np.polyval(co_freq, pidxs)))
@@ -147,8 +193,8 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     fig = go.Figure(layout_title_text="addpow")
     fig.add_trace(go.Scatter(x=pidxs,y=est_pow))
     fig.show()
-
-
+    print(est_freq2[-2] - np.polyval(co_freq, pidxs[-2]))
+    print(est_freq2[-1] - np.polyval(co_freq, pidxs[-1]))
 
     sys.exit(0)
 
