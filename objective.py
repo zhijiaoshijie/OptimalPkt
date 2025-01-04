@@ -91,7 +91,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     # accurately compute coeff2d
     def obj(xdata, ydata, coeff2d):
         return np.abs(ydata.dot(np.exp(-1j * np.polyval(coeff2d, xdata))))
-    if True:
+    if False:
         with open("coefout.pkl", "rb") as fl: coeflist = pickle.load(fl)
         lst = coeflist[:, 0]
         lst = lst[abs(lst - 126.58e6) < 0.018e6]
@@ -122,140 +122,143 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         fig.add_trace(go.Scatter(x=pidx_range[1:], y=diffs - np.polyval(coefficients_1d2, pidx_range[1:])))
         fig.show()
         sys.exit(0)
-    for pidx in range(100, 150):
-        start_pos_all_new = nsamp_small * pidx * (1 - estf / Config.sig_freq) + est_to_s
-        start_pos = round(start_pos_all_new)
-        xv = np.arange(start_pos + 1000, start_pos + Config.nsamp - 1000)
-        y_data = np.unwrap(np.angle(tocpu(pktdata_in[xv])))
+    # accurately search for
+    if False:
+        for pidx in range(100, 150):
+            start_pos_all_new = nsamp_small * pidx * (1 - estf / Config.sig_freq) + est_to_s
+            start_pos = round(start_pos_all_new)
+            xv = np.arange(start_pos + 1000, start_pos + Config.nsamp - 1000)
+            y_data = np.unwrap(np.angle(tocpu(pktdata_in[xv])))
 
-        coefficients_2d = np.polyfit(x_data[xv], y_data, 2)
-        val = obj(x_data[xv], y_data, coefficients_2d)
+            coefficients_2d = np.polyfit(x_data[xv], y_data, 2)
+            val = obj(x_data[xv], y_data, coefficients_2d)
 
-        if False:
-            fig=go.Figure(layout_title_text=f"{pidx=} fit")
-            xvp = np.arange(start_pos - 1000, start_pos + Config.nsamp + 1000)
-            ydatap = np.unwrap(np.angle(tocpu(pktdata_in[xvp])))
-            coefficients_2d[-1] -= (np.polyval(coefficients_2d, x_data[xvp[1000]]) - ydatap[1000])
-            fig.add_trace(go.Scatter(x=x_data[xvp], y=ydatap))
-            fig.add_trace(go.Scatter(x=x_data[xvp], y=np.polyval(coefficients_2d, x_data[xvp])))
-            fig.show()
-            fig=go.Figure(layout_title_text=f"{pidx=} fitdiff")
-            fig.add_trace(go.Scatter(x=x_data[xvp], y=ydatap - np.polyval(coefficients_2d, x_data[xvp])))
-            fig.show()
+            if False:
+                fig=go.Figure(layout_title_text=f"{pidx=} fit")
+                xvp = np.arange(start_pos - 1000, start_pos + Config.nsamp + 1000)
+                ydatap = np.unwrap(np.angle(tocpu(pktdata_in[xvp])))
+                coefficients_2d[-1] -= (np.polyval(coefficients_2d, x_data[xvp[1000]]) - ydatap[1000])
+                fig.add_trace(go.Scatter(x=x_data[xvp], y=ydatap))
+                fig.add_trace(go.Scatter(x=x_data[xvp], y=np.polyval(coefficients_2d, x_data[xvp])))
+                fig.show()
+                fig=go.Figure(layout_title_text=f"{pidx=} fitdiff")
+                fig.add_trace(go.Scatter(x=x_data[xvp], y=ydatap - np.polyval(coefficients_2d, x_data[xvp])))
+                fig.show()
 
-            fig=go.Figure(layout_title_text=f"{pidx=} fit")
-            xvp = np.arange(start_pos - 1000, start_pos + Config.nsamp + 1000)
-            def wrap(x):
-                return (x + np.pi) % (2 * np.pi) - np.pi
-            fig.add_trace(go.Scatter(x=x_data[xvp], y=np.angle(tocpu(pktdata_in[xvp]))))
-            fig.add_trace(go.Scatter(x=x_data[xvp], y=wrap(np.polyval(coefficients_2d, x_data[xvp]))))
-            fig.add_trace(go.Scatter(x=x_data[xvp], y=wrap(np.polyval(coefficients_2d[1:], x_data[xvp]))))
-            fig.show()
+                fig=go.Figure(layout_title_text=f"{pidx=} fit")
+                xvp = np.arange(start_pos - 1000, start_pos + Config.nsamp + 1000)
+                def wrap(x):
+                    return (x + np.pi) % (2 * np.pi) - np.pi
+                fig.add_trace(go.Scatter(x=x_data[xvp], y=np.angle(tocpu(pktdata_in[xvp]))))
+                fig.add_trace(go.Scatter(x=x_data[xvp], y=wrap(np.polyval(coefficients_2d, x_data[xvp]))))
+                fig.add_trace(go.Scatter(x=x_data[xvp], y=wrap(np.polyval(coefficients_2d[1:], x_data[xvp]))))
+                fig.show()
 
 
 
-        rangeval = 0.01
-        for i in range(10):
-            for j in range(2):
-                xvals = np.linspace(coefficients_2d[j]*(1-rangeval), coefficients_2d[j]*(1+rangeval), 1001)
-                yvals = []
-                for x in xvals:
-                    coef2 = copy.deepcopy(coefficients_2d)
-                    coef2[j] = x
-                    yvals.append(obj(x_data[xv], y_data, coef2))
-                oldv = coefficients_2d[j]
-                coefficients_2d[j] = xvals[np.argmax(yvals)]
-                valnew = obj(x_data[xv], y_data, coefficients_2d)
-                if valnew < val*(1-1e-7):
-                    fig = go.Figure(layout_title_text=f"{pidx=} {i=} {j=} {val=} {valnew=}")
-                    fig.add_trace(go.Scatter(x=xvals, y=yvals))
-                    fig.add_vline(x=oldv)
-                    fig.show()
-                assert valnew >= val*(1-1e-7), f"{val=} {valnew=} {i=} {j=} {coefficients_2d=} {val-valnew=}"
-                if abs(valnew - val) < 1e-7: rangeval /= 2
-                val = valnew
-        coefficients_2d[-1] -= np.angle(y_data.dot(np.exp(-1j * np.polyval(coefficients_2d, x_data[xv]))))
-        coeflist.append(coefficients_2d)
-        if False:
-            coeflist.append(coefficients_2d[0])
-            print(pidx, coefficients_2d[0], val, betanew, beta, (beta+betanew)/2)
-            fig=go.Figure(layout_title_text=f"{pidx=} fit")
-            xvp = np.arange(start_pos - 1000, start_pos + Config.nsamp + 1000)
-            ydatap = np.unwrap(np.angle(tocpu(pktdata_in[xvp])))
-            coefficients_2d[-1] -= (np.polyval(coefficients_2d, x_data[xvp[1000]]) - ydatap[1000])
-            fig.add_trace(go.Scatter(x=x_data[xvp], y=ydatap))
-            fig.add_trace(go.Scatter(x=x_data[xvp], y=np.polyval(coefficients_2d, x_data[xvp])))
-            fig.show()
-            fig=go.Figure(layout_title_text=f"{pidx=} fitdiff")
-            fig.add_trace(go.Scatter(x=x_data[xvp], y=ydatap - np.polyval(coefficients_2d, x_data[xvp])))
-            fig.update_layout(yaxis=dict(range=[-1, 1]),)
-            fig.show()
+            rangeval = 0.01
+            for i in range(10):
+                for j in range(2):
+                    xvals = np.linspace(coefficients_2d[j]*(1-rangeval), coefficients_2d[j]*(1+rangeval), 1001)
+                    yvals = []
+                    for x in xvals:
+                        coef2 = copy.deepcopy(coefficients_2d)
+                        coef2[j] = x
+                        yvals.append(obj(x_data[xv], y_data, coef2))
+                    oldv = coefficients_2d[j]
+                    coefficients_2d[j] = xvals[np.argmax(yvals)]
+                    valnew = obj(x_data[xv], y_data, coefficients_2d)
+                    if valnew < val*(1-1e-7):
+                        fig = go.Figure(layout_title_text=f"{pidx=} {i=} {j=} {val=} {valnew=}")
+                        fig.add_trace(go.Scatter(x=xvals, y=yvals))
+                        fig.add_vline(x=oldv)
+                        fig.show()
+                    assert valnew >= val*(1-1e-7), f"{val=} {valnew=} {i=} {j=} {coefficients_2d=} {val-valnew=}"
+                    if abs(valnew - val) < 1e-7: rangeval /= 2
+                    val = valnew
             coefficients_2d[-1] -= np.angle(y_data.dot(np.exp(-1j * np.polyval(coefficients_2d, x_data[xv]))))
-            fig = go.Figure(layout_title_text=f"{pidx=} fitnwrap")
-            xvp = np.arange(start_pos - 1000, start_pos + Config.nsamp + 1000)
+            coeflist.append(coefficients_2d)
+            if False:
+                coeflist.append(coefficients_2d[0])
+                print(pidx, coefficients_2d[0], val, betanew, beta, (beta+betanew)/2)
+                fig=go.Figure(layout_title_text=f"{pidx=} fit")
+                xvp = np.arange(start_pos - 1000, start_pos + Config.nsamp + 1000)
+                ydatap = np.unwrap(np.angle(tocpu(pktdata_in[xvp])))
+                coefficients_2d[-1] -= (np.polyval(coefficients_2d, x_data[xvp[1000]]) - ydatap[1000])
+                fig.add_trace(go.Scatter(x=x_data[xvp], y=ydatap))
+                fig.add_trace(go.Scatter(x=x_data[xvp], y=np.polyval(coefficients_2d, x_data[xvp])))
+                fig.show()
+                fig=go.Figure(layout_title_text=f"{pidx=} fitdiff")
+                fig.add_trace(go.Scatter(x=x_data[xvp], y=ydatap - np.polyval(coefficients_2d, x_data[xvp])))
+                fig.update_layout(yaxis=dict(range=[-1, 1]),)
+                fig.show()
+                coefficients_2d[-1] -= np.angle(y_data.dot(np.exp(-1j * np.polyval(coefficients_2d, x_data[xv]))))
+                fig = go.Figure(layout_title_text=f"{pidx=} fitnwrap")
+                xvp = np.arange(start_pos - 1000, start_pos + Config.nsamp + 1000)
 
-            def wrap(x):
-                return (x + np.pi) % (2 * np.pi) - np.pi
+                def wrap(x):
+                    return (x + np.pi) % (2 * np.pi) - np.pi
 
-            fig.add_trace(go.Scatter(x=x_data[xvp], y=np.angle(tocpu(pktdata_in[xvp]))))
-            fig.add_trace(go.Scatter(x=x_data[xvp], y=wrap(np.polyval(coefficients_2d, x_data[xvp]))))
-            fig.show()
-        print(coefficients_2d)
-    coeflist = np.array(coeflist)
-    with open("coefout2.pkl", "wb") as fl: pickle.dump(coeflist, fl)
-    fig=px.line(y=coeflist[0])
-    fig.show()
-    sys.exit(0)
+                fig.add_trace(go.Scatter(x=x_data[xvp], y=np.angle(tocpu(pktdata_in[xvp]))))
+                fig.add_trace(go.Scatter(x=x_data[xvp], y=wrap(np.polyval(coefficients_2d, x_data[xvp]))))
+                fig.show()
+            print(coefficients_2d)
+        coeflist = np.array(coeflist)
+        with open("coefout2.pkl", "wb") as fl: pickle.dump(coeflist, fl)
+        fig=px.line(y=coeflist[0])
+        fig.show()
+        sys.exit(0)
 
 
+    # suppose 2d[0] = betanew
 
-    diffs = []
-    for pidx in pidx_range[:-1]:
-        start_pos_all_new = nsamp_small * pidx * (1 - estf / Config.sig_freq) + est_to_s
-        start_pos = round(start_pos_all_new)
-        xv = np.arange(start_pos - 1000, start_pos + Config.nsamp * 2 + 1000)
-        y_data = tocpu(cp.unwrap(cp.angle(pktdata_in[xv])))
-        # y_data = np.unwrap(np.angle(tocpu(pktdata_in[xv])))
-        y_data_1d = y_data - np.polyval((betanew, 0, 0), x_data[xv])
-        xv1 = np.arange(1000, Config.nsamp - 1000) + 1000
-        coefficients_1da = np.polyfit(x_data[xv][xv1], y_data_1d[xv1], 1)
-        xv2 = np.arange(Config.nsamp + 1000, Config.nsamp * 2 - 1000) + 1000
-        coefficients_1db = np.polyfit(x_data[xv][xv2], y_data_1d[xv2], 1)
+    if True:
+        diffs = []
+        for pidx in pidx_range[:-1]:
+            start_pos_all_new = nsamp_small * pidx * (1 - estf / Config.sig_freq) + est_to_s
+            start_pos = round(start_pos_all_new)
+            xv = np.arange(start_pos - 1000, start_pos + Config.nsamp * 2 + 1000)
+            y_data = tocpu(cp.unwrap(cp.angle(pktdata_in[xv])))
+            y_data_1d = y_data - np.polyval((betanew, 0, 0), x_data[xv])
+            xv1 = np.arange(1000, Config.nsamp - 1000) + 1000
+            coefficients_1da = np.polyfit(x_data[xv][xv1], y_data_1d[xv1], 1)
+            xv2 = np.arange(Config.nsamp + 1000, Config.nsamp * 2 - 1000) + 1000
+            coefficients_1db = np.polyfit(x_data[xv][xv2], y_data_1d[xv2], 1)
 
-        coeffs_diff = np.polysub(coefficients_1da, coefficients_1db)
-        intersection_x_vals = np.roots(coeffs_diff)
-        if len(intersection_x_vals) == 2:
-            if abs(intersection_x_vals[0]) < abs(intersection_x_vals[1]):
-                diffs.append(intersection_x_vals[0])
+            coeffs_diff = np.polysub(coefficients_1da, coefficients_1db)
+            intersection_x_vals = np.roots(coeffs_diff)
+            if len(intersection_x_vals) == 2:
+                if abs(intersection_x_vals[0]) < abs(intersection_x_vals[1]):
+                    diffs.append(intersection_x_vals[0])
+                else:
+                    diffs.append(intersection_x_vals[1])
             else:
-                diffs.append(intersection_x_vals[1])
-        else:
-            diffs.append(intersection_x_vals[0])
-    fig = go.Figure(layout_title_text="intersect points")
-    fig.add_trace(go.Scatter(x=pidx_range[1:], y=diffs))
-    coefficients_1d2 = np.polyfit(pidx_range[1:], diffs, 1)
-    print(coefficients_1d2)
-    print(
-        f"estimated time:{coefficients_1d2[0]} cfo ppm from time: {1 - coefficients_1d2[0] / Config.nsampf * Config.fs} cfo: {(1 - coefficients_1d2[0] / Config.nsampf * Config.fs) * Config.sig_freq}")
-    fig.add_trace(go.Scatter(x=pidx_range[1:], y=np.polyval(coefficients_1d2, pidx_range[1:])))
-    fig.show()
-    fig = go.Figure(layout_title_text="intersect points diff")
-    fig.add_trace(go.Scatter(x=pidx_range[1:], y=diffs - np.polyval(coefficients_1d2, pidx_range[1:])))
-    fig.show()
+                diffs.append(intersection_x_vals[0])
+        fig = go.Figure(layout_title_text="intersect points")
+        fig.add_trace(go.Scatter(x=pidx_range[1:], y=diffs))
+        coefficients_1d2 = np.polyfit(pidx_range[1:], diffs, 1)
+        print(coefficients_1d2)
+        print(
+            f"estimated time:{coefficients_1d2[0]} cfo ppm from time: {1 - coefficients_1d2[0] / Config.nsampf * Config.fs} cfo: {(1 - coefficients_1d2[0] / Config.nsampf * Config.fs) * Config.sig_freq}")
+        fig.add_trace(go.Scatter(x=pidx_range[1:], y=np.polyval(coefficients_1d2, pidx_range[1:])))
+        fig.show()
+        fig = go.Figure(layout_title_text="intersect points diff")
+        fig.add_trace(go.Scatter(x=pidx_range[1:], y=diffs - np.polyval(coefficients_1d2, pidx_range[1:])))
+        fig.show()
 
-    c2d = []
-    for pidx in pidx_range:
-        start_pos_all_new = nsamp_small * pidx * (1 - estf / Config.sig_freq) + est_to_s
-        start_pos = round(start_pos_all_new)
-        xv = np.arange(start_pos + 1000, start_pos + Config.nsamp - 1000)
-        y_data = y_data_all[xv]
-        coefficients_2d = np.polyfit(x_data[xv], y_data, 2)
-        c2d.append(coefficients_2d[0])
+        c2d = []
+        for pidx in pidx_range:
+            start_pos_all_new = nsamp_small * pidx * (1 - estf / Config.sig_freq) + est_to_s
+            start_pos = round(start_pos_all_new)
+            xv = np.arange(start_pos + 1000, start_pos + Config.nsamp - 1000)
+            y_data = y_data_all[xv]
+            coefficients_2d = np.polyfit(x_data[xv], y_data, 2)
+            c2d.append(coefficients_2d[0])
 
-    fig=px.line(y=c2d)
-    fig.add_hline(y=betanew)
-    fig.add_hline(y=beta)
-    fig.show()
+        fig=px.line(y=c2d)
+        fig.add_hline(y=betanew)
+        fig.add_hline(y=beta)
+        fig.show()
 
 
     if True:
