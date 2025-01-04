@@ -211,8 +211,10 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
 
 
     # suppose 2d[0] = betanew
-
-    if True:
+    # compute time gap of two symbols
+    ddvals = []
+    for betadiff in np.linspace(0, 3, 10):
+        betanew = beta * (1 + betadiff * estf / Config.sig_freq)
         diffs = []
         for pidx in pidx_range[:-1]:
             start_pos_all_new = nsamp_small * pidx * (1 - estf / Config.sig_freq) + est_to_s
@@ -237,9 +239,13 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         fig = go.Figure(layout_title_text="intersect points")
         fig.add_trace(go.Scatter(x=pidx_range[1:], y=diffs))
         coefficients_1d2 = np.polyfit(pidx_range[1:], diffs, 1)
+        estppm = (1 - coefficients_1d2[0] / Config.nsampf * Config.fs)
+        estcfo = estppm * Config.sig_freq
         print(coefficients_1d2)
         print(
-            f"estimated time:{coefficients_1d2[0]} cfo ppm from time: {1 - coefficients_1d2[0] / Config.nsampf * Config.fs} cfo: {(1 - coefficients_1d2[0] / Config.nsampf * Config.fs) * Config.sig_freq}")
+            f"{betadiff=} estimated time:{coefficients_1d2[0]} cfo ppm from time: {estppm} cfo: {estcfo}")
+        ddvals.append(estcfo)
+        continue
         fig.add_trace(go.Scatter(x=pidx_range[1:], y=np.polyval(coefficients_1d2, pidx_range[1:])))
         fig.show()
         fig = go.Figure(layout_title_text="intersect points diff")
@@ -259,7 +265,8 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         fig.add_hline(y=betanew)
         fig.add_hline(y=beta)
         fig.show()
-
+    fig = px.line(y=ddvals)
+    fig.show()
 
     if True:
         if False:
