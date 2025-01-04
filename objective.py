@@ -85,6 +85,49 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     est_freq2 = []
     est_pow = []
 
+
+    # accurately compute coeff2d
+    def obj(xdata, ydata, coeff2d):
+        return np.abs(ydata.dot(np.exp(-1j * np.polyval(coeff2d, xdata))))
+    coeflist = []
+    for pidx in range(100, 150):
+        start_pos_all_new = nsamp_small * pidx * (1 - estf / Config.sig_freq) + est_to_s
+        start_pos = round(start_pos_all_new)
+        xv = np.arange(start_pos + 1000, start_pos + Config.nsamp - 1000)
+        y_data = np.unwrap(np.angle(tocpu(pktdata_in[xv])))
+
+        coefficients_2d = np.polyfit(x_data[xv], y_data, 2)
+        coefficients_2d[2] = 0
+        val = obj(x_data[xv], y_data, coefficients_2d)
+        import copy
+        rangeval = 0.005
+        for i in range(20):
+            for j in range(2):
+                xvals = np.linspace(coefficients_2d[j]*(1-rangeval), coefficients_2d[j]*(1+rangeval), 101)
+                yvals = []
+                for x in xvals:
+                    coef2 = copy.deepcopy(coefficients_2d)
+                    coef2[j] = x
+                    yvals.append(obj(x_data[xv], y_data, coef2))
+                oldv = coefficients_2d[j]
+                coefficients_2d[j] = xvals[np.argmax(yvals)]
+                valnew = obj(x_data[xv], y_data, coefficients_2d)
+                if valnew < val*(1-1e-7):
+                    fig = go.Figure(layout_title_text=f"{pidx=} {i=} {j=} {val=} {valnew=}")
+                    fig.add_trace(go.Scatter(x=xvals, y=yvals))
+                    fig.add_vline(x=oldv)
+                    fig.show()
+                assert valnew >= val*(1-1e-7), f"{val=} {valnew=} {i=} {j=} {coefficients_2d=} {val-valnew=}"
+                if abs(valnew - val) < 1e-7: rangeval /= 2
+                val = valnew
+        coeflist.append(coefficients_2d[0])
+        print(pidx, coefficients_2d[0], val, betanew, beta, (beta+betanew)/2)
+    fig=px.line(y=coeflist)
+    fig.show()
+    sys.exit(0)
+
+
+
     diffs = []
     for pidx in pidx_range[:-1]:
         start_pos_all_new = nsamp_small * pidx * (1 - estf / Config.sig_freq) + est_to_s
@@ -127,8 +170,12 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         y_data = y_data_all[xv]
         coefficients_2d = np.polyfit(x_data[xv], y_data, 2)
         c2d.append(coefficients_2d[0])
+
     fig=px.line(y=c2d)
+    fig.add_hline(y=betanew)
+    fig.add_hline(y=beta)
     fig.show()
+
 
     if True:
         if False:
@@ -226,7 +273,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
 
         dvx = np.array(dvx)
 
-        co_freq = np.polyfit(pidxs[100:], est_freq2[100:], 1)
+        co_freq = np.polyfit(pidxs[100:-2], est_freq2[100:-2], 1)
         fig = go.Figure(layout_title_text="estfreq")
         fig.add_trace(go.Scatter(x=pidxs,y=est_freq2))
         fig.add_trace(go.Scatter(x=pidxs,y=np.polyval(co_freq, pidxs)))
