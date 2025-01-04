@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import copy
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
@@ -85,6 +86,32 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     est_freq2 = []
     est_pow = []
 
+    #results
+    res = [[126575978.67778218, 512959.2906248707], [126592000.05831876, 513092.2460265723],
+     [126584490.3859598, 512927.37548545585], [126582563.12924337, 513173.87137280835],
+     [126587810.4666522, 512823.2370116131], [126548648.93616024, 513256.14730084565],
+     [126578862.17301765, 512764.13354252646], [126576287.51932983, 513268.0317195542],
+     [126586153.60620637, 512800.2595003227], [126579060.53632554, 512534.7563068044],
+     [126592429.02527237, 512864.8950960316], [126585263.23166835, 512804.7007452464],
+     [126555659.93007383, 513004.9571194994], [126582212.93498227, 512928.9655506486],
+     [126562090.24893695, 513236.0605378279], [126555744.30314088, 512883.2936430363],
+     [126581174.53312188, 512477.06226363254], [126585464.60622111, 512834.9485152961],
+     [126593285.45004472, 512849.46580393234], [126601470.95809007, 513022.0449516724],
+     [126574529.74723414, 512876.9035885219], [126581508.70485435, 513372.1654505743],
+     [126561878.4814654, 512918.9636353375], [126577409.57895392, 512887.4919229397],
+     [126587141.76435158, 513110.9424489857], [126580727.024903, 512752.0737150722],
+     [126578861.27941571, 513666.81524032104], [126577245.55089502, 513103.5843975494],
+     [126585416.18069267, 512760.71408088104], [126584100.88361111, 513480.0726734847],
+     [126572811.01888952, 512961.569817574], [126588341.69915493, 512840.77596142655],
+     [126582449.50718728, 512397.1833758274], [126591958.18645747, 512947.1134735509],
+     [126607173.9554157, 512756.8549335888], [126577838.49138494, 512561.28946937155],
+     [126580738.94416937, 513084.72402189544], [126578193.25830024, 512803.21604476357],
+     [126581833.8493608, 512765.3067310502], [126581515.74317527, 513091.52422194893],
+     [126584671.36399174, 512810.0872779924], [126582323.23364733, 512984.3560272756],
+     [126618094.43745825, 513402.4610583438], [126556243.35267428, 513047.8326712802],
+     [126574475.29765278, 512781.57261670136], [126600071.7656931, 512842.403155142],
+     [126579686.41380562, 513222.28193310596], [126563120.89873266, 512955.8915093281],
+     [126569644.9131729, 512833.0472309741], [126575253.32180704, 512827.4175377484], ]
 
     # accurately compute coeff2d
     def obj(xdata, ydata, coeff2d):
@@ -97,13 +124,34 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         y_data = np.unwrap(np.angle(tocpu(pktdata_in[xv])))
 
         coefficients_2d = np.polyfit(x_data[xv], y_data, 2)
-        coefficients_2d[2] = 0
         val = obj(x_data[xv], y_data, coefficients_2d)
-        import copy
+
+        fig=go.Figure(layout_title_text=f"{pidx=} fit")
+        xvp = np.arange(start_pos - 1000, start_pos + Config.nsamp + 1000)
+        ydatap = np.unwrap(np.angle(tocpu(pktdata_in[xvp])))
+        coefficients_2d[-1] -= (np.polyval(coefficients_2d, x_data[xvp[1000]]) - ydatap[1000])
+        fig.add_trace(go.Scatter(x=x_data[xvp], y=ydatap))
+        fig.add_trace(go.Scatter(x=x_data[xvp], y=np.polyval(coefficients_2d, x_data[xvp])))
+        fig.show()
+        fig=go.Figure(layout_title_text=f"{pidx=} fitdiff")
+        fig.add_trace(go.Scatter(x=x_data[xvp], y=ydatap - np.polyval(coefficients_2d, x_data[xvp])))
+        fig.show()
+
+        fig=go.Figure(layout_title_text=f"{pidx=} fit")
+        xvp = np.arange(start_pos - 1000, start_pos + Config.nsamp + 1000)
+        def wrap(x):
+            return (x + np.pi) % (2 * np.pi) - np.pi
+        fig.add_trace(go.Scatter(x=x_data[xvp], y=np.angle(tocpu(pktdata_in[xvp]))))
+        fig.add_trace(go.Scatter(x=x_data[xvp], y=wrap(np.polyval(coefficients_2d, x_data[xvp]))))
+        fig.add_trace(go.Scatter(x=x_data[xvp], y=wrap(np.polyval(coefficients_2d[1:], x_data[xvp]))))
+        fig.show()
+
+
+
         rangeval = 0.005
         for i in range(20):
             for j in range(2):
-                xvals = np.linspace(coefficients_2d[j]*(1-rangeval), coefficients_2d[j]*(1+rangeval), 101)
+                xvals = np.linspace(coefficients_2d[j]*(1-rangeval), coefficients_2d[j]*(1+rangeval), 1001)
                 yvals = []
                 for x in xvals:
                     coef2 = copy.deepcopy(coefficients_2d)
@@ -112,16 +160,27 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
                 oldv = coefficients_2d[j]
                 coefficients_2d[j] = xvals[np.argmax(yvals)]
                 valnew = obj(x_data[xv], y_data, coefficients_2d)
-                if valnew < val*(1-1e-7):
+                if True:#valnew < val*(1-1e-7):
                     fig = go.Figure(layout_title_text=f"{pidx=} {i=} {j=} {val=} {valnew=}")
                     fig.add_trace(go.Scatter(x=xvals, y=yvals))
                     fig.add_vline(x=oldv)
                     fig.show()
                 assert valnew >= val*(1-1e-7), f"{val=} {valnew=} {i=} {j=} {coefficients_2d=} {val-valnew=}"
+                print(coefficients_2d, val, valnew, rangeval, i, j)
                 if abs(valnew - val) < 1e-7: rangeval /= 2
                 val = valnew
         coeflist.append(coefficients_2d[0])
         print(pidx, coefficients_2d[0], val, betanew, beta, (beta+betanew)/2)
+        fig=go.Figure(layout_title_text=f"{pidx=} fit")
+        xvp = np.arange(start_pos - 1000, start_pos + Config.nsamp + 1000)
+        ydatap = np.unwrap(np.angle(tocpu(pktdata_in[xvp])))
+        coefficients_2d[-1] -= (np.polyval(coefficients_2d, x_data[xvp[1000]]) - ydatap[1000])
+        fig.add_trace(go.Scatter(x=x_data[xvp], y=ydatap))
+        fig.add_trace(go.Scatter(x=x_data[xvp], y=np.polyval(coefficients_2d, x_data[xvp])))
+        fig.show()
+        fig=go.Figure(layout_title_text=f"{pidx=} fitdiff")
+        fig.add_trace(go.Scatter(x=x_data[xvp], y=ydatap - np.polyval(coefficients_2d, x_data[xvp])))
+        fig.show()
     fig=px.line(y=coeflist)
     fig.show()
     sys.exit(0)
