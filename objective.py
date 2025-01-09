@@ -91,17 +91,21 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     # accurately compute coeff2d
     def obj(xdata, ydata, coeff2d):
         return np.abs(ydata.dot(np.exp(-1j * np.polyval(coeff2d, xdata))))
-    if False:
-        with open("coefout.pkl", "rb") as fl: coeflist = pickle.load(fl)
+    if True:
+        with open("coefout2.pkl", "rb") as fl: coeflist = pickle.load(fl)
         lst = coeflist[:, 0]
-        lst = lst[abs(lst - 126.58e6) < 0.018e6]
+        # lst = lst[abs(lst - 126.58e6) < 0.018e6]
         print(np.mean(lst))
-        fig=px.line(y=lst)
+        fig=px.scatter(y=lst)
+        fig.add_hline(y=beta)
+        fig.add_hline(y=betanew)
+        fig.add_hline(y=beta * (1 + estf / Config.sig_freq))
+        fig.add_hline(y=np.mean(lst))
         fig.show()
         diffs = []
 
         pidx = 125
-        coefficients_2d = coeflist[pidx-100]
+        coefficients_2d = coeflist[pidx]
         start_pos_all_new = nsamp_small * pidx * (1 - estf / Config.sig_freq) + est_to_s
         start_pos = round(start_pos_all_new)
         fig = go.Figure(layout_title_text=f"{pidx=} fit")
@@ -155,9 +159,9 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         fig.show()
         sys.exit(0)
     # accurately search for
-    if True:
+    if False:
         coeflist = []
-        for pidx in range(100, 150):
+        for pidx in range(240):
             start_pos_all_new = nsamp_small * pidx * (1 - estf / Config.sig_freq) + est_to_s
             start_pos = round(start_pos_all_new)
             xv = np.arange(start_pos + 1000, start_pos + Config.nsamp - 1000)
@@ -166,7 +170,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
             coefficients_2d = np.polyfit(x_data[xv], np.unwrap(np.angle(y_data)), 2)
             val = obj(x_data[xv], y_data, coefficients_2d)
             print('val', val)
-            if True:
+            if False:
                 fig=go.Figure(layout_title_text=f"{pidx=} fit")
                 xvp = np.arange(start_pos - 1000, start_pos + Config.nsamp + 1000)
                 ydatap = np.unwrap(np.angle(tocpu(pktdata_in[xvp])))
@@ -190,7 +194,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
                 coefficients_2d[-1] -= np.angle(y_data.dot(np.exp(-1j * np.polyval(coefficients_2d, x_data[xv]))))
                 coefficients_2d_old = copy.deepcopy(coefficients_2d)
 
-            rangeval = 0.01
+            rangeval = 0.001
             for i in range(10):
                 for j in range(2):
                     xvals = np.linspace(coefficients_2d[j]*(1-rangeval), coefficients_2d[j]*(1+rangeval), 1001)
@@ -212,7 +216,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
                     val = valnew
             coefficients_2d[-1] -= np.angle(y_data.dot(np.exp(-1j * np.polyval(coefficients_2d, x_data[xv]))))
             coeflist.append(coefficients_2d)
-            if True:
+            if False:
                 # plot diff here
                 fig = go.Figure(layout_title_text=f"{pidx=} fitdiff")
                 ydatap = np.unwrap(np.angle(tocpu(pktdata_in[xvp])))
@@ -253,7 +257,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
             print(coefficients_2d)
         coeflist = np.array(coeflist)
         with open("coefout2.pkl", "wb") as fl: pickle.dump(coeflist, fl)
-        fig=px.line(y=coeflist[0])
+        fig=px.line(y=coeflist[:,0])
         fig.show()
         sys.exit(0)
 
