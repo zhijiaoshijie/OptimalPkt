@@ -151,7 +151,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         fig.show()
 
         diffs = []
-        for pidx in range(240):
+        for pidx in range(239):
             coeff1 = np.polyval(coeff_time, pidx)
             coeff2 = np.polyval(coeff_time, pidx + 1)
             xv = np.arange(int(coeff1*Config.fs) - 10000, int(coeff2*Config.fs) + 20000)
@@ -159,15 +159,15 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
             yplt = np.unwrap(np.angle(tocpu(pktdata_in[xv])))
             start_pos_all_new = nsamp_small * pidx * (1 - estf / Config.sig_freq) + est_to_s
             start_pos = round(start_pos_all_new) + 1000
-            val = round((yplt[ start_pos - (int(coeff1*Config.fs) - 10000) ] - np.angle(pktdata_in[start_pos]))/2/np.pi)
+            val = (yplt[ start_pos - (int(coeff1*Config.fs) - 10000) ] - np.angle(pktdata_in[start_pos]))/2/np.pi
             logger.warning(f"{val=}")
-            coeflist[pidx, 2] += val * 2 * np.pi
+            coeflist[pidx, 2] += round(val) * 2 * np.pi
 
             start_pos_all_new = nsamp_small * (pidx+1) * (1 - estf / Config.sig_freq) + est_to_s
             start_pos = round(start_pos_all_new) + 1000
-            val = round((yplt[ start_pos - (int(coeff1*Config.fs) - 10000) ] - np.angle(pktdata_in[start_pos]))/2/np.pi)
+            val = (yplt[ start_pos - (int(coeff1*Config.fs) - 10000) ] - np.angle(pktdata_in[start_pos]))/2/np.pi
             logger.warning(f"{val=}")
-            coeflist[pidx+1, 2] += val * 2 * np.pi
+            coeflist[pidx+1, 2] += round(val) * 2 * np.pi
 
             coeffs_diff = np.polysub(coeflist[pidx], coeflist[pidx + 1])
             intersection_x_vals = np.roots(coeffs_diff)
