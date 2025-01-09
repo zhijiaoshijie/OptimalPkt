@@ -123,6 +123,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         diffs = []
         dd2 = []
         coeflist2 = copy.deepcopy(coeflist)
+        dd31 = []
         for pidx in range(239):
             start_pos_all_new = nsamp_small * pidx * (1 - estf / Config.sig_freq) + est_to_s
             start_pos = round(start_pos_all_new)
@@ -138,12 +139,13 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
 
             start_pos_all_new2 = nsamp_small * (pidx + 1) * (1 - estf / Config.sig_freq) + est_to_s
             start_pos2 = round(start_pos_all_new2)
-            val = (yplt[start_pos2+1000] - np.angle(pktdata_in[start_pos2+1000])) / 2 / np.pi
+            val2 = (yplt[start_pos2+1000] - np.angle(pktdata_in[start_pos2+1000])) / 2 / np.pi
             # val = (yplt[start_pos2+1000] - np.polyval(coeflist[pidx+1], x_data[start_pos2 + 1000])) / 2 / np.pi
-            dd2.append(val - round(val))
-            logger.warning(f"{val=}")
-            assert abs(val-round(val))<0.1
-            coeflist[pidx + 1, 2] += round(val) * 2 * np.pi
+            dd2.append(val2 - round(val2))
+            logger.warning(f"{val2=}")
+            assert abs(val2-round(val2))<0.1
+            coeflist[pidx + 1, 2] += round(val2) * 2 * np.pi
+            dd31.append(round(val2) - round(val))
 
             coeffs_diff = np.polysub(coeflist[pidx], coeflist[pidx + 1])
             intersection_x_vals = np.roots(coeffs_diff)
@@ -185,6 +187,10 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         fig.show()
         fig = go.Figure(layout_title_text="intersect points diff")
         fig.add_trace(go.Scatter(x=pidx_range[1:], y=diffs - np.polyval(coeff_time, pidx_range[1:])))
+        fig.show()
+
+        fig = go.Figure(layout_title_text="match val diff")
+        fig.add_trace(go.Scatter(x=pidx_range[1:], y=dd31))
         fig.show()
 
         dd = []
