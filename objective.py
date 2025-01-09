@@ -127,7 +127,6 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
             start_pos_all_new = nsamp_small * pidx * (1 - estf / Config.sig_freq) + est_to_s
             start_pos = round(start_pos_all_new)
             xva = np.arange(start_pos - 1000, round(nsamp_small * (pidx+2) * (1 - estf / Config.sig_freq) + est_to_s) + 1000)
-            fig = go.Figure(layout_title_text=f"{pidx=} symb")
             yplt = np.zeros_like(pktdata_in, dtype=np.float64)
             yplt[xva] = np.unwrap(np.angle(tocpu(pktdata_in[xva])))
             val = (yplt[start_pos+1000] - np.angle(pktdata_in[start_pos+1000])) / 2 / np.pi
@@ -156,19 +155,15 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
             else:
                 diffs.append(intersection_x_vals[0])
 
-            fig.add_trace(go.Scatter(x=x_data[xva], y=yplt[xva]))
             coplt = [2 * coeflist[pidx, 0] * x_data[start_pos] + coeflist[pidx, 1], 0]
             coplt[1] = yplt[start_pos] - np.polyval(coplt, x_data[start_pos])
             xvb = np.arange(start_pos - 1000, start_pos + 1000)
-            fig.add_trace(go.Scatter(x=x_data[xvb], y=np.polyval(coplt, x_data[xvb])))
-            fig.add_vline(x=diffs[-1], line_dash="dash", line_color="green")
 
             start_pos_all_new = nsamp_small * pidx * (1 - estf / Config.sig_freq) + est_to_s
             start_pos = round(start_pos_all_new)
             xv = np.arange(start_pos + 1000, start_pos + Config.nsamp - 1000)
             coef2d1 = np.polyfit(x_data[xv], np.unwrap(np.angle(yplt[xv])), 2)
             xvp = np.arange(start_pos - 100, start_pos + Config.nsamp + 100)
-            fig.add_trace(go.Scatter(x=x_data[xvp], y=np.polyval(coeflist[pidx], x_data[xvp])))
 
             xv2 = np.arange(start_pos2 + 1000, start_pos2 + Config.nsamp - 1000)
             coef2d2 = np.polyfit(x_data[xv2], np.unwrap(np.angle(yplt[xv2])), 2)
@@ -176,10 +171,6 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
                 f"res:{(coef2d1[2] - coeflist[pidx, 2]) / 2 / np.pi}  {(coef2d2[2] - coeflist[pidx + 1, 2]) / 2 / np.pi}")
 
             xvp2 = np.arange(start_pos2 - 100, start_pos2 + Config.nsamp + 100)
-            fig.add_trace(go.Scatter(x=x_data[xvp2], y=np.polyval(coeflist[pidx + 1], x_data[xvp2])))
-            fig.add_vline(x=start_pos/Config.fs)
-            fig.add_vline(x=start_pos2/Config.fs)
-            fig.show()
             coeflist = copy.deepcopy(coeflist2)
         plt.plot(dd2)
         plt.show()
