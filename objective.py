@@ -131,11 +131,10 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         fig.add_trace(go.Scatter(x=x_data[xvp], y=np.angle(tocpu(pktdata_in[xvp]))))
         fig.add_trace(go.Scatter(x=x_data[xvp], y=wrap(np.polyval(coefficients_2d, x_data[xvp]))))
         fig.show()
-        sys.exit(0)
 
 
 
-        for pidx in range(49):
+        for pidx in range(240-1):
             coeffs_diff = np.polysub(coeflist[pidx], coeflist[pidx + 1])
             intersection_x_vals = np.roots(coeffs_diff)
             if len(intersection_x_vals) == 2:
@@ -146,7 +145,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
             else:
                 diffs.append(intersection_x_vals[0])
         fig = go.Figure(layout_title_text="intersect points")
-        pidx_range = np.arange(100, 150)
+        pidx_range = np.arange(240)
         fig.add_trace(go.Scatter(x=pidx_range[1:], y=diffs))
         coefficients_1d2 = np.polyfit(pidx_range[1:], diffs, 1)
         print(coefficients_1d2)
