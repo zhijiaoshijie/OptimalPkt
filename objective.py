@@ -121,7 +121,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         fig.add_trace(go.Scatter(x=x_data[xvp], y=ydatap - np.polyval(coefficients_2d, x_data[xvp])))
         fig.update_layout(yaxis=dict(range=[-1, 1]), )
         fig.show()
-        coefficients_2d[-1] -= np.angle(y_data.dot(np.exp(-1j * np.polyval(coefficients_2d, x_data[xv]))))
+        coefficients_2d[-1] += np.angle(pktdata_in[xv].dot(np.exp(-1j * np.polyval(coefficients_2d, x_data[xv]))))
         fig = go.Figure(layout_title_text=f"{pidx=} fitnwrap")
         xvp = np.arange(start_pos - 1000, start_pos + Config.nsamp + 1000)
 
@@ -256,7 +256,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
                 fig.show()
             print(coefficients_2d)
         coeflist = np.array(coeflist)
-        with open("coefout2.pkl", "wb") as fl: pickle.dump(coeflist, fl)
+        with open("coefout3.pkl", "wb") as fl: pickle.dump(coeflist, fl)
         fig=px.line(y=coeflist[:,0])
         fig.show()
         sys.exit(0)
