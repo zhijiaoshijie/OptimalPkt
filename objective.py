@@ -99,6 +99,38 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         fig=px.line(y=lst)
         fig.show()
         diffs = []
+
+        pidx = 125
+        coefficients_2d = coeflist[pidx-100]
+        start_pos_all_new = nsamp_small * pidx * (1 - estf / Config.sig_freq) + est_to_s
+        start_pos = round(start_pos_all_new)
+        fig = go.Figure(layout_title_text=f"{pidx=} fit")
+        xv = np.arange(start_pos + 1000, start_pos + Config.nsamp - 1000)
+        y_data = np.unwrap(np.angle(tocpu(pktdata_in[xv])))
+        xvp = np.arange(start_pos - 1000, start_pos + Config.nsamp + 1000)
+        ydatap = np.unwrap(np.angle(tocpu(pktdata_in[xvp])))
+        coefficients_2d[-1] -= (np.polyval(coefficients_2d, x_data[xvp[1000]]) - ydatap[1000])
+        fig.add_trace(go.Scatter(x=x_data[xvp], y=ydatap))
+        fig.add_trace(go.Scatter(x=x_data[xvp], y=np.polyval(coefficients_2d, x_data[xvp])))
+        fig.show()
+        fig = go.Figure(layout_title_text=f"{pidx=} fitdiff")
+        fig.add_trace(go.Scatter(x=x_data[xvp], y=ydatap - np.polyval(coefficients_2d, x_data[xvp])))
+        fig.update_layout(yaxis=dict(range=[-1, 1]), )
+        fig.show()
+        coefficients_2d[-1] -= np.angle(y_data.dot(np.exp(-1j * np.polyval(coefficients_2d, x_data[xv]))))
+        fig = go.Figure(layout_title_text=f"{pidx=} fitnwrap")
+        xvp = np.arange(start_pos - 1000, start_pos + Config.nsamp + 1000)
+
+        def wrap(x):
+            return (x + np.pi) % (2 * np.pi) - np.pi
+
+        fig.add_trace(go.Scatter(x=x_data[xvp], y=np.angle(tocpu(pktdata_in[xvp]))))
+        fig.add_trace(go.Scatter(x=x_data[xvp], y=wrap(np.polyval(coefficients_2d, x_data[xvp]))))
+        fig.show()
+        sys.exit(0)
+
+
+
         for pidx in range(49):
             coeffs_diff = np.polysub(coeflist[pidx], coeflist[pidx + 1])
             intersection_x_vals = np.roots(coeffs_diff)
@@ -123,17 +155,18 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         fig.show()
         sys.exit(0)
     # accurately search for
-    if False:
+    if True:
+        coeflist = []
         for pidx in range(100, 150):
             start_pos_all_new = nsamp_small * pidx * (1 - estf / Config.sig_freq) + est_to_s
             start_pos = round(start_pos_all_new)
             xv = np.arange(start_pos + 1000, start_pos + Config.nsamp - 1000)
-            y_data = np.unwrap(np.angle(tocpu(pktdata_in[xv])))
+            y_data = tocpu(pktdata_in[xv])
 
-            coefficients_2d = np.polyfit(x_data[xv], y_data, 2)
+            coefficients_2d = np.polyfit(x_data[xv], np.unwrap(np.angle(y_data)), 2)
             val = obj(x_data[xv], y_data, coefficients_2d)
-
-            if False:
+            print('val', val)
+            if True:
                 fig=go.Figure(layout_title_text=f"{pidx=} fit")
                 xvp = np.arange(start_pos - 1000, start_pos + Config.nsamp + 1000)
                 ydatap = np.unwrap(np.angle(tocpu(pktdata_in[xvp])))
@@ -142,7 +175,8 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
                 fig.add_trace(go.Scatter(x=x_data[xvp], y=np.polyval(coefficients_2d, x_data[xvp])))
                 fig.show()
                 fig=go.Figure(layout_title_text=f"{pidx=} fitdiff")
-                fig.add_trace(go.Scatter(x=x_data[xvp], y=ydatap - np.polyval(coefficients_2d, x_data[xvp])))
+                fig.add_trace(go.Scatter(x=x_data[xvp], y=ydatap - np.polyval(coefficients_2d, x_data[xvp]),  mode='markers', marker=dict(size=1)))
+                fig.update_layout(yaxis=dict(range=[-2, 2]),)
                 fig.show()
 
                 fig=go.Figure(layout_title_text=f"{pidx=} fit")
@@ -151,10 +185,10 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
                     return (x + np.pi) % (2 * np.pi) - np.pi
                 fig.add_trace(go.Scatter(x=x_data[xvp], y=np.angle(tocpu(pktdata_in[xvp]))))
                 fig.add_trace(go.Scatter(x=x_data[xvp], y=wrap(np.polyval(coefficients_2d, x_data[xvp]))))
-                fig.add_trace(go.Scatter(x=x_data[xvp], y=wrap(np.polyval(coefficients_2d[1:], x_data[xvp]))))
+                # fig.add_trace(go.Scatter(x=x_data[xvp], y=wrap(np.polyval(coefficients_2d[1:], x_data[xvp]))))
                 fig.show()
-
-
+                coefficients_2d[-1] -= np.angle(y_data.dot(np.exp(-1j * np.polyval(coefficients_2d, x_data[xv]))))
+                coefficients_2d_old = copy.deepcopy(coefficients_2d)
 
             rangeval = 0.01
             for i in range(10):
@@ -178,20 +212,34 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
                     val = valnew
             coefficients_2d[-1] -= np.angle(y_data.dot(np.exp(-1j * np.polyval(coefficients_2d, x_data[xv]))))
             coeflist.append(coefficients_2d)
-            if False:
-                coeflist.append(coefficients_2d[0])
+            if True:
+                # plot diff here
+                fig = go.Figure(layout_title_text=f"{pidx=} fitdiff")
+                ydatap = np.unwrap(np.angle(tocpu(pktdata_in[xvp])))
+                coefficients_2d_old[-1] += np.angle(pktdata_in[xv].dot(np.exp(-1j * np.polyval(coefficients_2d_old, x_data[xv]))))
+                coefficients_2d[-1] += np.angle(pktdata_in[xv].dot(np.exp(-1j * np.polyval(coefficients_2d, x_data[xv]))))
+                fig.add_trace( go.Scatter(x=x_data[xvp], y=np.angle(pktdata_in[xvp] * np.exp(-1j * np.polyval(coefficients_2d_old, x_data[xvp]))), mode='markers', marker=dict(size=1)))
+                fig.add_trace( go.Scatter(x=x_data[xvp], y=np.angle(pktdata_in[xvp] * np.exp(-1j * np.polyval(coefficients_2d, x_data[xvp]))), mode='markers', marker=dict(size=1)))
+                fig.update_layout(yaxis=dict(range=[-2, 2]), )
+                fig.show()
+                val1 = np.abs(pktdata_in[xv].dot(np.exp(-1j * np.polyval(coefficients_2d_old, x_data[xv]))))
+                val2 = np.abs(pktdata_in[xv].dot(np.exp(-1j * np.polyval(coefficients_2d, x_data[xv]))))
+                print(val1, val2)
+
                 print(pidx, coefficients_2d[0], val, betanew, beta, (beta+betanew)/2)
                 fig=go.Figure(layout_title_text=f"{pidx=} fit")
                 xvp = np.arange(start_pos - 1000, start_pos + Config.nsamp + 1000)
-                ydatap = np.unwrap(np.angle(tocpu(pktdata_in[xvp])))
                 coefficients_2d[-1] -= (np.polyval(coefficients_2d, x_data[xvp[1000]]) - ydatap[1000])
                 fig.add_trace(go.Scatter(x=x_data[xvp], y=ydatap))
                 fig.add_trace(go.Scatter(x=x_data[xvp], y=np.polyval(coefficients_2d, x_data[xvp])))
                 fig.show()
                 fig=go.Figure(layout_title_text=f"{pidx=} fitdiff")
-                fig.add_trace(go.Scatter(x=x_data[xvp], y=ydatap - np.polyval(coefficients_2d, x_data[xvp])))
-                fig.update_layout(yaxis=dict(range=[-1, 1]),)
+                fig.add_trace(go.Scatter(x=x_data[xvp], y=ydatap - np.polyval(coefficients_2d_old, x_data[xvp]),  mode='markers', marker=dict(size=1)))
+                fig.add_trace(go.Scatter(x=x_data[xvp], y=ydatap - np.polyval(coefficients_2d, x_data[xvp]), mode='markers', marker=dict(size=1)))
+                fig.update_layout(yaxis=dict(range=[-2, 2]),)
                 fig.show()
+
+
                 coefficients_2d[-1] -= np.angle(y_data.dot(np.exp(-1j * np.polyval(coefficients_2d, x_data[xv]))))
                 fig = go.Figure(layout_title_text=f"{pidx=} fitnwrap")
                 xvp = np.arange(start_pos - 1000, start_pos + Config.nsamp + 1000)
