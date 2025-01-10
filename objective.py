@@ -102,7 +102,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     def wrap(x):
         return (x + np.pi) % (2 * np.pi) - np.pi
 
-    if False:
+    if True:
         with open("coefout3.pkl", "rb") as fl: coeflist = pickle.load(fl)
 
 
@@ -217,41 +217,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
 
 
 
-        # coef1
-        diffs = coeflist[:, 1]
-        pidx_range = np.arange(240)
-        # fig = go.Figure(layout_title_text="coef1")
-        # fig.add_trace(go.Scatter(x=pidx_range, y=diffs))
-        # coeff_2d1 = np.polyfit(pidx_range, diffs, 1)
-        # print(coeff_2d1)
-        # fig.add_trace(go.Scatter(x=pidx_range, y=np.polyval(coeff_2d1, pidx_range)))
-        # fig.show()
-        # fig = go.Figure(layout_title_text="intersect points diff")
-        # fig.add_trace(go.Scatter(x=pidx_range, y=diffs - np.polyval(coeff_2d1, pidx_range)))
-        # fig.show()
-        f0list = []
-        for pidx in pidx_range:
-            f0 = np.polyval( (2 * coeflist[pidx, 0], coeflist[pidx, 1]), np.polyval(coeff_time,pidx))
-            f0list.append(f0 / 2 / np.pi)
-        fig = go.Figure(layout_title_text="f0 from coeflist[:, 1] and coeftime")
-        fig.add_trace(go.Scatter(x=pidx_range, y=f0list))
-        avgf0 = np.mean(f0list[32:])
-        fig.add_hline(y=avgf0)
-        print( f"{avgf0=} cfo ppm : {avgf0 + Config.bw/2=}")
 
-        fig.show()
-
-        f0list = []
-        for pidx in pidx_range:
-            f0 = np.polyval((2 * coeflist[pidx, 0], coeflist[pidx, 1]), np.polyval(coeff_time, pidx + 1))
-            f0list.append(f0 / 2 / np.pi)
-        fig = go.Figure(layout_title_text="f0 from coeflist[:, 1] and coeftime")
-        fig.add_trace(go.Scatter(x=pidx_range, y=f0list))
-        avgf0 = np.mean(f0list[32:])
-        fig.add_hline(y=avgf0)
-        print(f"{avgf0=} cfo ppm : {avgf0 - Config.bw/2=}")
-
-        fig.show()
 
 
         anslst = []
@@ -277,11 +243,35 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         fig.add_trace(go.Scatter(x=pidx_range[1:], y=anslst - np.polyval(coeff_time, pidx_range[1:])))
         fig.show()
 
+        pidx_range = np.arange(240)
+        f0list = []
+        for pidx in pidx_range:
+            f0 = np.polyval((2 * coeflist[pidx, 0], coeflist[pidx, 1]), np.polyval(coeff_time, pidx))
+            f0list.append(f0 / 2 / np.pi)
+        fig = go.Figure(layout_title_text="f0 from coeflist[:, 1] and coeftime")
+        fig.add_trace(go.Scatter(x=pidx_range, y=f0list))
+        avgf0 = np.mean(f0list[32:])
+        fig.add_hline(y=avgf0)
+        print(f"{avgf0=} cfo ppm : {avgf0 + Config.bw/2=}")
 
+        fig.show()
+
+        f0list = []
+        for pidx in pidx_range:
+            f0 = np.polyval((2 * coeflist[pidx, 0], coeflist[pidx, 1]), np.polyval(coeff_time, pidx + 1))
+            f0list.append(f0 / 2 / np.pi)
+        fig = go.Figure(layout_title_text="f1 from coeflist[:, 1] and coeftime")
+        fig.add_trace(go.Scatter(x=pidx_range, y=f0list))
+        avgf0 = np.mean(f0list[32:])
+        fig.add_hline(y=avgf0)
+        print(f"{avgf0=} cfo ppm : {avgf0 - Config.bw/2=}")
+
+        fig.show()
+        sys.exit(0)
 
 
     # accurately search for
-    if True:
+    if False:
         coeff_time = [0.01008263, 0.01015366]
         coeflist = []
         for pidx in range(242, 244):
