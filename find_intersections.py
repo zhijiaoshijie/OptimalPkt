@@ -1,5 +1,4 @@
 import numpy as np
-import plotly.graph_objects as go
 from math import ceil, floor
 
 # Define the coefficients for the two polynomials
@@ -75,22 +74,14 @@ def find_intersections(coeflist, start_pos_all_new, epsilon):
     intersection_points = []
 
     # Initialize Plotly figure with subplots
-    from plotly.subplots import make_subplots
 
     # Determine number of sections to create subplots
-    num_sections = len(sections)
-    # For better visualization, arrange subplots in rows
-    fig = make_subplots(rows=num_sections, cols=1, shared_xaxes=True,
-                        subplot_titles=[f"Section {i + 1}: x ∈ [{sec[0]:.8f}, {sec[1]:.8f}]" for i, sec in
-                                        enumerate(sections)],
-                        vertical_spacing=0.05)
 
     # Iterate over each section to find intersections and plot
     for idx, (x_start, x_end) in enumerate(sections):
         # Determine n for each polynomial
         n1 = determine_n(coeflist[0], x_start, x_end)
         n2 = determine_n(coeflist[1], x_start, x_end)
-        print(idx, n1, n2)
 
         # Adjust the constant term for wrapping
         # Create shifted polynomials by adding (2n -1)*pi to the constant term
@@ -117,74 +108,4 @@ def find_intersections(coeflist, start_pos_all_new, epsilon):
             y_val = np.polyval(poly1_shifted_coef, root)
             intersection_points.append((root, y_val))
 
-        # Generate x values for plotting
-        num_points = 500
-        x_vals = np.linspace(x_start, x_end, num_points)
-        y1_wrapped = np.polyval(poly1_shifted_coef, x_vals)
-        y2_wrapped = np.polyval(poly2_shifted_coef, x_vals)
-
-        # Add shifted polynomials to the subplot
-        fig.add_trace(
-            go.Scatter(x=x_vals, y=y1_wrapped, mode='lines', name='Poly1 Shifted',
-                       line=dict(color='blue')),
-            row=idx + 1, col=1
-        )
-        fig.add_trace(
-            go.Scatter(x=x_vals, y=y2_wrapped, mode='lines', name='Poly2 Shifted',
-                       line=dict(color='green')),
-            row=idx + 1, col=1
-        )
-
-        # Add horizontal lines y=-pi and y=pi
-        fig.add_trace(
-            go.Scatter(x=[x_start, x_end], y=[-np.pi, -np.pi],
-                       mode='lines', line=dict(color='gray', dash='dash'), showlegend=False),
-            row=idx + 1, col=1
-        )
-        fig.add_trace(
-            go.Scatter(x=[x_start, x_end], y=[np.pi, np.pi],
-                       mode='lines', line=dict(color='gray', dash='dash'), showlegend=False),
-            row=idx + 1, col=1
-        )
-
-        # Add vertical lines at section boundaries
-        fig.add_trace(
-            go.Scatter(x=[x_start, x_start], y=[-np.pi, np.pi],
-                       mode='lines', line=dict(color='black', dash='solid'), showlegend=False),
-            row=idx + 1, col=1
-        )
-        fig.add_trace(
-            go.Scatter(x=[x_end, x_end], y=[-np.pi, np.pi],
-                       mode='lines', line=dict(color='black', dash='solid'), showlegend=False),
-            row=idx + 1, col=1
-        )
-
-        # Highlight intersection points within this section
-        section_intersections = [(x, y) for (x, y) in intersection_points if x_start <= x <= x_end]
-        if section_intersections:
-            x_int, y_int = zip(*section_intersections)
-            fig.add_trace(
-                go.Scatter(x=x_int, y=y_int, mode='markers', name='Intersections',
-                           marker=dict(color='red', size=8, symbol='circle')),
-                row=idx + 1, col=1
-            )
-
-    # Update layout for better visualization
-    fig.update_layout(
-        height=300 * num_sections,  # Adjust height based on number of sections
-        width=800,
-        title_text='Intersections of Wrapped Polynomials Near Start Position',
-        showlegend=True
-    )
-
-    # Adjust y-axis range for all subplots
-    for i in range(1, num_sections + 1):
-        fig.update_yaxes(range=[-np.pi*5 - 0.1, np.pi*5 + 0.1], row=i, col=1)
-
-    # Show the plot
-    fig.show()
-
-    # Print the intersection points
-    print("Intersection Points within the specified range:")
-    for idx, (x, y) in enumerate(intersection_points, 1):
-        print(f"{idx}: x = {x:.12f}, y = {y:.12f}")
+    return intersection_points

@@ -252,39 +252,33 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         fig.show()
 
 
-
-        for pidx in range(1, 239):
+        anslst = []
+        for pidx in range(1, 240):
             # if pidx != 150: continue
             start_pos_all_new = np.polyval(coeff_time, pidx)*Config.fs
             start_pos = round(start_pos_all_new)
 
-            find_intersections(coeflist[pidx - 1: pidx + 1], start_pos_all_new, 1e-6)
-            xva = np.arange(start_pos - 100, start_pos + 100)
-            xva2 = np.linspace(x_data[start_pos - 100], x_data[start_pos + 100], 10000)
-            yplta = wrap(np.polyval(coeflist[pidx - 1], xva2))
-            ypltb = wrap(np.polyval(coeflist[pidx], xva2))
-            fig = go.Figure(layout_title_text=f"{pidx=} intersect")
-            fig.add_trace(go.Scatter(x=xva2, y=yplta))
-            fig.add_trace(go.Scatter(x=xva2, y=ypltb))
-            fig.add_trace(go.Scatter(x=x_data[xva], y=np.angle(tocpu(pktdata_in[xva]))))
-            fig.add_vline(x=start_pos_all_new/Config.fs)
-            fig.show()
+            ans = find_intersections(coeflist[pidx - 1: pidx + 1], start_pos_all_new/Config.fs, 1e-6)
+            anslst.append([x[0] for x in ans][0])
+            if len(ans) != 1: logger.error(f"ANSLEN {pidx=}, {ans=}")
+        anslst = np.array(anslst)
+        fig = go.Figure(layout_title_text="intersection points")
+        fig.add_trace(go.Scatter(x=pidx_range[1:], y=anslst))
+        fig.show()
+        coeff_time = np.polyfit(pidx_range[1:], anslst, 1)
+        print(coeff_time)
+        print(
+            f"estimated time:{coeff_time[0]} cfo ppm from time: {1 - coeff_time[0] / Config.nsampf * Config.fs} cfo: {(1 - coeff_time[0] / Config.nsampf * Config.fs) * Config.sig_freq}")
+        fig.add_trace(go.Scatter(x=pidx_range[1:], y=np.polyval(coeff_time, pidx_range[1:])))
+        fig.show()
+        fig = go.Figure(layout_title_text="intersect points diff")
+        fig.add_trace(go.Scatter(x=pidx_range[1:], y=anslst - np.polyval(coeff_time, pidx_range[1:])))
+        fig.show()
 
-            xva = np.arange(start_pos - 10000, start_pos + 10000)
-            xva2 = np.linspace(x_data[start_pos - 10000], x_data[start_pos + 10000], 10000)
-            yplta = wrap(np.polyval(coeflist[pidx - 1], xva2))
-            ypltb = wrap(np.polyval(coeflist[pidx], xva2))
-            fig = go.Figure(layout_title_text=f"{pidx=} intersect")
-            fig.add_trace(go.Scatter(x=xva2, y=np.unwrap(yplta)))
-            fig.add_trace(go.Scatter(x=xva2, y=np.unwrap(ypltb)))
-            fig.add_trace(go.Scatter(x=x_data[xva], y=np.unwrap(np.angle(tocpu(pktdata_in[xva])))))
-            fig.add_vline(x=start_pos_all_new/Config.fs)
-            fig.show()
-            print(coeflist[pidx - 1], coeflist[pidx], start_pos_all_new/Config.fs)
+        sys.exit(1)
 
-            sys.exit(0)
 
-        sys.exit(0)
+
     # accurately search for
     if True:
         coeflist = []
