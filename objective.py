@@ -222,12 +222,32 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
 
         anslst = []
         for pidx in range(1, 240):
-            # if pidx != 150: continue
+            pidx = 230
             start_pos_all_new = np.polyval(coeff_time, pidx)*Config.fs
             start_pos = round(start_pos_all_new)
 
-            ans = find_intersections(coeflist[pidx - 1: pidx + 1], start_pos_all_new/Config.fs, 1e-6)
-            anslst.append([x[0] for x in ans][0])
+            ans, c1, c2 = find_intersections(coeflist[pidx - 1: pidx + 1], start_pos_all_new/Config.fs, 1e-6)
+
+            if False:
+                pxv1 = np.linspace(np.polyval(coeff_time, pidx-1), np.polyval(coeff_time, pidx) , 100000)
+                pxv3 = np.arange(round(np.polyval(coeff_time, pidx-1) * Config.fs), round(np.polyval(coeff_time, pidx)* Config.fs))
+                fig = go.Figure(layout_title_text=f"{pidx=} packet view")
+                fig.add_trace(go.Scatter(x=pxv1, y=wrap(np.polyval(c1, pxv1))))
+                fig.add_trace(go.Scatter(x=pxv3 / Config.fs, y=np.angle(pktdata_in[pxv3]), mode='markers'))
+                fig.show()
+
+            anslst.extend(ans)
+            val = ans[0]
+            pxv1 = np.linspace(val - 1e-4, val, 1000)
+            pxv2 = np.linspace(val, val + 1e-4, 1000)
+            pxv3 = np.arange(round((val - 1e-4) * Config.fs), round((val + 1e-4) * Config.fs))
+            fig = go.Figure(layout_title_text=f"{pidx=} intersection view")
+            fig.add_trace(go.Scatter(x=pxv1, y=wrap(np.polyval(c1, pxv1))))
+            fig.add_trace(go.Scatter(x=pxv2, y=wrap(np.polyval(c2, pxv2))))
+            fig.add_trace(go.Scatter(x=pxv3/Config.fs, y=np.angle(pktdata_in[pxv3]), mode='markers'))
+            fig.show()
+            sys.exit(0)
+
             if len(ans) != 1: logger.error(f"ANSLEN {pidx=}, {ans=}")
         anslst = np.array(anslst)
         fig = go.Figure(layout_title_text="intersection points")
@@ -267,6 +287,11 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         print(f"{avgf0=} cfo ppm : {avgf0 - Config.bw/2=}")
 
         fig.show()
+
+
+
+
+
         sys.exit(0)
 
 

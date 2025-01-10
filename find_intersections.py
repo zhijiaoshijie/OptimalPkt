@@ -104,8 +104,6 @@ def find_intersections(coeflist, start_pos_all_new, epsilon):
         valid_roots = valid_roots.astype(float)
 
         # Add valid roots to intersection points
-        for root in valid_roots:
-            y_val = np.polyval(poly1_shifted_coef, root)
-            intersection_points.append((root, y_val))
+        intersection_points.extend(valid_roots)
 
-    return intersection_points
+    return intersection_points, poly1_shifted_coef, poly2_shifted_coef
