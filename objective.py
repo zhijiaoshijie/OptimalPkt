@@ -7,8 +7,12 @@ import plotly.graph_objects as go
 from numpy.ma.extras import polyfit
 from plotly_resampler import FigureResampler
 import sys
+from find_intersections import find_intersections
 
 from utils import *
+
+
+
 
 def objective_linear(cfofreq, time_error, pktdata2a):
     if time_error < 0: return -cfofreq, -time_error
@@ -96,6 +100,12 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         return np.abs(ydata.dot(np.exp(-1j * np.polyval(coeff2d, xdata))))
     if True:
         with open("coefout3.pkl", "rb") as fl: coeflist = pickle.load(fl)
+
+        def wrap(x):
+            return (x + np.pi) % (2 * np.pi) - np.pi
+
+
+
         fig = go.Figure(layout_title_text="coef0")
         fig.add_trace(go.Scatter(y=coeflist[:, 0]))
         fig.add_hline(y=beta)
@@ -241,6 +251,39 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
 
         fig.show()
 
+
+
+        for pidx in range(1, 239):
+            # if pidx != 150: continue
+            start_pos_all_new = np.polyval(coeff_time, pidx)*Config.fs
+            start_pos = round(start_pos_all_new)
+
+            find_intersections(coeflist[pidx - 1: pidx + 1], start_pos_all_new, 1e-6)
+            xva = np.arange(start_pos - 100, start_pos + 100)
+            xva2 = np.linspace(x_data[start_pos - 100], x_data[start_pos + 100], 10000)
+            yplta = wrap(np.polyval(coeflist[pidx - 1], xva2))
+            ypltb = wrap(np.polyval(coeflist[pidx], xva2))
+            fig = go.Figure(layout_title_text=f"{pidx=} intersect")
+            fig.add_trace(go.Scatter(x=xva2, y=yplta))
+            fig.add_trace(go.Scatter(x=xva2, y=ypltb))
+            fig.add_trace(go.Scatter(x=x_data[xva], y=np.angle(tocpu(pktdata_in[xva]))))
+            fig.add_vline(x=start_pos_all_new/Config.fs)
+            fig.show()
+
+            xva = np.arange(start_pos - 10000, start_pos + 10000)
+            xva2 = np.linspace(x_data[start_pos - 10000], x_data[start_pos + 10000], 10000)
+            yplta = wrap(np.polyval(coeflist[pidx - 1], xva2))
+            ypltb = wrap(np.polyval(coeflist[pidx], xva2))
+            fig = go.Figure(layout_title_text=f"{pidx=} intersect")
+            fig.add_trace(go.Scatter(x=xva2, y=np.unwrap(yplta)))
+            fig.add_trace(go.Scatter(x=xva2, y=np.unwrap(ypltb)))
+            fig.add_trace(go.Scatter(x=x_data[xva], y=np.unwrap(np.angle(tocpu(pktdata_in[xva])))))
+            fig.add_vline(x=start_pos_all_new/Config.fs)
+            fig.show()
+            print(coeflist[pidx - 1], coeflist[pidx], start_pos_all_new/Config.fs)
+
+            sys.exit(0)
+
         sys.exit(0)
     # accurately search for
     if True:
@@ -272,8 +315,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
 
                 fig=go.Figure(layout_title_text=f"{pidx=} fit")
                 xvp = np.arange(start_pos - 1000, start_pos + Config.nsamp + 1000)
-                def wrap(x):
-                    return (x + np.pi) % (2 * np.pi) - np.pi
+
                 fig.add_trace(go.Scatter(x=x_data[xvp], y=np.angle(tocpu(pktdata_in[xvp]))))
                 fig.add_trace(go.Scatter(x=x_data[xvp], y=wrap(np.polyval(coefficients_2d, x_data[xvp]))))
                 # fig.add_trace(go.Scatter(x=x_data[xvp], y=wrap(np.polyval(coefficients_2d[1:], x_data[xvp]))))
