@@ -106,7 +106,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         with open("coefout3.pkl", "rb") as fl: coeflist = pickle.load(fl)
 
 
-        if False:
+        if True:
             pidx = 150
             start_pos_all_new = nsamp_small * pidx * (1 - estf / Config.sig_freq) + est_to_s
             start_pos = round(start_pos_all_new)
@@ -120,7 +120,8 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
             print(coeflist[pidx])
             for xi in xv[:-2]:
                 # dif2.append(wrap(np.angle(newsig[xi]) + np.angle(newsig[xi + 2]) - 2 * np.angle(newsig[xi + 1])))
-                dif2.append(wrap(np.angle(pktdata_in[xi]) + np.angle(pktdata_in[xi + 2]) - 2 * np.angle(pktdata_in[xi + 1])))
+                # dif2.append(wrap(np.angle(pktdata_in[xi]) + np.angle(pktdata_in[xi + 2]) - 2 * np.angle(pktdata_in[xi + 1])))
+                dif2.append(wrap(np.angle(pktdata_in[xi + 1]) - np.angle(pktdata_in[xi])))
             fig = go.Figure()
             fig.add_trace(go.Scatter(x=x_data[xv[:-2]], y=dif2, mode='markers'))
             fig.show()
