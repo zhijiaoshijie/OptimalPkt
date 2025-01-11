@@ -31,11 +31,9 @@ if __name__ == "__main__":
 
             beta = Config.bw / ((2 ** Config.sf) / Config.bw) * np.pi # = xie lv bian hua lv / 2 = pin lv bian hua lv * 2pi / 2
             betat = beta * (1 + estf / Config.sig_freq)
-            # for window_idx in range(12, 15):#int(nwindows) - 1):
-            ass = []
-            for tstdbg in np.linspace(0, 0.015, 100):
+            if True:
                 window_idx = 10
-                tstart = window_idx * nsamp_small + tstdbg * Config.fs
+                tstart = window_idx * nsamp_small
                 xv = cp.arange(round(tstart), round(tstart + nsamp_small))
                 poly_ref = (betat, (-Config.bw / 2 + estf) * 2 * cp.pi - 2 * betat * tstart / Config.fs, 0)
                 sig_dcp = data1[xv] * cp.exp(-1j * cp.polyval(poly_ref, xv / Config.fs))
@@ -49,9 +47,7 @@ if __name__ == "__main__":
                 fmax = tocpu(cp.argmax(cp.abs(data0))) - Config.fs / 2 # fftshift: -500000 to 500000
                 estt = - fmax / Config.bw * nsamp_small / Config.fs # time shift +: sig move right, freq -
                 # logger.warning(f"0th step fft of random dechirped window: {window_idx=}, {fmax=} {estt=}")
-                ass.append(tstdbg + estt)
-            plt.plot(ass)
-            plt.show()
+            objective_decode(estf, estt, data1)
             sys.exit(0)
 
             if True:
