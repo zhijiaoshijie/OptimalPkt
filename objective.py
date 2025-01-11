@@ -222,7 +222,6 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
 
         anslst = []
         for pidx in range(1, 240):
-            pidx = 230
             start_pos_all_new = np.polyval(coeff_time, pidx)*Config.fs
             start_pos = round(start_pos_all_new)
 
@@ -241,12 +240,13 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
             pxv1 = np.linspace(val - 1e-4, val, 1000)
             pxv2 = np.linspace(val, val + 1e-4, 1000)
             pxv3 = np.arange(round((val - 1e-4) * Config.fs), round((val + 1e-4) * Config.fs))
-            fig = go.Figure(layout_title_text=f"{pidx=} intersection view")
-            fig.add_trace(go.Scatter(x=pxv1, y=wrap(np.polyval(c1, pxv1))))
-            fig.add_trace(go.Scatter(x=pxv2, y=wrap(np.polyval(c2, pxv2))))
-            fig.add_trace(go.Scatter(x=pxv3/Config.fs, y=np.angle(pktdata_in[pxv3]), mode='markers'))
-            fig.show()
-            sys.exit(0)
+            if False:
+                fig = go.Figure(layout_title_text=f"{pidx=} intersection view")
+                fig.add_trace(go.Scatter(x=pxv1, y=wrap(np.polyval(c1, pxv1))))
+                fig.add_trace(go.Scatter(x=pxv2, y=wrap(np.polyval(c2, pxv2))))
+                fig.add_trace(go.Scatter(x=pxv3/Config.fs, y=np.angle(pktdata_in[pxv3]), mode='markers'))
+                fig.show()
+                sys.exit(0)
 
             if len(ans) != 1: logger.error(f"ANSLEN {pidx=}, {ans=}")
         anslst = np.array(anslst)
@@ -270,7 +270,9 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
             f0list.append(f0 / 2 / np.pi)
         fig = go.Figure(layout_title_text="f0 from coeflist[:, 1] and coeftime")
         fig.add_trace(go.Scatter(x=pidx_range, y=f0list))
-        avgf0 = np.mean(f0list[32:])
+        # avgf0 = np.mean(f0list[32:])
+        coeff1 = np.polyfit(pidx_range[32:], f0list[32:], 1)
+        avgf0 = np.polyval(coeff1, 0)
         fig.add_hline(y=avgf0)
         print(f"{avgf0=} cfo ppm : {avgf0 + Config.bw/2=}")
 
@@ -282,7 +284,9 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
             f0list.append(f0 / 2 / np.pi)
         fig = go.Figure(layout_title_text="f1 from coeflist[:, 1] and coeftime")
         fig.add_trace(go.Scatter(x=pidx_range, y=f0list))
-        avgf0 = np.mean(f0list[32:])
+        # avgf0 = np.mean(f0list[32:])
+        coeff1 = np.polyfit(pidx_range[32:], f0list[32:], 1)
+        avgf0 = np.polyval(coeff1, 0)
         fig.add_hline(y=avgf0)
         print(f"{avgf0=} cfo ppm : {avgf0 - Config.bw/2=}")
 
