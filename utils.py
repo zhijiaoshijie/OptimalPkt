@@ -217,6 +217,7 @@ def myplot(*args, **kwargs):
 # since fs=1e6: real freq in hz fhz=[-n/2, ..., -1, 0, 1, ...,   n/2-1] / n * 1e6Hz
 # total range: sampling frequency. -fs/2 ~ fs/2, centered at 0
 # bandwidth = 0.40625 sf
+# fmax = tocpu(cp.argmax(cp.abs(data0))) - Config.fs / 2 # fftshift: -500000 to 500000 !!!
 def myfft(chirp_data, n, plan):
     if use_gpu:
         return np.fft.fftshift(fft.fft(chirp_data.astype(cp.complex64), n=n, plan=plan))

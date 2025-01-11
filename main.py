@@ -14,35 +14,45 @@ if __name__ == "__main__":
     logger.warning(f"Last modified time of the script: {readable_time}")
 
     fulldata = []
-    # Main loop read files
     for file_path, file_path_id in Config.file_paths_zip:
-        # if file_path_id < 24: continue
         thresh = preprocess_file(file_path)
-
-        # loop for demodulating all decoded packets: iterate over pkts with energy>thresh and length>min_length
-        codescl = []
-        canglescl = []
-        # fig = go.Figure(layout_title_text=f"Angle {file_path_id=}")
-        # fig.add_vline(x=Config.preamble_len)
-        # fig.add_vline(x=Config.sfdpos + 2)
         for pkt_idx, pkt_data in enumerate(read_pkt(file_path, file_path.replace("data0", "data1"), thresh, min_length=30)):
-
-            # read data: read_idx is the index of packet end window in the file
             read_idx, data1, data2 = pkt_data
-            # (Optional) skip the first pkt because it may be half a pkt. read_idx == len(data1) means this pkt start from start of file
             if read_idx == 0: continue
-            # plt.plot(tocpu(cp.unwrap(cp.angle(data1[:200000]))))
-            # plt.show()
-            # plt.plot(tocpu(cp.unwrap(cp.angle(data2[:200000]))))
-            # plt.show()
-            if pkt_idx < 1: continue
-            # if pkt_idx > 2: break
+            # if pkt_idx < 1: continue
 
-            # normalization
-            nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
-            logger.info(f"Prework {pkt_idx=} {len(data1)/nsamp_small=} {cp.mean(cp.abs(data1))=} {cp.mean(cp.abs(data2))=}")
+            estf = -40000
+
+            nsamp_small = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
+            nwindows = len(data1) / nsamp_small
+            logger.info(f"Prework {pkt_idx=} {nwindows=} {cp.mean(cp.abs(data1))=} {cp.mean(cp.abs(data2))=}")
             data1 /= cp.mean(cp.abs(data1))
             data2 /= cp.mean(cp.abs(data2)) # TODO remove normalization for production
+
+            beta = Config.bw / ((2 ** Config.sf) / Config.bw) * np.pi # = xie lv bian hua lv / 2 = pin lv bian hua lv * 2pi / 2
+            betat = beta * (1 + estf / Config.sig_freq)
+            # for window_idx in range(12, 15):#int(nwindows) - 1):
+            ass = []
+            for tstdbg in np.linspace(0, 0.015, 100):
+                window_idx = 10
+                tstart = window_idx * nsamp_small + tstdbg * Config.fs
+                xv = cp.arange(round(tstart), round(tstart + nsamp_small))
+                poly_ref = (betat, (-Config.bw / 2 + estf) * 2 * cp.pi - 2 * betat * tstart / Config.fs, 0)
+                sig_dcp = data1[xv] * cp.exp(-1j * cp.polyval(poly_ref, xv / Config.fs))
+                # fig = px.line(y=tocpu(cp.unwrap(cp.angle(sig_dcp))), title=f"sig_dcp angle {window_idx=}")
+                # fig = px.line(y=tocpu(cp.unwrap(cp.angle(data1[xv]))), title=f"pktin angle {window_idx=}")
+                # fig = px.line(x=xv / Config.fs, y=tocpu(cp.unwrap(cp.angle(cp.exp(-1j * cp.polyval(polyref, xv / Config.fs))))), title=f"pktref angle {window_idx=}")
+                # fig.add_vline(x=tstart / Config.fs)
+                # fig.add_vline(x=(tstart + nsamp_small) / Config.fs)
+                # fig.show()
+                data0 = myfft(sig_dcp, n=Config.fft_n, plan=Config.plan)
+                fmax = tocpu(cp.argmax(cp.abs(data0))) - Config.fs / 2 # fftshift: -500000 to 500000
+                estt = - fmax / Config.bw * nsamp_small / Config.fs # time shift +: sig move right, freq -
+                # logger.warning(f"0th step fft of random dechirped window: {window_idx=}, {fmax=} {estt=}")
+                ass.append(tstdbg + estt)
+            plt.plot(ass)
+            plt.show()
+            sys.exit(0)
 
             if True:
                 # objective_decode(-41890.277+25, 12802.113, data1)
