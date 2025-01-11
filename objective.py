@@ -106,7 +106,24 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         with open("coefout3.pkl", "rb") as fl: coeflist = pickle.load(fl)
 
 
-
+        if True:
+            pidx = 150
+            start_pos_all_new = nsamp_small * pidx * (1 - estf / Config.sig_freq) + est_to_s
+            start_pos = round(start_pos_all_new)
+            xv = np.arange(start_pos,start_pos + Config.nsamp)
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=x_data[xv], y=np.abs(pktdata_in[xv])))
+            fig.show()
+            dif2 = []
+            newsig = np.zeros_like(pktdata_in)
+            newsig[xv] = np.exp(1j * np.polyval(coeflist[pidx], x_data[xv]))
+            print(coeflist[pidx])
+            for xi in xv[:-2]:
+                dif2.append(wrap(np.angle(newsig[xi]) + np.angle(newsig[xi + 2]) - 2 * np.angle(newsig[xi + 1])))
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=x_data[xv[:-2]], y=dif2, mode='markers'))
+            fig.show()
+            sys.exit(0)
 
         fig = go.Figure(layout_title_text="coef0")
         fig.add_trace(go.Scatter(y=coeflist[:, 0]))
