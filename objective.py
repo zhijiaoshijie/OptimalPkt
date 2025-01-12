@@ -69,8 +69,10 @@ def gen_matrix2(dt, est_cfo_f):
     return decode_matrix_a, decode_matrix_b
 
 # todo 斜率是否不受cfo sfo影响
+
+
 def objective_decode(estf, estt, pktdata_in):
-    est_to_s = estt * Config.fs
+    nestt = estt * Config.fs
     nsymblen = 2 ** Config.sf / Config.bw * Config.fs
     dvx = []
     betai = Config.bw / ((2 ** Config.sf) / Config.bw) * np.pi
@@ -96,7 +98,7 @@ def objective_decode(estf, estt, pktdata_in):
 
         if False:
             pidx = 150
-            nstart = nsymblen * pidx * (1 - estf / Config.sig_freq) + est_to_s
+            nstart = nsymblen * pidx * (1 - estf / Config.sig_freq) + nestt
 
             nsymbr = np.arange(round(nstart)-1000,round(nstart) + Config.nsamp+1000)
             fig = go.Figure()
@@ -127,7 +129,7 @@ def objective_decode(estf, estt, pktdata_in):
 
         dd = []
         for pidx in range(240):
-            nstart = nsymblen * pidx * (1 - estf / Config.sig_freq) + est_to_s
+            nstart = nsymblen * pidx * (1 - estf / Config.sig_freq) + nestt
 
             nsymbr = np.arange(round(nstart) + 1000, round(nstart) + Config.nsamp - 1000)
             coeflist[pidx, 2] += np.angle(pktdata_in[nsymbr].dot(np.exp(-1j * np.polyval(coeflist[pidx], tsymbr))))
@@ -144,9 +146,9 @@ def objective_decode(estf, estt, pktdata_in):
         coeflist2 = coeflist.copy()
         dd31 = []
         for pidx in range(239):
-            nstart = nsymblen * pidx * (1 - estf / Config.sig_freq) + est_to_s
+            nstart = nsymblen * pidx * (1 - estf / Config.sig_freq) + nestt
 
-            xva = np.arange(round(nstart) - 1000, round(nsymblen * (pidx+2) * (1 - estf / Config.sig_freq) + est_to_s) + 1000)
+            xva = np.arange(round(nstart) - 1000, round(nsymblen * (pidx+2) * (1 - estf / Config.sig_freq) + nestt) + 1000)
             yplt = np.zeros_like(pktdata_in, dtype=np.float64)
             yplt[xva] = np.unwrap(np.angle(tocpu(pktdata_in[xva])))
             val = (yplt[round(nstart)+1000] - np.angle(pktdata_in[round(nstart)+1000])) / 2 / np.pi
@@ -156,7 +158,7 @@ def objective_decode(estf, estt, pktdata_in):
             dd2.append(val - round(val))
             coeflist[pidx, 2] += round(val) * 2 * np.pi
 
-            start_pos_all_new2 = nsymblen * (pidx + 1) * (1 - estf / Config.sig_freq) + est_to_s
+            start_pos_all_new2 = nsymblen * (pidx + 1) * (1 - estf / Config.sig_freq) + nestt
             start_pos2 = round(start_pos_all_new2)
             val2 = (yplt[start_pos2+1000] - np.angle(pktdata_in[start_pos2+1000])) / 2 / np.pi
             # val = (yplt[start_pos2+1000] - np.polyval(coeflist[pidx+1], x_data[start_pos2 + 1000])) / 2 / np.pi
@@ -180,7 +182,7 @@ def objective_decode(estf, estt, pktdata_in):
             coplt[1] = yplt[round(nstart)] - np.polyval(coplt, x_data[round(nstart)])
             xvb = np.arange(round(nstart) - 1000, round(nstart) + 1000)
 
-            nstart = nsymblen * pidx * (1 - estf / Config.sig_freq) + est_to_s
+            nstart = nsymblen * pidx * (1 - estf / Config.sig_freq) + nestt
 
             nsymbr = np.arange(round(nstart) + 1000, round(nstart) + Config.nsamp - 1000)
             coef2d1 = np.polyfit(tsymbr, np.unwrap(np.angle(yplt[nsymbr])), 2)
@@ -312,7 +314,7 @@ def objective_decode(estf, estt, pktdata_in):
         # coeff_time = [0.01008263, 0.01015366]
         coeflist = []
         for pidx in range(1, Config.preamble_len):
-            nstart = pidx * nsymblen
+            nstart = pidx * nsymblen + nestt
             tstart = nstart / Config.fs
             # nstart = np.polyval(coeff_time, pidx) * Config.fs
 
@@ -343,7 +345,6 @@ def objective_decode(estf, estt, pktdata_in):
             # plot the results:
             #
             plot_fit2d(coefficients_2d, estf, pidx, pktdata_in)
-            sys.exit(0)
 
 
             #
@@ -428,7 +429,7 @@ def objective_decode(estf, estt, pktdata_in):
     if True:
         diffs = []
         for pidx in pidx_range[:-1]:
-            nstart = nsymblen * pidx * (1 - estf / Config.sig_freq) + est_to_s
+            nstart = nsymblen * pidx * (1 - estf / Config.sig_freq) + nestt
 
             nsymbr = np.arange(round(nstart) - 1000, round(nstart) + Config.nsamp * 2 + 1000)
             y_data = tocpu(cp.unwrap(cp.angle(pktdata_in[nsymbr])))
@@ -461,7 +462,7 @@ def objective_decode(estf, estt, pktdata_in):
 
         c2d = []
         for pidx in pidx_range:
-            nstart = nsymblen * pidx * (1 - estf / Config.sig_freq) + est_to_s
+            nstart = nsymblen * pidx * (1 - estf / Config.sig_freq) + nestt
 
             nsymbr = np.arange(round(nstart) + 1000, round(nstart) + Config.nsamp - 1000)
             y_data = y_data_all[nsymbr]
@@ -481,8 +482,8 @@ def objective_decode(estf, estt, pktdata_in):
             fig.show()
         pidxs = []
         for pidx in pidx_range:
-            # nstart = nsymblen * pidx * (1 - estf / Config.sig_freq) + est_to_s
-            nstart = np.polyval(coeff_time, pidx - 1)*Config.fs + est_to_s
+            # nstart = nsymblen * pidx * (1 - estf / Config.sig_freq) + nestt
+            nstart = np.polyval(coeff_time, pidx - 1)*Config.fs + nestt
 
             nsymbr = np.arange(round(nstart) + 1000, round(nstart) + Config.nsamp - 1000)
             y_data = y_data_all[nsymbr]
@@ -516,7 +517,7 @@ def objective_decode(estf, estt, pktdata_in):
                 fig.add_trace(go.Scatter(x=x_data[xv2], y=np.unwrap(np.angle(tocpu(pktdata_in[xv2]))), mode='lines+markers'))
                 fig.add_trace(go.Scatter(x=x_data[xv2], y=np.polyval(coefficients_2d, x_data[xv2]), mode='lines+markers'))
                 fig.add_vline(x=nstart/Config.fs)
-                fig.add_vline(x=np.polyval(coeff_time, pidx)  + est_to_s/Config.fs)
+                fig.add_vline(x=np.polyval(coeff_time, pidx)  + nestt/Config.fs)
                 fig.update_layout(title=f"{pidx=} diffline")
                 fig.show()
 
@@ -526,7 +527,7 @@ def objective_decode(estf, estt, pktdata_in):
 
         pidx_range2 = np.arange(Config.preamble_len+2, Config.preamble_len + 4)
         for pidx in pidx_range2:
-            nstart = nsymblen * pidx * (1 - estf / Config.sig_freq) + est_to_s
+            nstart = nsymblen * pidx * (1 - estf / Config.sig_freq) + nestt
 
             nsymbr = np.arange(round(nstart) + 1000, round(nstart) + Config.nsamp - 1000)
             y_data = y_data_all[nsymbr]
@@ -610,9 +611,9 @@ def objective_decode(estf, estt, pktdata_in):
     sys.exit(0)
 
 
-def gen_refchirp(est_to_s, estf, length):
+def gen_refchirp(nestt, estf, length):
     betai = Config.bw / ((2 ** Config.sf) / Config.bw)
-    x = (cp.arange(length) - est_to_s) * (1 + estf / Config.sig_freq)
+    x = (cp.arange(length) - nestt) * (1 + estf / Config.sig_freq)
     yi = cp.zeros_like(x, dtype=np.complex64)
     bwnew = Config.bw * (1 + estf / Config.sig_freq)
     betanew = betai * (1 + 2 * estf / Config.sig_freq)
@@ -629,27 +630,27 @@ def gen_refchirp(est_to_s, estf, length):
     return yi
 
 
-def objective_core_new(est_cfo_f, est_to_s, pktdata_in):
+def objective_core_new(est_cfo_f, nestt, pktdata_in):
     deltaf = 0
     estf = est_cfo_f + deltaf
-    nstart = est_to_s
+    nstart = nestt
 
 
-    yi = gen_refchirp(est_to_s, estf, len(pktdata_in))
+    yi = gen_refchirp(nestt, estf, len(pktdata_in))
 
     retvals = 0
     for i in range(Config.preamble_len):
-        nsymbr = cp.arange(round(est_to_s + i * Config.nsamp), round(est_to_s + (i+1) * Config.nsamp))
+        nsymbr = cp.arange(round(nestt + i * Config.nsamp), round(nestt + (i+1) * Config.nsamp))
         retvals += cp.abs(pktdata_in[nsymbr].dot(cp.conj(yi[nsymbr]))) / len(nsymbr)
         # if i>=Config.preamble_len - 2:
-        #     logger.warning(f"objcorenew {est_cfo_f=:11.3f} {est_to_s=:11.3f} {i=} {cp.abs(pktdata_in[nsymbr].dot(cp.conj(yi[nsymbr]))) / len(nsymbr)}")
+        #     logger.warning(f"objcorenew {est_cfo_f=:11.3f} {nestt=:11.3f} {i=} {cp.abs(pktdata_in[nsymbr].dot(cp.conj(yi[nsymbr]))) / len(nsymbr)}")
     for i in range(Config.sfdpos, Config.sfdpos + 3):
-        nsymbr = cp.arange(round(est_to_s + i * Config.nsamp), round(est_to_s + (i+1) * Config.nsamp))
+        nsymbr = cp.arange(round(nestt + i * Config.nsamp), round(nestt + (i+1) * Config.nsamp))
         if i == Config.sfdpos + 2:
-            nsymbr = cp.arange(round(est_to_s + i * Config.nsamp), round(est_to_s + (i + 0.25) * Config.nsamp))
+            nsymbr = cp.arange(round(nestt + i * Config.nsamp), round(nestt + (i + 0.25) * Config.nsamp))
         retvals += cp.abs(pktdata_in[nsymbr].dot(cp.conj(yi[nsymbr]))) / len(nsymbr)
-        # logger.warning(f"objcorenew {est_cfo_f=:11.3f} {est_to_s=:11.3f} {i=} {cp.abs(pktdata_in[nsymbr].dot(cp.conj(yi[nsymbr]))) / len(nsymbr)}")
-    # logger.warning(f"objcorenew {est_cfo_f=:11.3f} {est_to_s=:11.3f} {retvals=}")
+        # logger.warning(f"objcorenew {est_cfo_f=:11.3f} {nestt=:11.3f} {i=} {cp.abs(pktdata_in[nsymbr].dot(cp.conj(yi[nsymbr]))) / len(nsymbr)}")
+    # logger.warning(f"objcorenew {est_cfo_f=:11.3f} {nestt=:11.3f} {retvals=}")
 
     return retvals
 

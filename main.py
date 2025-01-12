@@ -34,7 +34,16 @@ if __name__ == "__main__":
 
             estt = coarse_est_f_t(data1, estf, 10)
             assert estt >= 0
-            objective_decode(estf, estt, data1)
+            logger.warning(f"Coarse estimate time from {estf=} at window_idx=10: {estt=}")
+
+            start_pidx = start_pidx_pow_detect(data1, estf, estt)
+            logger.warning(f"Coarse estimate start pkt from {estf=} {estt=}: {start_pidx=}")
+            estt += start_pidx * nsymblen / Config.fs
+
+            logger.warning(f"fixed {estt=} from {start_pidx=}")
+            fitcoef(estf, estt, data1)
+
+            # objective_decode(estf, estt, data1)
             sys.exit(0)
 
             if True:
