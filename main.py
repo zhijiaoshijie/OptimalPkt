@@ -33,6 +33,7 @@ if __name__ == "__main__":
             data2 /= cp.mean(cp.abs(data2)) # TODO remove normalization for production
 
             estt = coarse_est_f_t(data1, estf, 10)
+            assert estt >= 0
             objective_decode(estf, estt, data1)
             sys.exit(0)
 

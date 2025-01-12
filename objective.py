@@ -69,7 +69,8 @@ def gen_matrix2(dt, est_cfo_f):
     return decode_matrix_a, decode_matrix_b
 
 # todo 斜率是否不受cfo sfo影响
-def objective_decode(estf, est_to_s, pktdata_in):
+def objective_decode(estf, estt, pktdata_in):
+    est_to_s = estt * Config.fs
     nsymblen = 2 ** Config.sf / Config.bw * Config.fs
     dvx = []
     betai = Config.bw / ((2 ** Config.sf) / Config.bw) * np.pi
@@ -310,7 +311,7 @@ def objective_decode(estf, est_to_s, pktdata_in):
         nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
         # coeff_time = [0.01008263, 0.01015366]
         coeflist = []
-        for pidx in range(0, Config.preamble_len):
+        for pidx in range(1, Config.preamble_len):
             nstart = pidx * nsymblen
             tstart = nstart / Config.fs
             # nstart = np.polyval(coeff_time, pidx) * Config.fs
@@ -319,7 +320,7 @@ def objective_decode(estf, est_to_s, pktdata_in):
             #
             # 2d fit on unwrapped angle
             #
-            nsymbr = cp.arange(round(nstart) + 1000, round(nstart) + Config.nsamp - 1000)
+            nsymbr = cp.arange(round(nstart) + 1000, round(nstart + nsymblen) - 1000)
             tsymbr = nsymbr / Config.fs
             fitmethod = "2dfit"
             if fitmethod == "2dfit":
@@ -331,7 +332,7 @@ def objective_decode(estf, est_to_s, pktdata_in):
                     1
                 )
                 coefficients_2d = [betat, *coefficients_2d]
-            logger.warning(f"{fitmethod=} {coefficients_2d=} {betat=} {betai=}")
+            logger.warning(f"{pidx=} {nstart=} {fitmethod=} {coefficients_2d=} {betat=} {betai=}")
 
             # align with phase. here may have a 2pi difference when evaluated in unwrap
             coefficients_2d[-1] -= cp.angle(
@@ -342,6 +343,7 @@ def objective_decode(estf, est_to_s, pktdata_in):
             # plot the results:
             #
             plot_fit2d(coefficients_2d, estf, pidx, pktdata_in)
+            sys.exit(0)
 
 
             #

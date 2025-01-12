@@ -3,6 +3,7 @@ import itertools
 from sklearn.cluster import KMeans
 import plotly.express as px
 
+from newwork import pltfig1
 from utils import *
 
 

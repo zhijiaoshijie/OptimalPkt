@@ -42,6 +42,7 @@ def plot_fit2d(coefficients_2d_in, estf, pidx, pktdata_in):
     uarp = cp.unwrap(cp.angle(pktdata_in[nsymbrp]))
     coefficients_2d[-1] -= (cp.polyval(coefficients_2d, tsymbrp[p0idx]) - uarp[p0idx])
     coefficients_2d[-1] += cp.angle(pktdata_in[nsymbr].dot(cp.exp(-1j * cp.polyval(coefficients_2d, tsymbr))))
+    logger.warning(f"inside plt_fit2d: {uarp[p0idx] - cp.polyval(coefficients_2d, tsymbrp[p0idx])}")
     pltfig(tsymbrp,
            (uarp, cp.polyval(coefficients_2d, tsymbrp)),
            title = f"{pidx=} fit 2d uwa curve",
@@ -49,7 +50,7 @@ def plot_fit2d(coefficients_2d_in, estf, pidx, pktdata_in):
     pltfig1(tsymbrp,
             uarp - cp.polyval(coefficients_2d, tsymbrp),
             title=f"{pidx=} fit diff between 2d curve and uwa",
-            mode='markers',
+            mode='lines+markers',
             marker=dict(size=1),
             yaxisrange=[-2, 2]).show()
     fig = pltfig1(tsymbrp,
