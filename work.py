@@ -1,6 +1,5 @@
 from objective import *
 
-
 def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
     assert tstart >= 0
 
@@ -34,8 +33,8 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
     x = cp.arange(Config.nsamp) * (1 + estf / Config.sig_freq)
     yi = cp.zeros_like(x, dtype=np.complex64)
     bwnew = Config.bw * (1 + estf / Config.sig_freq)
-    beta = Config.bw / ((2 ** Config.sf) / Config.bw)
-    betanew = beta * (1 + 2 * estf / Config.sig_freq)
+    betai = Config.bw / ((2 ** Config.sf) / Config.bw)
+    betanew = betai * (1 + 2 * estf / Config.sig_freq)
     upchirp = cp.exp(2j * cp.pi * (betanew / 2 * x ** 2 / Config.fs ** 2 + (- bwnew / 2) * x / Config.fs))
     downchirp = cp.conj(upchirp)
     if False: # not knowing how many preambles: search for sfd
@@ -140,7 +139,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
         # try all possible variations (unwrap f0, t0 if their real value exceed [-0.5, 0.5))
         deltaf, deltat = np.meshgrid(np.array((0, y_value_secondary)), np.array((0, fdown2)))
         values = np.zeros((2, 2, 3)).astype(float)
-        nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
+        nsymblen = 2 ** Config.sf / Config.bw * Config.fs
         for i in range(deltaf.shape[0]):
             for j in range(deltaf.shape[1]):
                 fu = fft_val_up + deltaf[i, j]
@@ -148,7 +147,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
                 f0 = (fu + fd) / 2
                 t0 = (f0 - fu)
                 f1 = f0 * Config.bw
-                t1 = t0 * Config.tsig + tstart + detect_pkt * nsamp_small
+                t1 = t0 * Config.tsig + tstart + detect_pkt * nsymblen
 
                 retval= 0#objective_core_new(f1 , t1, pktdata_in)
                 logger.warning(f"linear optimization {retval=:8.5f} {f1=:11.3f} {t1=:11.3f}") # TODO debug
@@ -178,28 +177,28 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
         logger.warning(f"pre sigD parameters:{est_cfo_f=} {est_to_s=}")
         dphaselist = []
         for pidx in range(Config.preamble_len):  # assume chirp start at one in [0, Config.detect_range_pkts) possible windows
-            start_pos_all = nsamp_small * pidx + est_to_s
-            start_pos = round(start_pos_all)
-            start_pos_d = start_pos_all - start_pos
+            start_pos_all = nsymblen * pidx + est_to_s
+            round(nstart) = round(start_pos_all)
+            start_pos_d = start_pos_all - round(nstart)
             # use input cfo for sfo
 
             # pass
 
             # t1 = 2 ** Config.sf / Config.bw * (1 - cfoppm)
-            start_pos_all_new = nsamp_small * pidx * (1 - est_cfo_f / Config.sig_freq) + est_to_s
-            start_pos = round(start_pos_all_new)
-            # t1 = nsamp_small * (pidx + 1) * (1 + est_cfo_f / Config.sig_freq * Config.bw) + est_to_s - start_pos_all_new
+            nstart = nsymblen * pidx * (1 - est_cfo_f / Config.sig_freq) + est_to_s
+            
+            # t1 = nsymblen * (pidx + 1) * (1 + est_cfo_f / Config.sig_freq * Config.bw) + est_to_s - nstart
             tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1] + (
-                        start_pos - start_pos_all_new) / Config.fs
+                        round(nstart) - nstart) / Config.fs
             # print(tstandard)
             cfoppm1 = (1 + est_cfo_f / Config.sig_freq)  # TODO!!!
             downchirp = mychirp(tstandard, f0=Config.bw / 2 * cfoppm1 - est_cfo_f,
                                 f1=-Config.bw / 2 * cfoppm1 - est_cfo_f, t1=2 ** Config.sf / Config.bw * cfoppm1)
-            sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
+            sig1 = pktdata_in[round(nstart): Config.nsamp + round(nstart)]
             sig2 = sig1 * downchirp
 
             data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
-            # print("new", np.max(np.abs(data0)), (start_pos - start_pos_all_new)/Config.fs, tstandard[0], tstandard[-1], Config.bw / 2 * (1 - est_cfo_f / Config.sig_freq )  - est_cfo_f, -Config.bw / 2* (1 - est_cfo_f / Config.sig_freq )  - est_cfo_f, 2 ** Config.sf / Config.bw  * (1 - est_cfo_f / Config.sig_freq ) )
+            # print("new", np.max(np.abs(data0)), (round(nstart) - nstart)/Config.fs, tstandard[0], tstandard[-1], Config.bw / 2 * (1 - est_cfo_f / Config.sig_freq )  - est_cfo_f, -Config.bw / 2* (1 - est_cfo_f / Config.sig_freq )  - est_cfo_f, 2 ** Config.sf / Config.bw  * (1 - est_cfo_f / Config.sig_freq ) )
             yval2 = cp.argmax(cp.abs(data0)).item()
             dval2 = np.array(tocpu(cp.angle(data0[yval2])).item())  # - dphase
             # dval2 = np.array(cp.angle(data0[Config.fft_n//2]).get().item())# - dphase
@@ -232,8 +231,8 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
         # print(f"sigd preobj {objective_core_phased(est_cfo_f, est_to_s, pktdata_in)=}")
         if False:
             dxval = np.linspace(-100, 100, 1000)
-            beta = Config.bw / ((2 ** Config.sf) / Config.bw) / Config.fs
-            dyval = [objective_core_phased(est_cfo_f + x2, est_to_s - x2 / beta, pktdata_in) for x2 in dxval]
+            betai = Config.bw / ((2 ** Config.sf) / Config.bw) / Config.fs
+            dyval = [objective_core_phased(est_cfo_f + x2, est_to_s - x2 / betai, pktdata_in) for x2 in dxval]
             fig = go.Figure(layout_title_text="plot neighbor of objective")
             fig.add_trace(go.Scatter(x=dxval, y=dyval, mode="lines"))
             # fig.add_vline(x=0, line=dict(color="black", dash="dash"))
@@ -245,13 +244,13 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
     # print("work ending")
     # sys.exit(0)
 
-        # print(f"sigd preobj {objective_core(est_cfo_f - fit_dfreq, est_to_s - fit_dfreq / beta, pktdata_in)=}")
-        # print(f"sigd preobj {objective_core(est_cfo_f + fit_dfreq, est_to_s + fit_dfreq / beta, pktdata_in)=}")
-        # print(f"sigd preobj {objective_core(est_cfo_f + fit_dfreq, est_to_s - fit_dfreq / beta, pktdata_in)=}")
-        # print(f"sigd preobj {objective_core(est_cfo_f - fit_dfreq, est_to_s + fit_dfreq / beta, pktdata_in)=}")
-        # print(f"sigd preobj {objective_core_phased(est_cfo_f - fit_dfreq, est_to_s - fit_dfreq / beta, pktdata_in)=}")
-        # print(f"sigd preobj {objective_core_phased(est_cfo_f + fit_dfreq, est_to_s + fit_dfreq / beta, pktdata_in)=}")
-        # print(f"sigd preobj {objective_core_phased(est_cfo_f + fit_dfreq, est_to_s - fit_dfreq / beta, pktdata_in)=}")
-        # print(f"sigd preobj {objective_core_phased(est_cfo_f - fit_dfreq, est_to_s + fit_dfreq / beta, pktdata_in)=}")
+        # print(f"sigd preobj {objective_core(est_cfo_f - fit_dfreq, est_to_s - fit_dfreq / betai, pktdata_in)=}")
+        # print(f"sigd preobj {objective_core(est_cfo_f + fit_dfreq, est_to_s + fit_dfreq / betai, pktdata_in)=}")
+        # print(f"sigd preobj {objective_core(est_cfo_f + fit_dfreq, est_to_s - fit_dfreq / betai, pktdata_in)=}")
+        # print(f"sigd preobj {objective_core(est_cfo_f - fit_dfreq, est_to_s + fit_dfreq / betai, pktdata_in)=}")
+        # print(f"sigd preobj {objective_core_phased(est_cfo_f - fit_dfreq, est_to_s - fit_dfreq / betai, pktdata_in)=}")
+        # print(f"sigd preobj {objective_core_phased(est_cfo_f + fit_dfreq, est_to_s + fit_dfreq / betai, pktdata_in)=}")
+        # print(f"sigd preobj {objective_core_phased(est_cfo_f + fit_dfreq, est_to_s - fit_dfreq / betai, pktdata_in)=}")
+        # print(f"sigd preobj {objective_core_phased(est_cfo_f - fit_dfreq, est_to_s + fit_dfreq / betai, pktdata_in)=}")
 
     return est_cfo_f, est_to_s, retval# None# (codes, codeangles)

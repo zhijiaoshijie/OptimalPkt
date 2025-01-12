@@ -27,8 +27,8 @@ def tocpu(x):
         return x
 
 def mychirp(t, f0, f1, t1):
-    beta = (f1 - f0) / t1
-    phase = 2 * cp.pi * (f0 * t + 0.5 * beta * t * t)
+    betai = (f1 - f0) / t1
+    phase = 2 * cp.pi * (f0 * t + 0.5 * betai * t * t)
     sig = cp.exp(1j * togpu(phase))
     return sig
 
@@ -167,10 +167,10 @@ def average_modulus(lst, n_classes):
 
 
 
-def gen_upchirp(t0, td, f0, beta):
+def gen_upchirp(t0, td, f0, betai):
     # start from ceil(t0in), end
     t = (cp.arange(math.ceil(t0), math.ceil(t0 + td), dtype=float) - t0)
-    phase = 2 * cp.pi * (f0 * t + 0.5 * beta * t * t) / Config.fs
+    phase = 2 * cp.pi * (f0 * t + 0.5 * betai * t * t) / Config.fs
     sig = cp.exp(1j * phase)
     return sig
 
@@ -227,11 +227,11 @@ def myfft(chirp_data, n, plan):
 
 
 def dechirp_fft(tstart, fstart, pktdata_in, refchirp, pidx, ispreamble):
-    nsamp_small = 2 ** Config.sf / Config.bw * Config.fs# * (1 + fstart / Config.sig_freq)
-    start_pos_all = nsamp_small * pidx + tstart
-    start_pos = round(start_pos_all)
-    start_pos_d = start_pos_all - start_pos
-    sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
+    nsymblen = 2 ** Config.sf / Config.bw * Config.fs# * (1 + fstart / Config.sig_freq)
+    start_pos_all = nsymblen * pidx + tstart
+    round(nstart) = round(start_pos_all)
+    start_pos_d = start_pos_all - round(nstart)
+    sig1 = pktdata_in[round(nstart): Config.nsamp + round(nstart)]
     if len(refchirp) != len(sig1):
         print(tstart, fstart, pidx, ispreamble)
         print(len(refchirp), len(sig1))
@@ -240,7 +240,7 @@ def dechirp_fft(tstart, fstart, pktdata_in, refchirp, pidx, ispreamble):
         plt.show()
 
     sig2 = sig1 * refchirp
-    freqdiff = start_pos_d / nsamp_small * Config.bw / Config.fs * Config.fft_n
+    freqdiff = start_pos_d / nsymblen * Config.bw / Config.fs * Config.fft_n
     if ispreamble: freqdiff -= fstart / Config.sig_freq * Config.bw * pidx
     else: freqdiff += fstart / Config.sig_freq * Config.bw * pidx
     sig2 = add_freq(sig2,freqdiff)
@@ -249,3 +249,8 @@ def dechirp_fft(tstart, fstart, pktdata_in, refchirp, pidx, ispreamble):
     # plt.show()
     return data0
 
+def obj(xdata, ydata, coeff2d):
+    return np.abs(ydata.dot(np.exp(-1j * np.polyval(coeff2d, xdata))))
+
+def wrap(x):
+    return (x + np.pi) % (2 * np.pi) - np.pi

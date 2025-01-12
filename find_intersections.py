@@ -9,7 +9,7 @@ coeflist = [
 
 
 # Define the start position and the range around it
-start_pos_all_new = 0.030318928843199852
+nstart = 0.030318928843199852
 epsilon = 1e-6
 
 # Function to find crossing points where poly(x) = (2n +1)*pi
@@ -43,9 +43,9 @@ def determine_n(coef, x_start, x_end):
     return n
 
 
-def find_intersections(coeflist, start_pos_all_new, epsilon):
-    x_min = start_pos_all_new - epsilon
-    x_max = start_pos_all_new + epsilon
+def find_intersections(coeflist, nstart, epsilon):
+    x_min = nstart - epsilon
+    x_max = nstart + epsilon
 
     # Find all crossing points for both polynomials
     crossings_poly1 = find_crossings(coeflist[0], x_min, x_max)

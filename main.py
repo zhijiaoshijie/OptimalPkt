@@ -3,6 +3,9 @@ import csv
 
 from work import *
 from reader import *
+from newwork import *
+
+
 
 # read packets from file
 if __name__ == "__main__":
@@ -23,30 +26,13 @@ if __name__ == "__main__":
 
             estf = -40000
 
-            nsamp_small = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
-            nwindows = len(data1) / nsamp_small
+            nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
+            nwindows = len(data1) / nsymblen
             logger.info(f"Prework {pkt_idx=} {nwindows=} {cp.mean(cp.abs(data1))=} {cp.mean(cp.abs(data2))=}")
             data1 /= cp.mean(cp.abs(data1))
             data2 /= cp.mean(cp.abs(data2)) # TODO remove normalization for production
 
-            beta = Config.bw / ((2 ** Config.sf) / Config.bw) * np.pi # = xie lv bian hua lv / 2 = pin lv bian hua lv * 2pi / 2
-            betat = beta * (1 + estf / Config.sig_freq)
-            if True:
-                window_idx = 10
-                tstart = window_idx * nsamp_small
-                xv = cp.arange(round(tstart), round(tstart + nsamp_small))
-                poly_ref = (betat, (-Config.bw / 2 + estf) * 2 * cp.pi - 2 * betat * tstart / Config.fs, 0)
-                sig_dcp = data1[xv] * cp.exp(-1j * cp.polyval(poly_ref, xv / Config.fs))
-                # fig = px.line(y=tocpu(cp.unwrap(cp.angle(sig_dcp))), title=f"sig_dcp angle {window_idx=}")
-                # fig = px.line(y=tocpu(cp.unwrap(cp.angle(data1[xv]))), title=f"pktin angle {window_idx=}")
-                # fig = px.line(x=xv / Config.fs, y=tocpu(cp.unwrap(cp.angle(cp.exp(-1j * cp.polyval(polyref, xv / Config.fs))))), title=f"pktref angle {window_idx=}")
-                # fig.add_vline(x=tstart / Config.fs)
-                # fig.add_vline(x=(tstart + nsamp_small) / Config.fs)
-                # fig.show()
-                data0 = myfft(sig_dcp, n=Config.fft_n, plan=Config.plan)
-                fmax = tocpu(cp.argmax(cp.abs(data0))) - Config.fs / 2 # fftshift: -500000 to 500000
-                estt = - fmax / Config.bw * nsamp_small / Config.fs # time shift +: sig move right, freq -
-                # logger.warning(f"0th step fft of random dechirped window: {window_idx=}, {fmax=} {estt=}")
+            estt = coarse_est_f_t(data1, estf, 10)
             objective_decode(estf, estt, data1)
             sys.exit(0)
 
@@ -59,14 +45,14 @@ if __name__ == "__main__":
                     pktdata_in = data1
                     yi = gen_refchirp(f, t, 20*Config.nsamp)
                     estf = f
-                    start_pos_all_new = t
-                    start_pos = round(start_pos_all_new)
-                    xv = cp.arange(start_pos - 30000, start_pos + 10 * Config.nsamp)
+                    nstart = t
+                    
+                    nsymbr = cp.arange(round(nstart) - 30000, round(nstart) + 10 * Config.nsamp)
                     if True:#pkt_idx==2:
                         fig2 = FigureResampler(go.Figure(layout_title_text=f"mainplt {pkt_idx=} {f=:.3f} {t=:.3f}"))
-                        fig2.add_trace(go.Scatter(x=xv, y=tocpu(cp.unwrap(cp.angle(pktdata_in)[xv]))))
-                        fig2.add_trace(go.Scatter(x=xv, y=tocpu(cp.unwrap(cp.angle(data2)[xv]))))
-                        # fig.add_trace(go.Scatter(x=xv, y=tocpu(cp.unwrap(cp.angle(yi)[xv]))))
+                        fig2.add_trace(go.Scatter(x=nsymbr, y=tocpu(cp.unwrap(cp.angle(pktdata_in)[nsymbr]))))
+                        fig2.add_trace(go.Scatter(x=nsymbr, y=tocpu(cp.unwrap(cp.angle(data2)[nsymbr]))))
+                        # fig.add_trace(go.Scatter(x=nsymbr, y=tocpu(cp.unwrap(cp.angle(yi)[nsymbr]))))
                         fig2.add_vline(x=t)
                         fig2.add_vline(x=t + Config.nsampf)
                         fig2.add_vline(x=t + Config.nsampf * 2)
@@ -112,17 +98,17 @@ if __name__ == "__main__":
                         logger.error(f"ERROR in {est_cfo_f=} {est_to_s=} out {f=} {t=} {file_path=} {pkt_idx=}")
                         break
             estf = f
-            start_pos_all_new = t
-            start_pos = round(start_pos_all_new)
+            nstart = t
+            
 
             pktdata_in = data1
             if False:#pkt_idx==2:
                 yi = gen_refchirp(f, t, len(pktdata_in))
-                xv = cp.arange(start_pos - 30000, start_pos + Config.preamble_len * Config.nsamp + 60000)
+                nsymbr = cp.arange(round(nstart) - 30000, round(nstart) + Config.preamble_len * Config.nsamp + 60000)
                 fig2 = FigureResampler(go.Figure(layout_title_text=f"mainplt {pkt_idx=} {f=:.3f} {t=:.3f}"))
-                fig2.add_trace(go.Scatter(x=xv, y=tocpu(cp.unwrap(cp.angle(pktdata_in)[xv]))))
-                fig2.add_trace(go.Scatter(x=xv, y=tocpu(cp.unwrap(cp.angle(data2)[xv]))))
-                # fig.add_trace(go.Scatter(x=xv, y=tocpu(cp.unwrap(cp.angle(yi)[xv]))))
+                fig2.add_trace(go.Scatter(x=nsymbr, y=tocpu(cp.unwrap(cp.angle(pktdata_in)[nsymbr]))))
+                fig2.add_trace(go.Scatter(x=nsymbr, y=tocpu(cp.unwrap(cp.angle(data2)[nsymbr]))))
+                # fig.add_trace(go.Scatter(x=nsymbr, y=tocpu(cp.unwrap(cp.angle(yi)[nsymbr]))))
                 fig2.add_vline(x=t)
                 fig2.add_vline(x=t + Config.nsampf)
                 fig2.add_vline(x=t + Config.nsampf * 2)
