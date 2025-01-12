@@ -312,42 +312,55 @@ def objective_decode(estf, est_to_s, pktdata_in):
         coeflist = []
         for pidx in range(0, Config.preamble_len):
             nstart = pidx * nsymblen
+            tstart = nstart / Config.fs
             # nstart = np.polyval(coeff_time, pidx) * Config.fs
 
-            nsymbr = np.arange(round(nstart) + 1000, round(nstart) + Config.nsamp - 1000)
+
+            #
+            # 2d fit on unwrapped angle
+            #
+            nsymbr = cp.arange(round(nstart) + 1000, round(nstart) + Config.nsamp - 1000)
             tsymbr = nsymbr / Config.fs
             fitmethod = "2dfit"
             if fitmethod == "2dfit":
-                coefficients_2d = np.polyfit(tsymbr, np.unwrap(np.angle(pktdata_in[nsymbr])), 2)
+                coefficients_2d = cp.polyfit(tsymbr, cp.unwrap(cp.angle(pktdata_in[nsymbr])), 2)
             elif fitmethod == "1dfit":
-                coefficients_2d = np.polyfit(
+                coefficients_2d = cp.polyfit(
                     tsymbr,
-                    np.unwrap(np.angle(pktdata_in[nsymbr])) - np.polyval((betat, 0, 0), tsymbr),
+                    cp.unwrap(cp.angle(pktdata_in[nsymbr])) - cp.polyval((betat, 0, 0), tsymbr),
                     1
                 )
                 coefficients_2d = [betat, *coefficients_2d]
             logger.warning(f"{fitmethod=} {coefficients_2d=} {betat=} {betai=}")
 
-            
-            if True:
-                plot_fit2d(coefficients_2d, estf, pidx, pktdata_in)
-
+            # align with phase. here may have a 2pi difference when evaluated in unwrap
             coefficients_2d[-1] -= cp.angle(
                 pktdata_in[nsymbr].dot(cp.exp(-1j * cp.polyval(coefficients_2d, tsymbr))))
 
+
+            #
+            # plot the results:
+            #
+            plot_fit2d(coefficients_2d, estf, pidx, pktdata_in)
+
+
+            #
+            # find accurate coefficients_2d by power
+            #
             val = obj(tsymbr, pktdata_in[nsymbr], coefficients_2d)
-            logger.warning(f'direct linear fit {val=}')
+            logger.warning(f'find accurate coefficients_2d by power. before start, result from linear fit {coefficients_2d=} {val=}')
+
             rangeval = 0.005
             for i in range(20):
                 for j in range(2):
-                    xvals = np.linspace(coefficients_2d[j]*(1-rangeval), coefficients_2d[j]*(1+rangeval), 1001)
+                    xvals = cp.linspace(coefficients_2d[j]*(1-rangeval), coefficients_2d[j]*(1+rangeval), 1001)
                     yvals = []
                     for x in xvals:
                         coef2 = coefficients_2d.copy()
                         coef2[j] = x
                         yvals.append(obj(tsymbr, y_data, coef2))
                     oldv = coefficients_2d[j]
-                    coefficients_2d[j] = xvals[np.argmax(yvals)]
+                    coefficients_2d[j] = xvals[cp.argmax(yvals)]
                     valnew = obj(tsymbr, y_data, coefficients_2d)
                     if True:#valnew < val*(1-1e-7):
                         fig = go.Figure(layout_title_text=f"{pidx=} {i=} {j=} {val=} {valnew=}")
@@ -357,7 +370,7 @@ def objective_decode(estf, est_to_s, pktdata_in):
                     assert valnew >= val*(1-1e-7), f"{val=} {valnew=} {i=} {j=} {coefficients_2d=} {val-valnew=}"
                     if abs(valnew - val) < 1e-7: rangeval /= 2
                     val = valnew
-            coefficients_2d[-1] -= np.angle(y_data.dot(np.exp(-1j * np.polyval(coefficients_2d, tsymbr))))
+            coefficients_2d[-1] -= cp.angle(y_data.dot(cp.exp(-1j * cp.polyval(coefficients_2d, tsymbr))))
             coeflist.append(coefficients_2d)
             if True:
                 # plot diff here

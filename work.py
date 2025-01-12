@@ -177,9 +177,6 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
         logger.warning(f"pre sigD parameters:{est_cfo_f=} {est_to_s=}")
         dphaselist = []
         for pidx in range(Config.preamble_len):  # assume chirp start at one in [0, Config.detect_range_pkts) possible windows
-            start_pos_all = nsymblen * pidx + est_to_s
-            round(nstart) = round(start_pos_all)
-            start_pos_d = start_pos_all - round(nstart)
             # use input cfo for sfo
 
             # pass

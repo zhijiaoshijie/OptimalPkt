@@ -228,9 +228,8 @@ def myfft(chirp_data, n, plan):
 
 def dechirp_fft(tstart, fstart, pktdata_in, refchirp, pidx, ispreamble):
     nsymblen = 2 ** Config.sf / Config.bw * Config.fs# * (1 + fstart / Config.sig_freq)
-    start_pos_all = nsymblen * pidx + tstart
-    round(nstart) = round(start_pos_all)
-    start_pos_d = start_pos_all - round(nstart)
+    nstart = nsymblen * pidx + tstart
+    start_pos_d = nstart - round(nstart)
     sig1 = pktdata_in[round(nstart): Config.nsamp + round(nstart)]
     if len(refchirp) != len(sig1):
         print(tstart, fstart, pidx, ispreamble)

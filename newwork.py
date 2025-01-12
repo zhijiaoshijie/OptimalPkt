@@ -20,6 +20,13 @@ def coarse_est_f_t(data1, estf, window_idx):
     return estt
 
 def plot_fit2d(coefficients_2d_in, estf, pidx, pktdata_in):
+    logger.warning(f'''
+    plt_fit2d called with {coefficients_2d_in=} {estf=} {pidx=}
+    draw 3 imgs:
+        1. the original 2d unwrapped, with fitted 2d poly curve
+        2. the difference between them, unwrapped
+        3. the original 2d nounwrapped, with fitted 2d poly curve wrapped in 
+    ''')
     coefficients_2d = coefficients_2d_in.copy()
     nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
     nstart = pidx * nsymblen
@@ -27,35 +34,33 @@ def plot_fit2d(coefficients_2d_in, estf, pidx, pktdata_in):
     tend = (pidx + 1) * nsymblen / Config.fs
     nsymbr = cp.arange(round(nstart) + 1000, round(nstart) + Config.nsamp - 1000)
     tsymbr = nsymbr / Config.fs
-    nsymbrp = cp.arange(round(nstart) - 1000, round(nstart) + Config.nsamp + 1000)
+    p0idx = 1000
+    nsymbrp = cp.arange(round(nstart) - p0idx, round(nstart) + Config.nsamp + 1000)
+    assert nsymbrp[p0idx] == round(nstart)
     tsymbrp = nsymbrp / Config.fs
-    
+
     uarp = cp.unwrap(cp.angle(pktdata_in[nsymbrp]))
-    coefficients_2d[-1] -= (cp.polyval(coefficients_2d, tsymbrp[1000]) - uarp[1000])
+    coefficients_2d[-1] -= (cp.polyval(coefficients_2d, tsymbrp[p0idx]) - uarp[p0idx])
     coefficients_2d[-1] += cp.angle(pktdata_in[nsymbr].dot(cp.exp(-1j * cp.polyval(coefficients_2d, tsymbr))))
     pltfig(tsymbrp,
            (uarp, cp.polyval(coefficients_2d, tsymbrp)),
            title = f"{pidx=} fit 2d uwa curve",
            addvline = (tstart, tend)).show()
     pltfig1(tsymbrp,
-           uarp - cp.polyval(coefficients_2d, tsymbrp),
-           title=f"{pidx=} fit diff between 2d curve and uwa",
-           mode='markers',
-           marker=dict(size=1),
-           yaxisrange=[-2, 2]).show()
+            uarp - cp.polyval(coefficients_2d, tsymbrp),
+            title=f"{pidx=} fit diff between 2d curve and uwa",
+            mode='markers',
+            marker=dict(size=1),
+            yaxisrange=[-2, 2]).show()
     fig = pltfig1(tsymbrp,
-                 cp.angle(pktdata_in[nsymbrp]),
-                 mode='markers',
-                 title=f"{pidx=} fit 2d no-uw angles",
-                 addvline=(tstart, tend))
-    tinytsymbrp = cp.linspace(tstart, tend, 1e6)
+                  cp.angle(pktdata_in[nsymbrp]),
+                  mode='markers',
+                  title=f"{pidx=} fit 2d no-uw angles",
+                  addvline=(tstart, tend))
+    tinytsymbrp = cp.linspace(tstart, tend, int(1e6))
     pltfig1(tinytsymbrp,
-           cp.angle(cp.polyval(coefficients_2d, tinytsymbrp)),
-           fig = fig).show()
-
-    coefficients_2d[-1] -= cp.angle(pktdata_in[nsymbr].dot(cp.exp(-1j * cp.polyval(coefficients_2d, tsymbr))))
-    coefficients_2d_old = coefficients_2d.copy()
-    return coefficients_2d_old, nstart, nsymblen, nsymbr, x_data, nsymbrp, y_data
+            wrap(cp.polyval(coefficients_2d, tinytsymbrp)),
+            fig = fig).show()
 
 
 def pltfig(xdata, ydatas, title = None, yaxisrange = None, modes = None, marker = None, addvline = None, addhline = None, fig = None):
