@@ -4,7 +4,7 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 
-use_gpu = False
+use_gpu = True
 if use_gpu:
     import cupy as cp
     import cupyx.scipy.fft as fft
@@ -12,6 +12,8 @@ else:
     import numpy as cp
     import scipy.fft as fft
 
+def around(x):
+    return round(float(x))
 
 def togpu(x):
     if use_gpu and not isinstance(x, cp.ndarray):
@@ -83,7 +85,7 @@ class Config:
 
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples
-    nsamp = round(n_classes * fs / bw)
+    nsamp = around(n_classes * fs / bw)
     nsampf = (n_classes * fs / bw)
     # f_lower, f_upper = -50000, -30000
     f_lower, f_upper = -38000, -34000
@@ -98,7 +100,7 @@ class Config:
     decode_matrix_a = cp.zeros((n_classes, nsamp), dtype=cp.complex64)
     decode_matrix_b = cp.zeros((n_classes, nsamp), dtype=cp.complex64)
     for code in range(n_classes):
-        nsamples = round(nsamp / n_classes * (n_classes - code))
+        nsamples = around(nsamp / n_classes * (n_classes - code))
         refchirp = mychirp(tstandard, f0=bw * (-0.5 + code / n_classes), f1=bw * (0.5 + code / n_classes),
                            t1=2 ** sf / bw )
         decode_matrix_a[code, :nsamples] = cp.conj(refchirp[:nsamples])
@@ -229,8 +231,8 @@ def myfft(chirp_data, n, plan):
 def dechirp_fft(tstart, fstart, pktdata_in, refchirp, pidx, ispreamble):
     nsymblen = 2 ** Config.sf / Config.bw * Config.fs# * (1 + fstart / Config.sig_freq)
     nstart = nsymblen * pidx + tstart
-    start_pos_d = nstart - round(nstart)
-    sig1 = pktdata_in[round(nstart): Config.nsamp + round(nstart)]
+    start_pos_d = nstart - around(nstart)
+    sig1 = pktdata_in[around(nstart): Config.nsamp + around(nstart)]
     if len(refchirp) != len(sig1):
         print(tstart, fstart, pidx, ispreamble)
         print(len(refchirp), len(sig1))

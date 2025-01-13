@@ -41,11 +41,11 @@ if __name__ == "__main__":
             estt += start_pidx * nsymblen / Config.fs
 
             logger.warning(f"fixed {estt=} from {start_pidx=}")
-            # fname = f"coeftpkt_{pkt_idx}_f1.pkl"
-            fname = f"coefout2.pkl"
+            fname = f"coeftpkt_{pkt_idx}_f1.pkl"
+            # fname = f"coefout2.pkl"
             if not os.path.exists(fname):
-                coeflist = fitcoef(estf, estt, data1)
-                # coeflist = fitcoef(estf, estt, data1, fitmethod='1dfit', searchquad=True)
+                # coeflist = fitcoef(estf, estt, data1)
+                coeflist = fitcoef(estf, estt, data1, fitmethod='1dfit', searchquad=True)
                 with open(fname, "wb") as fl: pickle.dump(coeflist, fl)
             else:
                 with open(fname, "rb") as fl: coeflist = pickle.load(fl)
@@ -53,8 +53,8 @@ if __name__ == "__main__":
             betai = Config.bw / ((2 ** Config.sf) / Config.bw)
             nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
             for pidx in range(0, Config.preamble_len):
-                nstart = pidx * nsymblen + nestt
-                nsymbr = cp.arange(round(nstart) + 1000, round(nstart + nsymblen) - 1000)
+                nstart = pidx * nsymblen + estt * Config.fs
+                nsymbr = cp.arange(around(nstart) + 1000, around(nstart + nsymblen) - 1000)
                 coeflist[pidx, 2] += cp.angle(pktdata_in[nsymbr].dot(np.exp(-1j * np.polyval(coeflist[pidx], tsymbr))))
             pltfig1(None, coeflist[:, 0], title=f"{pkt_idx=} coef0", addhline = [np.pi * betai * (1 + x * estf / Config.sig_freq) for x in range(3)]).show()
 
@@ -76,7 +76,7 @@ if __name__ == "__main__":
                     estf = f
                     nstart = t
                     
-                    nsymbr = cp.arange(round(nstart) - 30000, round(nstart) + 10 * Config.nsamp)
+                    nsymbr = cp.arange(around(nstart) - 30000, around(nstart) + 10 * Config.nsamp)
                     if True:#pkt_idx==2:
                         fig2 = FigureResampler(go.Figure(layout_title_text=f"mainplt {pkt_idx=} {f=:.3f} {t=:.3f}"))
                         fig2.add_trace(go.Scatter(x=nsymbr, y=tocpu(cp.unwrap(cp.angle(pktdata_in)[nsymbr]))))
@@ -90,7 +90,7 @@ if __name__ == "__main__":
                 for pidx in range(pktlen):
                     pidx2 = pidx
                     if pidx > Config.sfdpos: pidx2 += 0.25
-                    xrange = cp.arange(round(Config.nsampf * pidx2 + t), round(Config.nsampf * (pidx2 + 1) + t))
+                    xrange = cp.arange(around(Config.nsampf * pidx2 + t), around(Config.nsampf * (pidx2 + 1) + t))
                     sig1 = data1[xrange]
                     if pidx % 10 == 0:
                         fig = px.scatter(y=tocpu(cp.unwrap(cp.angle(sig1))), title=f"{pidx=}")
@@ -133,7 +133,7 @@ if __name__ == "__main__":
             pktdata_in = data1
             if False:#pkt_idx==2:
                 yi = gen_refchirp(f, t, len(pktdata_in))
-                nsymbr = cp.arange(round(nstart) - 30000, round(nstart) + Config.preamble_len * Config.nsamp + 60000)
+                nsymbr = cp.arange(around(nstart) - 30000, around(nstart) + Config.preamble_len * Config.nsamp + 60000)
                 fig2 = FigureResampler(go.Figure(layout_title_text=f"mainplt {pkt_idx=} {f=:.3f} {t=:.3f}"))
                 fig2.add_trace(go.Scatter(x=nsymbr, y=tocpu(cp.unwrap(cp.angle(pktdata_in)[nsymbr]))))
                 fig2.add_trace(go.Scatter(x=nsymbr, y=tocpu(cp.unwrap(cp.angle(data2)[nsymbr]))))
@@ -164,8 +164,8 @@ if __name__ == "__main__":
 
                 fulldata.append([file_path_id, pkt_idx, est_cfo_f, est_to_s_full , retval,  *(np.angle(np.array(data_angles))), *(np.abs(np.array(data_angles)))])
                 if False:
-                    sig1 = data1[round(est_to_s): Config.nsamp * math.ceil(Config.total_len) + round(est_to_s)]
-                    sig2 = data2[round(est_to_s): Config.nsamp * math.ceil(Config.total_len) + round(est_to_s)]
+                    sig1 = data1[around(est_to_s): Config.nsamp * math.ceil(Config.total_len) + around(est_to_s)]
+                    sig2 = data2[around(est_to_s): Config.nsamp * math.ceil(Config.total_len) + around(est_to_s)]
                     sig1.tofile(os.path.join(Config.outfolder, f"{os.path.basename(file_path)}_pkt_{pkt_idx}"))
                     sig2.tofile(os.path.join(Config.outfolder, f"{os.path.basename(file_path)}_pkt_{pkt_idx}"))
             else:
@@ -193,7 +193,7 @@ if __name__ == "__main__":
         # fig.show()
         if False:
             bytes_per_complex = 8
-            byte_offset = round(est_to_s_full) * bytes_per_complex
+            byte_offset = around(est_to_s_full) * bytes_per_complex
             L = Config.nsamp * Config.total_len
 
             with open(file_path, 'rb') as f:

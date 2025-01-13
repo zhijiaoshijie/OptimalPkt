@@ -8,10 +8,10 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
     # (2) wrap everybody into appropriate range *as the first symbol peak* and fit, get the slope,
     # then try intercept / intercept - bw / intercept + bw, get the highest
 
-    # tstart = round(tstart) # !!!!! TODO tstart rounded !!!!!
+    # tstart = around(tstart) # !!!!! TODO tstart rounded !!!!!
 
     # plot angle of input
-    # plt.plot(cp.unwrap(cp.angle(pktdata_in)).get()[round(tstart):round(tstart)+Config.nsamp*20])
+    # plt.plot(cp.unwrap(cp.angle(pktdata_in)).get()[around(tstart):around(tstart)+Config.nsamp*20])
     # plt.axvline(Config.nsamp)
     # plt.axvline(Config.nsamp*2)
     # plt.show()
@@ -22,7 +22,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
     upchirp = mychirp(tstandard, f0=-Config.bw / 2, f1=Config.bw / 2, t1=t1)
     downchirp = mychirp(tstandard, f0=Config.bw / 2, f1=-Config.bw / 2, t1=t1)
 
-    fft_sig_n = Config.bw / Config.fs * Config.fft_n  # round(Config.bw / Config.fs * Config.fft_n) # 4096 fft_n=nsamp*fft_upsamp, nsamp=t*fs=2**sf/bw*fs, fft_sig_n=2**sf * fft_upsamp
+    fft_sig_n = Config.bw / Config.fs * Config.fft_n  # around(Config.bw / Config.fs * Config.fft_n) # 4096 fft_n=nsamp*fft_upsamp, nsamp=t*fs=2**sf/bw*fs, fft_sig_n=2**sf * fft_upsamp
 
     # upchirp dechirp
     x1 = []
@@ -65,11 +65,11 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
         Config.fft_downs_x[pidx - Config.sfdpos] = data0
 
     # todo SFO是否会导致bw不是原来的bw
-    fft_ups_add = (cp.abs(Config.fft_ups_x[:-1, :round(-bwnew2 / Config.fs * Config.fft_n)]) +
-                   cp.abs(Config.fft_ups_x[1:, round(bwnew2 / Config.fs * Config.fft_n):])) # TODO!!!Abs
+    fft_ups_add = (cp.abs(Config.fft_ups_x[:-1, :around(-bwnew2 / Config.fs * Config.fft_n)]) +
+                   cp.abs(Config.fft_ups_x[1:, around(bwnew2 / Config.fs * Config.fft_n):])) # TODO!!!Abs
     # for i in range(fft_ups_add.shape[0]):
     #     k = estf / Config.sig_freq * Config.bw
-    #     fft_ups_add[i] = cp.roll(fft_ups_add[i], -round(k * i))
+    #     fft_ups_add[i] = cp.roll(fft_ups_add[i], -around(k * i))
 
     # fig = FigureResampler(go.Figure(layout_title_text=f"fft_ups values"))
     # fig = go.Figure(layout_title_text=f"fft_ups values")
@@ -100,7 +100,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
             fig.show()
         # for direct add # x[d] + roll(x[d+1], -bw). peak at (-bw, 0), considering CFO, peak at (-3bw/2, bw/2). # argmax = yvalue.
         # if yvalue > -bw/2, consider possibility of yvalue - bw; else consider yvalue + bw.
-        buff_freqs = round(Config.cfo_range * Config.fft_n / Config.fs)
+        buff_freqs = around(Config.cfo_range * Config.fft_n / Config.fs)
         lower = - Config.bw - buff_freqs + Config.fft_n // 2
         higher = buff_freqs + Config.fft_n // 2
         y_value = tocpu(cp.argmax(cp.sum(
@@ -186,16 +186,16 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
             
             # t1 = nsymblen * (pidx + 1) * (1 + est_cfo_f / Config.sig_freq * Config.bw) + est_to_s - nstart
             tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1] + (
-                        round(nstart) - nstart) / Config.fs
+                        around(nstart) - nstart) / Config.fs
             # print(tstandard)
             cfoppm1 = (1 + est_cfo_f / Config.sig_freq)  # TODO!!!
             downchirp = mychirp(tstandard, f0=Config.bw / 2 * cfoppm1 - est_cfo_f,
                                 f1=-Config.bw / 2 * cfoppm1 - est_cfo_f, t1=2 ** Config.sf / Config.bw * cfoppm1)
-            sig1 = pktdata_in[round(nstart): Config.nsamp + round(nstart)]
+            sig1 = pktdata_in[around(nstart): Config.nsamp + around(nstart)]
             sig2 = sig1 * downchirp
 
             data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
-            # print("new", np.max(np.abs(data0)), (round(nstart) - nstart)/Config.fs, tstandard[0], tstandard[-1], Config.bw / 2 * (1 - est_cfo_f / Config.sig_freq )  - est_cfo_f, -Config.bw / 2* (1 - est_cfo_f / Config.sig_freq )  - est_cfo_f, 2 ** Config.sf / Config.bw  * (1 - est_cfo_f / Config.sig_freq ) )
+            # print("new", np.max(np.abs(data0)), (around(nstart) - nstart)/Config.fs, tstandard[0], tstandard[-1], Config.bw / 2 * (1 - est_cfo_f / Config.sig_freq )  - est_cfo_f, -Config.bw / 2* (1 - est_cfo_f / Config.sig_freq )  - est_cfo_f, 2 ** Config.sf / Config.bw  * (1 - est_cfo_f / Config.sig_freq ) )
             yval2 = cp.argmax(cp.abs(data0)).item()
             dval2 = np.array(tocpu(cp.angle(data0[yval2])).item())  # - dphase
             # dval2 = np.array(cp.angle(data0[Config.fft_n//2]).get().item())# - dphase
