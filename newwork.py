@@ -90,7 +90,7 @@ def plot_fit2d(coefficients_2d_in, estf, estt, pidx, pktdata_in):
     nstart = pidx * nsymblen + estt * Config.fs
     tstart = nstart / Config.fs
     tend = tstart + tsymblen
-    nsymbr = cp.arange(around(nstart) + 1000, around(nstart) + Config.nsamp - 1000)
+    nsymbr = cp.arange(around(nstart) + 1000, around(nstart2) - 1000)
     tsymbr = nsymbr / Config.fs
     p0idx = 1000
     nsymbrp = cp.arange(around(nstart) - p0idx, around(nstart) + Config.nsamp + 1000)
@@ -134,7 +134,7 @@ def plot_fit2d_after_refine(coefficients_2d_in, coef2d_refined_in, estf, estt, p
     nstart = pidx * nsymblen + estt * Config.fs
     tstart = nstart / Config.fs
     tend = tstart + tsymblen
-    nsymbr = cp.arange(around(nstart) + 1000, around(nstart) + Config.nsamp - 1000)
+    nsymbr = cp.arange(around(nstart) + 1000, around(nstart2) - 1000)
     tsymbr = nsymbr / Config.fs
     p0idx = 1000
     nsymbrp = cp.arange(around(nstart) - p0idx, around(nstart) + Config.nsamp + 1000)
@@ -273,12 +273,15 @@ def symbtime(estf, estt, pktdata_in, coeflist):
     for pidx in range(0, Config.preamble_len - 1):
         nstart = pidx * nsymblen + nestt
         tstart = nstart / Config.fs
+        nstart2 = (pidx + 1) * nsymblen + nestt
+        tstart2 = nstart2 / Config.fs
+        nstart3 = (pidx + 2) * nsymblen + nestt
+        tstart3 = nstart3 / Config.fs
         nsymbr = cp.arange(around(nstart) + 1000, around(nstart + nsymblen) - 1000)
         tsymbr = nsymbr / Config.fs
         
         nsymba = cp.arange(around(nstart) - 1000, around(nstart + nsymblen * 2) + 1000)
         tsymba = nsymba / Config.fs
-        fig = go.Figure(layout_title_text=f"{pidx=} symb")
         ysymba = cp.zeros_like(pktdata_in, dtype=cp.float64)
         ysymba[nsymba] = cp.unwrap(cp.angle(pktdata_in[nsymba]))
         nrstart = around(nstart + 1000)
@@ -289,50 +292,52 @@ def symbtime(estf, estt, pktdata_in, coeflist):
         dd2.append(val - around(val))
         coeflist[pidx, 2] += around(val) * 2 * cp.pi
 
-        nstart2 = pidx * nsymblen + nestt
-        nrstart2 = around(nstart2 + 1000)
-        val = (ysymba[nrstart2] - cp.angle(pktdata_in[nrstart2])) / 2 / cp.pi
-        # val = (ysymba[nrstart2] - cp.polyval(coeflist[pidx+1], x_data[nrstart2])) / 2 / cp.pi
+        val = (ysymba[around(nstart2) + 1000] - cp.angle(pktdata_in[around(nstart2) + 1000])) / 2 / cp.pi
+        # val = (ysymba[around(nstart2) + 1000] - cp.polyval(coeflist[pidx+1], x_data[around(nstart2) + 1000])) / 2 / cp.pi
         dd2.append(val - around(val))
         logger.warning(f"{val=}")
         assert abs(val - around(val)) < 0.0001
         coeflist[pidx + 1, 2] += around(val) * 2 * cp.pi
 
+        # compute diff
         coeffs_diff = cp.polysub(coeflist[pidx], coeflist[pidx + 1])
-        intersection_x_vals = cp.roots(coeffs_diff)
-        if len(intersection_x_vals) == 2:
-            if abs(intersection_x_vals[0]) < abs(intersection_x_vals[1]):
-                diffs.append(intersection_x_vals[0])
-            else:
-                diffs.append(intersection_x_vals[1])
-        else:
-            diffs.append(intersection_x_vals[0])
+        logger.error(f"{coeffs_diff=}")
+        isec_t = np.roots(tocpu(coeffs_diff))
+        tdiff = isec_t[np.argmin(np.abs(isec_t - tstart2))]
+        diffs.append(tdiff)
 
-        fig.add_trace(go.Scatter(x=tsymba, y=ysymba[nsymba]))
-        coplt = [2 * coeflist[pidx, 0] * tstart + coeflist[pidx, 1], 0]
-        coplt[1] = ysymba[around(nstart)] - cp.polyval(coplt, tstart)
-        xvb = cp.arange(around(nstart) - 1000, around(nstart) + 1000)
-        fig.add_trace(go.Scatter(x=x_data[xvb], y=cp.polyval(coplt, x_data[xvb])))
-        fig.add_vline(x=diffs[-1], line_dash="dash", line_color="green")
+        # draw line at that junction
+        ndiff = tdiff * Config.fs
+        coplt = cp.zeros((2,))
+        coplt[0] = 2 * coeflist[pidx, 0] * tdiff + coeflist[pidx, 1]
+        coplt[1] = cp.interp(tdiff, tsymba, ysymba) - cp.polyval(coplt, tdiff)
+        nsymbi = cp.arange(around(ndiff) - 100, around(ndiff) + 100)
+        tsymbi = nsymbi / Config.fs
 
-        xv = cp.arange(around(nstart) + 1000, around(nstart) + Config.nsamp - 1000)
-        coef2d1 = cp.polyfit(x_data[xv], cp.unwrap(cp.angle(ysymba[xv])), 2)
-        xvp = cp.arange(around(nstart) - 100, around(nstart) + Config.nsamp + 100)
-        fig.add_trace(go.Scatter(x=x_data[xvp], y=cp.polyval(coeflist[pidx], x_data[xvp])))
+        nsymbl = cp.arange(around(nstart) + 1000, around(nstart2) - 1000)
+        tsymbl = nsymbl / Config.fs
+        coef2d1 = cp.polyfit(tsymbl, cp.unwrap(cp.angle(ysymba[nsymbl])), 2)
 
-        xv2 = cp.arange(nrstart2, nstart2 + Config.nsamp - 1000)
-        coef2d2 = cp.polyfit(x_data[xv2], cp.unwrap(cp.angle(ysymba[xv2])), 2)
-        logger.warning(
-            f"res:{(coef2d1[2] - coeflist[pidx, 2]) / 2 / cp.pi}  {(coef2d2[2] - coeflist[pidx + 1, 2]) / 2 / cp.pi}")
+        nsymblp = cp.arange(around(nstart) - 1000, around(nstart2) + 1000)
+        tsymblp = nsymblp / Config.fs
 
-        xvp2 = cp.arange(nstart2 - 100, nstart2 + Config.nsamp + 100)
-        fig.add_trace(go.Scatter(x=x_data[xvp2], y=cp.polyval(coeflist[pidx + 1], x_data[xvp2])))
-        fig.add_vline(x=nstart / Config.fs)
-        fig.add_vline(x=nstart2 / Config.fs)
-        fig.show()
+        nsymbr = cp.arange(around(nstart2) + 1000, around(nstart3) - 1000)
+        tsymbr = nsymbr / Config.fs
+        coef2d2 = cp.polyfit(tsymbr, cp.unwrap(cp.angle(ysymba[nsymbr])), 2)
+
+        logger.warning(f"res:{(coef2d1[2] - coeflist[pidx, 2]) / 2 / cp.pi}  {(coef2d2[2] - coeflist[pidx + 1, 2]) / 2 / cp.pi}")
+
+        nsymbrp = cp.arange(around(nstart2) - 1000, around(nstart3) + 1000)
+        tsymbrp = nsymbrp / Config.fs
+
+        pltfig(((tsymbi, ysymba[nsymbi]), (tsymbi, cp.polyval(coplt, tsymbi)),
+               (tsymblp, cp.polyval(coeflist[pidx], tsymblp)),
+                (tsymbrp, cp.polyval(coeflist[pidx + 1], tsymbrp))),
+               modes=('lines+markers', 'lines', 'lines', 'lines'),
+               addvline=(tstart, tstart2, tstart3, tdiff)).show()
         coeflist = coeflist2.copy()
-    plt.plot(dd2)
-    plt.show()
+
+    pltfig1(None, dd2, mode='markers', marker=dict(size=0.5), title="difference dd2").show()
     fig = go.Figure(layout_title_text="intersect points")
     pidx_range = cp.arange(240)
     fig.add_trace(go.Scatter(x=pidx_range[1:], y=diffs))
