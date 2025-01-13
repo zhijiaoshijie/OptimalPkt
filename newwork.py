@@ -53,19 +53,24 @@ def show_fit_results(pktdata_in, estf, estt, coeflist_in, pkt_idx):
         nstart = pidx * nsymblen + estt * Config.fs
         nsymbr = cp.arange(around(nstart) + 1000, around(nstart + nsymblen) - 1000)
         tsymbr = nsymbr / Config.fs
-        coeflist[pidx, 2] += cp.angle(pktdata_in[nsymbr].dot(np.exp(-1j * np.polyval(coeflist[pidx], tsymbr))))
+        coeflist[pidx, 2] += cp.angle(pktdata_in[nsymbr].dot(cp.exp(-1j * cp.polyval(coeflist[pidx], tsymbr))))
     c0mean = cp.mean(coeflist[8:, 0])
-    estf_from_c0 = Config.sig_freq * (c0mean / (np.pi * betai) - 1)
+    estf_from_c0 = Config.sig_freq * (c0mean / (cp.pi * betai) - 1)
     fig = pltfig1(None, coeflist[:, 0], title=f"{pkt_idx=} coef0 {estf_from_c0=}",
-            addhline=[np.pi * betai * (1 + x * estf / Config.sig_freq) for x in range(3)])
+            addhline=[cp.pi * betai * (1 + x * estf / Config.sig_freq) for x in range(3)])
     fig.add_hline(y=c0mean, line=dict(dash='dot'))
     fig.show()
     logger.warning(f"show_fit_results: coef0: {pkt_idx=} input {estf=} {estt=} result {c0mean=} {estf_from_c0=}")
+
+
+    # coef1
 
     freqnew = (coeflist[:, 0] * 2 * (estt + cp.arange(coeflist.shape[0]) * tsymblen) + coeflist[:, 1]) / 2 / cp.pi
     freqnew_mean = cp.mean(freqnew)
     pltfig1(None, freqnew, title=f"{pkt_idx=} coef1+coef0, iniFreq", addhline=[- Config.bw / 2 + estf, freqnew_mean], line_dash=['dash', 'dot']).show()
     logger.warning(f"show_fit_results: coef0+1: {pkt_idx=} {- Config.bw / 2 + estf =} {freqnew_mean=}")
+
+    # coef1 linear trend
     pltfig1(None, coeflist[:, 1], title=f"{pkt_idx=} coef1").show()
     pltfig1(None, coeflist[:, 2], title=f"{pkt_idx=} coef2").show()
 
@@ -274,27 +279,27 @@ def symbtime(estf, estt, pktdata_in, coeflist):
         nsymba = cp.arange(around(nstart) - 1000, around(nstart + nsymblen * 2) + 1000)
         tsymba = nsymba / Config.fs
         fig = go.Figure(layout_title_text=f"{pidx=} symb")
-        yplt = np.zeros_like(pktdata_in, dtype=np.float64)
-        yplt[nsymba] = np.unwrap(np.angle(tocpu(pktdata_in[nsymba])))
+        yplt = cp.zeros_like(pktdata_in, dtype=cp.float64)
+        yplt[nsymba] = cp.unwrap(cp.angle(tocpu(pktdata_in[nsymba])))
         nrstart = around(nstart + 1000)
-        val = (yplt[nrstart] - np.angle(pktdata_in[nrstart])) / 2 / np.pi
-        # val = (yplt[nstart+1000] - np.polyval(coeflist[pidx], x_data[nstart + 1000])) / 2 / np.pi
+        val = (yplt[nrstart] - cp.angle(pktdata_in[nrstart])) / 2 / cp.pi
+        # val = (yplt[nstart+1000] - cp.polyval(coeflist[pidx], x_data[nstart + 1000])) / 2 / cp.pi
         logger.warning(f"{val=}, {np.polyval(coeflist[pidx], nrstart/Config.fs)}")
         assert abs(val - around(val)) < 0.1
         dd2.append(val - around(val))
-        coeflist[pidx, 2] += around(val) * 2 * np.pi
+        coeflist[pidx, 2] += around(val) * 2 * cp.pi
 
         nstart2 = pidx * nsymblen + nestt
         nrstart2 = around(nstart2 + 1000)
-        val = (yplt[nrstart2] - np.angle(pktdata_in[nrstart2])) / 2 / np.pi
-        # val = (yplt[nrstart2] - np.polyval(coeflist[pidx+1], x_data[nrstart2])) / 2 / np.pi
+        val = (yplt[nrstart2] - cp.angle(pktdata_in[nrstart2])) / 2 / cp.pi
+        # val = (yplt[nrstart2] - cp.polyval(coeflist[pidx+1], x_data[nrstart2])) / 2 / cp.pi
         dd2.append(val - around(val))
         logger.warning(f"{val=}")
         assert abs(val - around(val)) < 0.1
-        coeflist[pidx + 1, 2] += around(val) * 2 * np.pi
+        coeflist[pidx + 1, 2] += around(val) * 2 * cp.pi
 
-        coeffs_diff = np.polysub(coeflist[pidx], coeflist[pidx + 1])
-        intersection_x_vals = np.roots(coeffs_diff)
+        coeffs_diff = cp.polysub(coeflist[pidx], coeflist[pidx + 1])
+        intersection_x_vals = cp.roots(coeffs_diff)
         if len(intersection_x_vals) == 2:
             if abs(intersection_x_vals[0]) < abs(intersection_x_vals[1]):
                 diffs.append(intersection_x_vals[0])
@@ -305,23 +310,23 @@ def symbtime(estf, estt, pktdata_in, coeflist):
 
         fig.add_trace(go.Scatter(x=tsymba, y=yplt[nsymba]))
         coplt = [2 * coeflist[pidx, 0] * tstart + coeflist[pidx, 1], 0]
-        coplt[1] = yplt[around(nstart)] - np.polyval(coplt, tstart)
-        xvb = np.arange(around(nstart) - 1000, around(nstart) + 1000)
-        fig.add_trace(go.Scatter(x=x_data[xvb], y=np.polyval(coplt, x_data[xvb])))
+        coplt[1] = yplt[around(nstart)] - cp.polyval(coplt, tstart)
+        xvb = cp.arange(around(nstart) - 1000, around(nstart) + 1000)
+        fig.add_trace(go.Scatter(x=x_data[xvb], y=cp.polyval(coplt, x_data[xvb])))
         fig.add_vline(x=diffs[-1], line_dash="dash", line_color="green")
 
-        xv = np.arange(around(nstart) + 1000, around(nstart) + Config.nsamp - 1000)
-        coef2d1 = np.polyfit(x_data[xv], np.unwrap(np.angle(yplt[xv])), 2)
-        xvp = np.arange(around(nstart) - 100, around(nstart) + Config.nsamp + 100)
-        fig.add_trace(go.Scatter(x=x_data[xvp], y=np.polyval(coeflist[pidx], x_data[xvp])))
+        xv = cp.arange(around(nstart) + 1000, around(nstart) + Config.nsamp - 1000)
+        coef2d1 = cp.polyfit(x_data[xv], cp.unwrap(cp.angle(yplt[xv])), 2)
+        xvp = cp.arange(around(nstart) - 100, around(nstart) + Config.nsamp + 100)
+        fig.add_trace(go.Scatter(x=x_data[xvp], y=cp.polyval(coeflist[pidx], x_data[xvp])))
 
-        xv2 = np.arange(nrstart2, nstart2 + Config.nsamp - 1000)
-        coef2d2 = np.polyfit(x_data[xv2], np.unwrap(np.angle(yplt[xv2])), 2)
+        xv2 = cp.arange(nrstart2, nstart2 + Config.nsamp - 1000)
+        coef2d2 = cp.polyfit(x_data[xv2], cp.unwrap(cp.angle(yplt[xv2])), 2)
         logger.warning(
-            f"res:{(coef2d1[2] - coeflist[pidx, 2]) / 2 / np.pi}  {(coef2d2[2] - coeflist[pidx + 1, 2]) / 2 / np.pi}")
+            f"res:{(coef2d1[2] - coeflist[pidx, 2]) / 2 / cp.pi}  {(coef2d2[2] - coeflist[pidx + 1, 2]) / 2 / cp.pi}")
 
-        xvp2 = np.arange(nstart2 - 100, nstart2 + Config.nsamp + 100)
-        fig.add_trace(go.Scatter(x=x_data[xvp2], y=np.polyval(coeflist[pidx + 1], x_data[xvp2])))
+        xvp2 = cp.arange(nstart2 - 100, nstart2 + Config.nsamp + 100)
+        fig.add_trace(go.Scatter(x=x_data[xvp2], y=cp.polyval(coeflist[pidx + 1], x_data[xvp2])))
         fig.add_vline(x=nstart / Config.fs)
         fig.add_vline(x=nstart2 / Config.fs)
         fig.show()
@@ -329,7 +334,7 @@ def symbtime(estf, estt, pktdata_in, coeflist):
     plt.plot(dd2)
     plt.show()
     fig = go.Figure(layout_title_text="intersect points")
-    pidx_range = np.arange(240)
+    pidx_range = cp.arange(240)
     fig.add_trace(go.Scatter(x=pidx_range[1:], y=diffs))
     coeff_time = np.polyfit(pidx_range[1:], diffs, 1)
     print(coeff_time)
@@ -354,7 +359,7 @@ def symbtime(estf, estt, pktdata_in, coeflist):
 
 def fitcoef(estf, estt, pktdata_in, fitmethod = "2dfit", searchquad = True):
     nestt = estt * Config.fs
-    betai = Config.bw / ((2 ** Config.sf) / Config.bw) * np.pi
+    betai = Config.bw / ((2 ** Config.sf) / Config.bw) * cp.pi
     betat = betai * (1 + estf / Config.sig_freq)
 
     nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
@@ -364,7 +369,7 @@ def fitcoef(estf, estt, pktdata_in, fitmethod = "2dfit", searchquad = True):
         nstart = pidx * nsymblen + nestt
         nsymbr = cp.arange(around(nstart) + 1000, around(nstart + nsymblen) - 1000)
         tsymbr = nsymbr / Config.fs
-        # nstart = np.polyval(coeff_time, pidx) * Config.fs
+        # nstart = cp.polyval(coeff_time, pidx) * Config.fs
 
         #
         # 2d fit on unwrapped angle
