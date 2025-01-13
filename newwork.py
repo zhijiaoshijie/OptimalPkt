@@ -310,7 +310,7 @@ def symbtime(estf, estt, pktdata_in, coeflist):
         ndiff = tdiff * Config.fs
         coplt = cp.zeros((2,))
         coplt[0] = 2 * coeflist[pidx, 0] * tdiff + coeflist[pidx, 1]
-        coplt[1] = cp.interp(tdiff, tsymba, ysymba[nsymba]) - cp.polyval(coplt, tdiff)
+        coplt[1] = cp.polyval(coeflist[pidx, 0], tdiff) - cp.polyval(coplt, tdiff)
         nsymbi = cp.arange(around(ndiff) - 1000, around(ndiff) + 1000)
         tsymbi = nsymbi / Config.fs
 
