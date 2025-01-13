@@ -67,26 +67,23 @@ def plot_fit2d(coefficients_2d_in, estf, estt, pidx, pktdata_in):
     coefficients_2d[-1] -= (cp.polyval(coefficients_2d, tsymbrp[p0idx]) - uarp[p0idx])
     coefficients_2d[-1] += cp.angle(pktdata_in[nsymbr].dot(cp.exp(-1j * cp.polyval(coefficients_2d, tsymbr))))
     logger.warning(f"inside plt_fit2d: {uarp[p0idx] - cp.polyval(coefficients_2d, tsymbrp[p0idx])}")
-    pltfig(tsymbrp,
-           (uarp, cp.polyval(coefficients_2d, tsymbrp)),
-           title = f"{pidx=} fit 2d uwa curve",
-           addvline = (tstart, tend)).show()
-    pltfig1(tsymbrp,
-            uarp - cp.polyval(coefficients_2d, tsymbrp),
-            title=f"{pidx=} fit diff between 2d curve and uwa",
-            mode='lines+markers',
-            marker=dict(size=1),
-            yaxisrange=[-2, 2],
-            addvline = (tstart, tend)).show()
-    fig = pltfig1(tsymbrp,
-                  cp.angle(pktdata_in[nsymbrp]),
-                  mode='markers',
-                  title=f"{pidx=} fit 2d no-uw angles",
-                  addvline=(tstart, tend))
+    pltfig(((tsymbrp, uarp),
+            (tsymbrp, cp.polyval(coefficients_2d, tsymbrp))),
+           title=f"{pidx=} fit 2d uwa curve",
+           addvline=(tstart, tend)).show()
+    pltfig(((tsymbrp, uarp),
+            (tsymbrp, - cp.polyval(coefficients_2d, tsymbrp))),
+           title=f"{pidx=} fit diff between 2d curve and uwa",
+           modes='lines+markers',
+           marker=dict(size=1),
+           yaxisrange=[-2, 2],
+           addvline=(tstart, tend)).show()
     tinytsymbrp = cp.linspace(tstart, tend, int(1e6))
-    pltfig1(tinytsymbrp,
-            wrap(cp.polyval(coefficients_2d, tinytsymbrp)),
-            fig = fig, line=dict(dash='dash')).show()
+    pltfig(((tsymbrp, cp.angle(pktdata_in[nsymbrp])),
+            (tinytsymbrp, (wrap(cp.polyval(coefficients_2d, tinytsymbrp))))),
+           modes='markers',
+           title=f"{pidx=} fit 2d no-uw angles",
+           addvline=(tstart, tend)).show()
 
 
 def plot_fit2d_after_refine(coefficients_2d_in, coef2d_refined_in, estf, estt, pidx, pktdata_in):
@@ -117,34 +114,35 @@ def plot_fit2d_after_refine(coefficients_2d_in, coef2d_refined_in, estf, estt, p
     coef2d_refined[-1] -= (cp.polyval(coef2d_refined, tsymbrp[p0idx]) - uarp[p0idx])
     coef2d_refined[-1] += cp.angle(pktdata_in[nsymbr].dot(cp.exp(-1j * cp.polyval(coef2d_refined, tsymbr))))
     logger.warning(f"inside plt_fit2d: {uarp[p0idx] - cp.polyval(coefficients_2d, tsymbrp[p0idx])}")
-    pltfig(tsymbrp,
-           (uarp, cp.polyval(coefficients_2d, tsymbrp), cp.polyval(coef2d_refined, tsymbrp)),
+    pltfig(((tsymbrp, uarp),
+                  (tsymbrp, cp.polyval(coefficients_2d, tsymbrp)),
+                  (tsymbrp, cp.polyval(coef2d_refined, tsymbrp))),
            title = f"{pidx=} fit 2d uwa curve after_refine",
            addvline = (tstart, tend)).show()
-    pltfig(tsymbrp,
-           (uarp - cp.polyval(coefficients_2d, tsymbrp), uarp - cp.polyval(coef2d_refined, tsymbrp)),
+    pltfig(((tsymbrp,uarp),
+           (tsymbrp, - cp.polyval(coefficients_2d, tsymbrp)),
+           (tsymbrp, uarp - cp.polyval(coef2d_refined, tsymbrp))),
             title=f"{pidx=} fit diff between 2d curve and uwa after_refine",
-            modes=('lines+markers','lines+markers'),
+            modes='lines+markers',
             marker=dict(size=1),
             yaxisrange=[-2, 2],
             addvline = (tstart, tend)).show()
-    fig = pltfig1(tsymbrp,
-                  cp.angle(pktdata_in[nsymbrp]),
-                  mode='markers',
-                  title=f"{pidx=} fit 2d no-uw angles after_refine",
-                  addvline=(tstart, tend))
     tinytsymbrp = cp.linspace(tstart, tend, int(1e6))
-    fig = pltfig(tinytsymbrp,
-                 (wrap(cp.polyval(coefficients_2d, tinytsymbrp)), wrap(cp.polyval(coef2d_refined, tinytsymbrp))),
-            fig = fig)
-    fig.show()
+    pltfig(((tsymbrp, cp.angle(pktdata_in[nsymbrp])),
+                   (tinytsymbrp, (wrap(cp.polyval(coefficients_2d, tinytsymbrp)))),
+                    (tinytsymbrp, wrap(cp.polyval(coef2d_refined, tinytsymbrp)))),
+                  modes='markers',
+                  title=f"{pidx=} fit 2d no-uw angles after_refine",
+                  addvline=(tstart, tend)).show()
 
-def pltfig(xdata, ydatas, title = None, yaxisrange = None, modes = None, marker = None, addvline = None, addhline = None, fig = None, line=None):
+def pltfig(datas, title = None, yaxisrange = None, modes = None, marker = None, addvline = None, addhline = None, fig = None, line=None):
     if fig is None: fig = go.Figure(layout_title_text=title)
     elif title is not None: fig.update_layout(title_text=title)
     if modes is None:
-        modes = ['lines' for _ in ydatas]
-    for idx, (ydata, mode) in enumerate(zip(ydatas, modes)):
+        modes = ['lines' for _ in datas]
+    elif isinstance(modes, str):
+        modes = [modes for _ in datas]
+    for idx, ((xdata, ydata), mode) in enumerate(zip(datas, modes)):
         if line == None and idx == 1: line = dict(dash='dash')
         fig.add_trace(go.Scatter(x=tocpu(xdata), y=tocpu(ydata), mode=mode, marker=marker, line=line))
     pltfig_hind(addhline, addvline, fig, yaxisrange)
