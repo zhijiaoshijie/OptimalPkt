@@ -71,17 +71,16 @@ def plot_fit2d(coefficients_2d_in, estf, estt, pidx, pktdata_in):
             (tsymbrp, cp.polyval(coefficients_2d, tsymbrp))),
            title=f"{pidx=} fit 2d uwa curve",
            addvline=(tstart, tend)).show()
-    pltfig(((tsymbrp, uarp),
-            (tsymbrp, - cp.polyval(coefficients_2d, tsymbrp))),
+    pltfig(((tsymbrp, uarp - cp.polyval(coefficients_2d, tsymbrp)),),
            title=f"{pidx=} fit diff between 2d curve and uwa",
            modes='lines+markers',
            marker=dict(size=1),
            yaxisrange=[-2, 2],
            addvline=(tstart, tend)).show()
-    tinytsymbrp = cp.linspace(tstart, tend, int(1e6))
+    tinytsymbrp = cp.linspace(tstart, tend, int(1e5))
     pltfig(((tsymbrp, cp.angle(pktdata_in[nsymbrp])),
             (tinytsymbrp, (wrap(cp.polyval(coefficients_2d, tinytsymbrp))))),
-           modes='markers',
+           modes=('markers', 'lines'),
            title=f"{pidx=} fit 2d no-uw angles",
            addvline=(tstart, tend)).show()
 
@@ -113,25 +112,24 @@ def plot_fit2d_after_refine(coefficients_2d_in, coef2d_refined_in, estf, estt, p
     coefficients_2d[-1] += cp.angle(pktdata_in[nsymbr].dot(cp.exp(-1j * cp.polyval(coefficients_2d, tsymbr))))
     coef2d_refined[-1] -= (cp.polyval(coef2d_refined, tsymbrp[p0idx]) - uarp[p0idx])
     coef2d_refined[-1] += cp.angle(pktdata_in[nsymbr].dot(cp.exp(-1j * cp.polyval(coef2d_refined, tsymbr))))
-    logger.warning(f"inside plt_fit2d: {uarp[p0idx] - cp.polyval(coefficients_2d, tsymbrp[p0idx])}")
     pltfig(((tsymbrp, uarp),
                   (tsymbrp, cp.polyval(coefficients_2d, tsymbrp)),
                   (tsymbrp, cp.polyval(coef2d_refined, tsymbrp))),
            title = f"{pidx=} fit 2d uwa curve after_refine",
            addvline = (tstart, tend)).show()
     pltfig(((tsymbrp,uarp),
-           (tsymbrp, - cp.polyval(coefficients_2d, tsymbrp)),
+           (tsymbrp, uarp - cp.polyval(coefficients_2d, tsymbrp)),
            (tsymbrp, uarp - cp.polyval(coef2d_refined, tsymbrp))),
             title=f"{pidx=} fit diff between 2d curve and uwa after_refine",
             modes='lines+markers',
             marker=dict(size=1),
             yaxisrange=[-2, 2],
             addvline = (tstart, tend)).show()
-    tinytsymbrp = cp.linspace(tstart, tend, int(1e6))
+    tinytsymbrp = cp.linspace(tstart, tend, int(1e5))
     pltfig(((tsymbrp, cp.angle(pktdata_in[nsymbrp])),
-                   (tinytsymbrp, (wrap(cp.polyval(coefficients_2d, tinytsymbrp)))),
+                    (tinytsymbrp, wrap(cp.polyval(coefficients_2d, tinytsymbrp))),
                     (tinytsymbrp, wrap(cp.polyval(coef2d_refined, tinytsymbrp)))),
-                  modes='markers',
+                  modes=('markers', 'lines', 'lines'),
                   title=f"{pidx=} fit 2d no-uw angles after_refine",
                   addvline=(tstart, tend)).show()
 
@@ -211,7 +209,6 @@ def fitcoef(estf, estt, pktdata_in, fitmethod = "2dfit", searchquad = False):
         coeflist.append(coef2d_refined)
 
         plot_fit2d_after_refine(coefficients_2d, coef2d_refined, estf, estt, pidx, pktdata_in)
-        sys.exit(0)
     return cp.array(coeflist)
 
 def refine_coef(estf, estt, pidx, pktdata_in, coefficients_2d_in, searchquad = False):
