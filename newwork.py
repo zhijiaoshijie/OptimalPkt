@@ -136,6 +136,8 @@ def plot_fit2d_after_refine(coefficients_2d_in, coef2d_refined_in, estf, estt, p
 def pltfig(datas, title = None, yaxisrange = None, modes = None, marker = None, addvline = None, addhline = None, fig = None, line=None):
     if fig is None: fig = go.Figure(layout_title_text=title)
     elif title is not None: fig.update_layout(title_text=title)
+    if not len(datas[0] == 2):
+        datas = [ (np.arange(len(datas[x])), datas[x]) for x in range(len(datas))]
     if modes is None:
         modes = ['lines' for _ in datas]
     elif isinstance(modes, str):
@@ -149,6 +151,7 @@ def pltfig(datas, title = None, yaxisrange = None, modes = None, marker = None, 
 
 
 def pltfig1(xdata, ydata, title = None, yaxisrange = None, mode = None, marker = None, addvline = None, addhline = None, fig = None, line=None):
+    if xdata is None: xdata = np.arange(len(ydata))
     if fig is None: fig = go.Figure(layout_title_text=title)
     elif title is not None: fig.update_layout(title_text=title)
     if mode is None: mode = 'lines'
@@ -200,7 +203,7 @@ def fitcoef(estf, estt, pktdata_in, fitmethod = "2dfit", searchquad = False):
         #
         # plot the results:
         #
-        plot_fit2d(coefficients_2d, estf, estt, pidx, pktdata_in)
+        # plot_fit2d(coefficients_2d, estf, estt, pidx, pktdata_in)
 
         #
         # find accurate coefficients_2d by power
@@ -208,7 +211,7 @@ def fitcoef(estf, estt, pktdata_in, fitmethod = "2dfit", searchquad = False):
         coef2d_refined = refine_coef(estf, estt, pidx, pktdata_in, coefficients_2d, searchquad = searchquad)
         coeflist.append(coef2d_refined)
 
-        plot_fit2d_after_refine(coefficients_2d, coef2d_refined, estf, estt, pidx, pktdata_in)
+        # plot_fit2d_after_refine(coefficients_2d, coef2d_refined, estf, estt, pidx, pktdata_in)
     return cp.array(coeflist)
 
 def refine_coef(estf, estt, pidx, pktdata_in, coefficients_2d_in, searchquad = False):

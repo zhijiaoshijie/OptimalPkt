@@ -41,7 +41,19 @@ if __name__ == "__main__":
             estt += start_pidx * nsymblen / Config.fs
 
             logger.warning(f"fixed {estt=} from {start_pidx=}")
-            fitcoef(estf, estt, data1)
+            fname = f"coeftpkt_{pkt_idx}.pkl"
+            fname = f"coeftest.pkl"
+            if not os.path.exists(fname):
+                coeflist = fitcoef(estf, estt, data1)
+                with open(fname, "wb") as fl: pickle.dump(coeflist, fl)
+            else:
+                with open(fname, "rb") as fl: coeflist = pickle.load(fl)
+
+            betai = Config.bw / ((2 ** Config.sf) / Config.bw)
+            pltfig1(None, coeflist[:, 0], addvline = [betai * (1 + x * estf / Config.sig_freq) for x in range(3)])
+            pltfig1(None, coeflist[:, 1])
+            pltfig1(None, coeflist[:, 2])
+
 
             # objective_decode(estf, estt, data1)
             sys.exit(0)
