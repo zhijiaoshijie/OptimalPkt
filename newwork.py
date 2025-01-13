@@ -302,16 +302,16 @@ def symbtime(estf, estt, pktdata_in, coeflist):
         # compute diff
         coeffs_diff = cp.polysub(coeflist[pidx], coeflist[pidx + 1])
         logger.error(f"{coeffs_diff=}")
-        isec_t = np.roots(tocpu(coeffs_diff))
-        tdiff = isec_t[np.argmin(np.abs(isec_t - tstart2))]
+        isec_t = togpu(np.roots(tocpu(coeffs_diff)))
+        tdiff = isec_t[cp.argmin(cp.abs(isec_t - tstart2))]
         diffs.append(tdiff)
 
         # draw line at that junction
         ndiff = tdiff * Config.fs
         coplt = cp.zeros((2,))
         coplt[0] = 2 * coeflist[pidx, 0] * tdiff + coeflist[pidx, 1]
-        coplt[1] = cp.interp(tdiff, tsymba, ysymba) - cp.polyval(coplt, tdiff)
-        nsymbi = cp.arange(around(ndiff) - 100, around(ndiff) + 100)
+        coplt[1] = cp.interp(tdiff, tsymba, ysymba[nsymba]) - cp.polyval(coplt, tdiff)
+        nsymbi = cp.arange(around(ndiff) - 1000, around(ndiff) + 1000)
         tsymbi = nsymbi / Config.fs
 
         nsymbl = cp.arange(around(nstart) + 1000, around(nstart2) - 1000)
@@ -330,7 +330,7 @@ def symbtime(estf, estt, pktdata_in, coeflist):
         nsymbrp = cp.arange(around(nstart2) - 1000, around(nstart3) + 1000)
         tsymbrp = nsymbrp / Config.fs
 
-        pltfig(((tsymbi, ysymba[nsymbi]), (tsymbi, cp.polyval(coplt, tsymbi)),
+        pltfig(((tsymba, ysymba[nsymba]), (tsymbi, cp.polyval(coplt, tsymbi)),
                (tsymblp, cp.polyval(coeflist[pidx], tsymblp)),
                 (tsymbrp, cp.polyval(coeflist[pidx + 1], tsymbrp))),
                modes=('lines+markers', 'lines', 'lines', 'lines'),
