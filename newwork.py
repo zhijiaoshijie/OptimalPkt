@@ -44,6 +44,21 @@ def start_pidx_pow_detect(data1, estf, estt, window_idx = 10):
         if pow2 > pow1 * 0.5:
             return pidx
 
+def show_fit_results(pktdata_in, estf, estt, coeflist, pkt_idx):
+    betai = Config.bw / ((2 ** Config.sf) / Config.bw)
+    nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
+    for pidx in range(0, Config.preamble_len):
+        nstart = pidx * nsymblen + estt * Config.fs
+        nsymbr = cp.arange(around(nstart) + 1000, around(nstart + nsymblen) - 1000)
+        tsymbr = nsymbr / Config.fs
+        coeflist[pidx, 2] += cp.angle(pktdata_in[nsymbr].dot(np.exp(-1j * np.polyval(coeflist[pidx], tsymbr))))
+    pltfig1(None, coeflist[:, 0], title=f"{pkt_idx=} coef0",
+            addhline=[np.pi * betai * (1 + x * estf / Config.sig_freq) for x in range(3)]).show()
+    pltfig1(None, coeflist[:, 1], title=f"{pkt_idx=} coef1").show()
+    pltfig1(None, coeflist[:, 2], title=f"{pkt_idx=} coef2").show()
+
+
+
 def plot_fit2d(coefficients_2d_in, estf, estt, pidx, pktdata_in):
     logger.warning(f'''
     plt_fit2d called with {coefficients_2d_in=} {estf=} {pidx=}
