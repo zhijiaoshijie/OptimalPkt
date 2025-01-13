@@ -279,23 +279,23 @@ def symbtime(estf, estt, pktdata_in, coeflist):
         nsymba = cp.arange(around(nstart) - 1000, around(nstart + nsymblen * 2) + 1000)
         tsymba = nsymba / Config.fs
         fig = go.Figure(layout_title_text=f"{pidx=} symb")
-        yplt = cp.zeros_like(pktdata_in, dtype=cp.float64)
-        yplt[nsymba] = cp.unwrap(cp.angle(tocpu(pktdata_in[nsymba])))
+        ysymba = cp.zeros_like(pktdata_in, dtype=cp.float64)
+        ysymba[nsymba] = cp.unwrap(cp.angle(pktdata_in[nsymba]))
         nrstart = around(nstart + 1000)
-        val = (yplt[nrstart] - cp.angle(pktdata_in[nrstart])) / 2 / cp.pi
-        # val = (yplt[nstart+1000] - cp.polyval(coeflist[pidx], x_data[nstart + 1000])) / 2 / cp.pi
+        val = (ysymba[nrstart] - cp.angle(pktdata_in[nrstart])) / 2 / cp.pi
+        # val = (ysymba[nstart+1000] - cp.polyval(coeflist[pidx], x_data[nstart + 1000])) / 2 / cp.pi
         logger.warning(f"{val=}, {np.polyval(coeflist[pidx], nrstart/Config.fs)}")
-        assert abs(val - around(val)) < 0.1
+        assert abs(val - around(val)) < 0.0001, f'1st uwrap from {nstart=} at {nrstart+1000=} {val=} not int'
         dd2.append(val - around(val))
         coeflist[pidx, 2] += around(val) * 2 * cp.pi
 
         nstart2 = pidx * nsymblen + nestt
         nrstart2 = around(nstart2 + 1000)
-        val = (yplt[nrstart2] - cp.angle(pktdata_in[nrstart2])) / 2 / cp.pi
-        # val = (yplt[nrstart2] - cp.polyval(coeflist[pidx+1], x_data[nrstart2])) / 2 / cp.pi
+        val = (ysymba[nrstart2] - cp.angle(pktdata_in[nrstart2])) / 2 / cp.pi
+        # val = (ysymba[nrstart2] - cp.polyval(coeflist[pidx+1], x_data[nrstart2])) / 2 / cp.pi
         dd2.append(val - around(val))
         logger.warning(f"{val=}")
-        assert abs(val - around(val)) < 0.1
+        assert abs(val - around(val)) < 0.0001
         coeflist[pidx + 1, 2] += around(val) * 2 * cp.pi
 
         coeffs_diff = cp.polysub(coeflist[pidx], coeflist[pidx + 1])
@@ -308,20 +308,20 @@ def symbtime(estf, estt, pktdata_in, coeflist):
         else:
             diffs.append(intersection_x_vals[0])
 
-        fig.add_trace(go.Scatter(x=tsymba, y=yplt[nsymba]))
+        fig.add_trace(go.Scatter(x=tsymba, y=ysymba[nsymba]))
         coplt = [2 * coeflist[pidx, 0] * tstart + coeflist[pidx, 1], 0]
-        coplt[1] = yplt[around(nstart)] - cp.polyval(coplt, tstart)
+        coplt[1] = ysymba[around(nstart)] - cp.polyval(coplt, tstart)
         xvb = cp.arange(around(nstart) - 1000, around(nstart) + 1000)
         fig.add_trace(go.Scatter(x=x_data[xvb], y=cp.polyval(coplt, x_data[xvb])))
         fig.add_vline(x=diffs[-1], line_dash="dash", line_color="green")
 
         xv = cp.arange(around(nstart) + 1000, around(nstart) + Config.nsamp - 1000)
-        coef2d1 = cp.polyfit(x_data[xv], cp.unwrap(cp.angle(yplt[xv])), 2)
+        coef2d1 = cp.polyfit(x_data[xv], cp.unwrap(cp.angle(ysymba[xv])), 2)
         xvp = cp.arange(around(nstart) - 100, around(nstart) + Config.nsamp + 100)
         fig.add_trace(go.Scatter(x=x_data[xvp], y=cp.polyval(coeflist[pidx], x_data[xvp])))
 
         xv2 = cp.arange(nrstart2, nstart2 + Config.nsamp - 1000)
-        coef2d2 = cp.polyfit(x_data[xv2], cp.unwrap(cp.angle(yplt[xv2])), 2)
+        coef2d2 = cp.polyfit(x_data[xv2], cp.unwrap(cp.angle(ysymba[xv2])), 2)
         logger.warning(
             f"res:{(coef2d1[2] - coeflist[pidx, 2]) / 2 / cp.pi}  {(coef2d2[2] - coeflist[pidx + 1, 2]) / 2 / cp.pi}")
 

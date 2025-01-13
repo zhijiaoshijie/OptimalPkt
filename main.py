@@ -52,7 +52,9 @@ if __name__ == "__main__":
             else:
                 with open(fname, "rb") as fl: coeflist = pickle.load(fl)
 
-            show_fit_results(data1, estf, estt, coeflist, pkt_idx)
+            # show_fit_results(data1, estf, estt, coeflist, pkt_idx)
+
+            symbtime(estf, estt, data1, coeflist)
 
             # objective_decode(estf, estt, data1)
             sys.exit(0)
