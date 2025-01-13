@@ -41,18 +41,25 @@ if __name__ == "__main__":
             estt += start_pidx * nsymblen / Config.fs
 
             logger.warning(f"fixed {estt=} from {start_pidx=}")
-            fname = f"coeftpkt_{pkt_idx}.pkl"
-            fname = f"coeftest.pkl"
+            # fname = f"coeftpkt_{pkt_idx}_f1.pkl"
+            fname = f"coefout2.pkl"
             if not os.path.exists(fname):
                 coeflist = fitcoef(estf, estt, data1)
+                # coeflist = fitcoef(estf, estt, data1, fitmethod='1dfit', searchquad=True)
                 with open(fname, "wb") as fl: pickle.dump(coeflist, fl)
             else:
                 with open(fname, "rb") as fl: coeflist = pickle.load(fl)
 
             betai = Config.bw / ((2 ** Config.sf) / Config.bw)
-            pltfig1(None, coeflist[:, 0], addvline = [betai * (1 + x * estf / Config.sig_freq) for x in range(3)])
-            pltfig1(None, coeflist[:, 1])
-            pltfig1(None, coeflist[:, 2])
+            nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
+            for pidx in range(0, Config.preamble_len):
+                nstart = pidx * nsymblen + nestt
+                nsymbr = cp.arange(round(nstart) + 1000, round(nstart + nsymblen) - 1000)
+                coeflist[pidx, 2] += cp.angle(pktdata_in[nsymbr].dot(np.exp(-1j * np.polyval(coeflist[pidx], tsymbr))))
+            pltfig1(None, coeflist[:, 0], title=f"{pkt_idx=} coef0", addhline = [np.pi * betai * (1 + x * estf / Config.sig_freq) for x in range(3)]).show()
+
+            pltfig1(None, coeflist[:, 1], title=f"{pkt_idx=} coef1").show()
+            pltfig1(None, coeflist[:, 2], title=f"{pkt_idx=} coef2").show()
 
 
             # objective_decode(estf, estt, data1)
