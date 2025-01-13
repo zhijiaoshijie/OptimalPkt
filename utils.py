@@ -3,7 +3,7 @@ import os
 import math
 import numpy as np
 import matplotlib.pyplot as plt
-
+from datetime import datetime
 use_gpu = True
 if use_gpu:
     import cupy as cp
@@ -135,7 +135,7 @@ level = logging.WARNING
 logger.setLevel(level)
 console_handler = logging.StreamHandler()
 console_handler.setLevel(level)  # Set the console handler level
-file_handler = logging.FileHandler('run_241115_2.log')
+file_handler = logging.FileHandler('run_'+datetime.now().strftime("%y%m%d")+'.log')
 file_handler.setLevel(level)  # Set the file handler level
 # formatter = logging.Formatter('%(message)s')
 # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')

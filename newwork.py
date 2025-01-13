@@ -44,16 +44,28 @@ def start_pidx_pow_detect(data1, estf, estt, window_idx = 10):
         if pow2 > pow1 * 0.5:
             return pidx
 
-def show_fit_results(pktdata_in, estf, estt, coeflist, pkt_idx):
+def show_fit_results(pktdata_in, estf, estt, coeflist_in, pkt_idx):
+    coeflist = coeflist_in.copy()
     betai = Config.bw / ((2 ** Config.sf) / Config.bw)
     nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
+    tsymblen = nsymblen / Config.fs
     for pidx in range(0, Config.preamble_len):
         nstart = pidx * nsymblen + estt * Config.fs
         nsymbr = cp.arange(around(nstart) + 1000, around(nstart + nsymblen) - 1000)
         tsymbr = nsymbr / Config.fs
         coeflist[pidx, 2] += cp.angle(pktdata_in[nsymbr].dot(np.exp(-1j * np.polyval(coeflist[pidx], tsymbr))))
-    pltfig1(None, coeflist[:, 0], title=f"{pkt_idx=} coef0",
-            addhline=[np.pi * betai * (1 + x * estf / Config.sig_freq) for x in range(3)]).show()
+    c0mean = cp.mean(coeflist[8:, 0])
+    estf_from_c0 = Config.sig_freq * (c0mean / (np.pi * betai) - 1)
+    fig = pltfig1(None, coeflist[:, 0], title=f"{pkt_idx=} coef0 {estf_from_c0=}",
+            addhline=[np.pi * betai * (1 + x * estf / Config.sig_freq) for x in range(3)])
+    fig.add_hline(y=c0mean, line=dict(dash='dot'))
+    fig.show()
+    logger.warning(f"show_fit_results: coef0: {pkt_idx=} input {estf=} {estt=} result {c0mean=} {estf_from_c0=}")
+
+    freqnew = (coeflist[:, 0] * 2 * (estt + cp.arange(coeflist.shape[0]) * tsymblen) + coeflist[:, 1]) / 2 / cp.pi
+    freqnew_mean = cp.mean(freqnew)
+    pltfig1(None, freqnew, title=f"{pkt_idx=} coef1+coef0, iniFreq", addhline=[- Config.bw / 2 + estf, freqnew_mean], line_dash=['dash', 'dot']).show()
+    logger.warning(f"show_fit_results: coef0+1: {pkt_idx=} {- Config.bw / 2 + estf =} {freqnew_mean=}")
     pltfig1(None, coeflist[:, 1], title=f"{pkt_idx=} coef1").show()
     pltfig1(None, coeflist[:, 2], title=f"{pkt_idx=} coef2").show()
 
@@ -150,11 +162,39 @@ def plot_fit2d_after_refine(coefficients_2d_in, coef2d_refined_in, estf, estt, p
                   title=f"{pidx=} fit 2d no-uw angles after_refine",
                   addvline=(tstart, tend)).show()
 
-def pltfig(datas, title = None, yaxisrange = None, modes = None, marker = None, addvline = None, addhline = None, fig = None, line=None):
+def pltfig(datas, title = None, yaxisrange = None, modes = None, marker = None, addvline = None, addhline = None, line_dash = None, fig = None, line=None):
+    """
+    Plot a figure with the given data and parameters.
+
+    Parameters:
+    datas : list of tuples
+        Each tuple contains two lists or array-like elements, the data for the x and y axes.
+        If only y data is provided, x data will be generated using np.arange.
+    title : str, optional
+        The title of the plot (default is None).
+    yaxisrange : tuple, optional
+        The range for the y-axis as a tuple (min, max) (default is None).
+    mode : str, optional
+        The mode of the plot (e.g., 'line', 'scatter') (default is None).
+    marker : str, optional
+        The marker style for the plot (default is None).
+    addvline : float, optional
+        The x-coordinate for a vertical line (default is None).
+    addhline : float, optional
+        The y-coordinate for a horizontal line (default is None).
+    line_dash : str, optional
+        The dash style for the line (default is None).
+    fig : matplotlib.figure.Figure, optional
+        The figure object to plot on (default is None).
+    line : matplotlib.lines.Line2D, optional
+        The line object for the plot (default is None).
+
+    Returns:
+    None
+    """
     if fig is None: fig = go.Figure(layout_title_text=title)
     elif title is not None: fig.update_layout(title_text=title)
-    if not len(datas[0] == 2):
-        datas = [ (np.arange(len(datas[x])), datas[x]) for x in range(len(datas))]
+    if not all(len(data) == 2 for data in datas): datas = [(np.arange(len(data)), data) for data in datas]
     if modes is None:
         modes = ['lines' for _ in datas]
     elif isinstance(modes, str):
@@ -162,26 +202,61 @@ def pltfig(datas, title = None, yaxisrange = None, modes = None, marker = None, 
     for idx, ((xdata, ydata), mode) in enumerate(zip(datas, modes)):
         if line == None and idx == 1: line = dict(dash='dash')
         fig.add_trace(go.Scatter(x=tocpu(xdata), y=tocpu(ydata), mode=mode, marker=marker, line=line))
-    pltfig_hind(addhline, addvline, fig, yaxisrange)
+    pltfig_hind(addhline, addvline, line_dash, fig, yaxisrange)
     return fig
 
 
 
-def pltfig1(xdata, ydata, title = None, yaxisrange = None, mode = None, marker = None, addvline = None, addhline = None, fig = None, line=None):
+def pltfig1(xdata, ydata, title = None, yaxisrange = None, mode = None, marker = None, addvline = None, addhline = None, line_dash = None, fig = None, line=None):
+    """
+    Plot a figure with the given data and parameters.
+
+    Parameters:
+    xdata : list or array-like or None
+        The data for the x-axis.
+        If is None, and only y data is provided, x data will be generated using np.arange.
+    ydata : list or array-like
+        The data for the y-axis.
+    title : str, optional
+        The title of the plot (default is None).
+    yaxisrange : tuple, optional
+        The range for the y-axis as a tuple (min, max) (default is None).
+    mode : str, optional
+        The mode of the plot (e.g., 'line', 'scatter') (default is None).
+    marker : str, optional
+        The marker style for the plot (default is None).
+    addvline : float, optional
+        The x-coordinate for a vertical line (default is None).
+    addhline : float, optional
+        The y-coordinate for a horizontal line (default is None).
+    line_dash : str, optional
+        The dash style for the line (default is None).
+    fig : matplotlib.figure.Figure, optional
+        The figure object to plot on (default is None).
+    line : matplotlib.lines.Line2D, optional
+        The line object for the plot (default is None).
+
+    Returns:
+    None
+    """
     if xdata is None: xdata = np.arange(len(ydata))
     if fig is None: fig = go.Figure(layout_title_text=title)
     elif title is not None: fig.update_layout(title_text=title)
     if mode is None: mode = 'lines'
     fig.add_trace(go.Scatter(x=tocpu(xdata), y=tocpu(ydata), mode=mode, marker=marker, line=line))
-    pltfig_hind(addhline, addvline, fig, yaxisrange)
+    pltfig_hind(addhline, addvline, line_dash, fig, yaxisrange)
     return fig
 
-def pltfig_hind(addhline, addvline, fig, yaxisrange):
+def pltfig_hind(addhline, addvline, line_dash, fig, yaxisrange):
     if yaxisrange: fig.update_layout(yaxis=dict(range=yaxisrange), )
     if addvline is not None:
         for x in addvline: fig.add_vline(x=x, line_dash='dash')
     if addhline is not None:
-        for y in addhline: fig.add_hline(y=y, line_dash='dash')
+        if line_dash is None:
+            line_dash = ['dash' for _ in range(len(addhline))]
+        elif isinstance(line_dash, str):
+            line_dash = [line_dash for _ in range(len(addhline))]
+        for y, ldash in zip(addhline, line_dash): fig.add_hline(y=y, line_dash=ldash)
 
 def symbtime(estf, estt, pktdata_in, coeflist):
     nestt = estt * Config.fs
