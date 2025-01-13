@@ -252,15 +252,23 @@ def pltfig1(xdata, ydata, title = None, yaxisrange = None, mode = None, marker =
     pltfig_hind(addhline, addvline, line_dash, fig, yaxisrange)
     return fig
 
-def pltfig_hind(addhline, addvline, line_dash, fig, yaxisrange):
+def pltfig_hind(addhline, addvline, line_dash_in, fig, yaxisrange):
     if yaxisrange: fig.update_layout(yaxis=dict(range=yaxisrange), )
     if addvline is not None:
-        for x in addvline: fig.add_vline(x=x, line_dash='dash')
+        if line_dash_in is None:
+            line_dash = ['dash' for _ in range(len(addvline))]
+            line_dash[0] = 'dot'
+        elif isinstance(line_dash_in, str):
+            line_dash = [line_dash_in for _ in range(len(addvline))]
+        else: line_dash = line_dash_in
+        for x, ldash in zip(addvline, line_dash): fig.add_vline(x=x, line_dash=ldash)
     if addhline is not None:
-        if line_dash is None:
+        if line_dash_in is None:
             line_dash = ['dash' for _ in range(len(addhline))]
-        elif isinstance(line_dash, str):
-            line_dash = [line_dash for _ in range(len(addhline))]
+            line_dash[0] = 'dot'
+        elif isinstance(line_dash_in, str):
+            line_dash = [line_dash_in for _ in range(len(addhline))]
+        else: line_dash = line_dash_in
         for y, ldash in zip(addhline, line_dash): fig.add_hline(y=y, line_dash=ldash)
 
 def symbtime(estf, estt, pktdata_in, coeflist):
@@ -310,7 +318,7 @@ def symbtime(estf, estt, pktdata_in, coeflist):
         ndiff = tdiff * Config.fs
         coplt = cp.zeros((2,))
         coplt[0] = 2 * coeflist[pidx, 0] * tdiff + coeflist[pidx, 1]
-        coplt[1] = cp.polyval(coeflist[pidx, 0], tdiff) - cp.polyval(coplt, tdiff)
+        coplt[1] = cp.polyval(coeflist[pidx], tdiff) - cp.polyval(coplt, tdiff)
         nsymbi = cp.arange(around(ndiff) - 1000, around(ndiff) + 1000)
         tsymbi = nsymbi / Config.fs
 
@@ -333,8 +341,17 @@ def symbtime(estf, estt, pktdata_in, coeflist):
         pltfig(((tsymba, ysymba[nsymba]), (tsymbi, cp.polyval(coplt, tsymbi)),
                (tsymblp, cp.polyval(coeflist[pidx], tsymblp)),
                 (tsymbrp, cp.polyval(coeflist[pidx + 1], tsymbrp))),
+               title=f"symbtime {pidx=} intersect fullview",
                modes=('lines+markers', 'lines', 'lines', 'lines'),
-               addvline=(tstart, tstart2, tstart3, tdiff)).show()
+               addvline=(tdiff, tstart, tstart2, tstart3)).show()
+        nsymbii = cp.arange(around(ndiff) - 100, around(ndiff) + 100)
+        tsymbii = nsymbii / Config.fs
+        pltfig(((tsymbii, ysymba[nsymbii]), (tsymbii, cp.polyval(coplt, tsymbii)),
+               (tsymbii, cp.polyval(coeflist[pidx], tsymbii)),
+                (tsymbii, cp.polyval(coeflist[pidx + 1], tsymbii))),
+               title=f"symbtime {pidx=} intersect smallview",
+               modes=('lines+markers', 'lines', 'lines', 'lines'),
+               addvline=(tdiff, tstart2)).show()
         coeflist = coeflist2.copy()
 
     pltfig1(None, dd2, mode='markers', marker=dict(size=0.5), title="difference dd2").show()
