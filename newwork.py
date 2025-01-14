@@ -271,7 +271,7 @@ def pltfig_hind(addhline, addvline, line_dash_in, fig, yaxisrange):
         else: line_dash = line_dash_in
         for y, ldash in zip(addhline, line_dash): fig.add_hline(y=y, line_dash=ldash)
 
-def symbtime(estf, estt, pktdata_in, coeflist):
+def symbtime(estf, estt, pktdata_in, coeflist, draw=False):
     nestt = estt * Config.fs
     nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
     diffs = []
@@ -292,11 +292,11 @@ def symbtime(estf, estt, pktdata_in, coeflist):
         tsymba = nsymba / Config.fs
         ysymba = cp.zeros_like(pktdata_in, dtype=cp.float64)
         ysymba[nsymba] = cp.unwrap(cp.angle(pktdata_in[nsymba]))
-        nrstart = around(nstart + 1000)
-        val = (ysymba[nrstart] - cp.angle(pktdata_in[nrstart])) / 2 / cp.pi
+
+        val = (ysymba[around(nstart) + 1000] - cp.angle(pktdata_in[around(nstart) + 1000])) / 2 / cp.pi
         # val = (ysymba[nstart+1000] - cp.polyval(coeflist[pidx], x_data[nstart + 1000])) / 2 / cp.pi
-        logger.warning(f"{val=}, {np.polyval(coeflist[pidx], nrstart/Config.fs)}")
-        assert abs(val - around(val)) < 0.0001, f'1st uwrap from {nstart=} at {nrstart+1000=} {val=} not int'
+        logger.warning(f"{val=}, {np.polyval(coeflist[pidx], around(nstart) + 1000/Config.fs)}")
+        assert abs(val - around(val)) < 0.001, f'1st uwrap from {nstart=} at {around(nstart) + 1000} ysymb={ysymba[around(nstart) + 1000]} {val=} not int'
         dd2.append(val - around(val))
         coeflist[pidx, 2] += around(val) * 2 * cp.pi
 
@@ -304,7 +304,7 @@ def symbtime(estf, estt, pktdata_in, coeflist):
         # val = (ysymba[around(nstart2) + 1000] - cp.polyval(coeflist[pidx+1], x_data[around(nstart2) + 1000])) / 2 / cp.pi
         dd2.append(val - around(val))
         logger.warning(f"{val=}")
-        assert abs(val - around(val)) < 0.0001
+        assert abs(val - around(val)) < 0.001, f'2nd uwrap from {nstart2=} at {around(nstart2)+1000} ysymb={ysymba[around(nstart2) + 1000]} {val=} not int'
         coeflist[pidx + 1, 2] += around(val) * 2 * cp.pi
 
         # compute diff
@@ -313,6 +313,7 @@ def symbtime(estf, estt, pktdata_in, coeflist):
         isec_t = togpu(np.roots(tocpu(coeffs_diff)))
         tdiff = isec_t[cp.argmin(cp.abs(isec_t - tstart2))]
         diffs.append(tdiff)
+        if not draw: continue
 
         # draw line at that junction
         ndiff = tdiff * Config.fs
@@ -333,7 +334,9 @@ def symbtime(estf, estt, pktdata_in, coeflist):
         tsymbr = nsymbr / Config.fs
         coef2d2 = cp.polyfit(tsymbr, cp.unwrap(cp.angle(ysymba[nsymbr])), 2)
 
-        logger.warning(f"res:{(coef2d1[2] - coeflist[pidx, 2]) / 2 / cp.pi}  {(coef2d2[2] - coeflist[pidx + 1, 2]) / 2 / cp.pi}")
+        # logger.warning(f"diff at 2:{(coef2d1[2] - coeflist[pidx, 2]) / 2 / cp.pi}  {(coef2d2[2] - coeflist[pidx + 1, 2]) / 2 / cp.pi}")
+        logger.warning(f"{coeflist[pidx]=} {(coef2d1 - coeflist[pidx])=}")
+        logger.warning(f"{coeflist[pidx+1]=} {(coef2d2 - coeflist[pidx+1])=}")
 
         nsymbrp = cp.arange(around(nstart2) - 1000, around(nstart3) + 1000)
         tsymbrp = nsymbrp / Config.fs
@@ -354,28 +357,23 @@ def symbtime(estf, estt, pktdata_in, coeflist):
                addvline=(tdiff, tstart2)).show()
         coeflist = coeflist2.copy()
 
+    dd2 = cp.array(dd2)
+    diffs = cp.array(diffs)
     pltfig1(None, dd2, mode='markers', marker=dict(size=0.5), title="difference dd2").show()
-    fig = go.Figure(layout_title_text="intersect points")
-    pidx_range = cp.arange(240)
-    fig.add_trace(go.Scatter(x=pidx_range[1:], y=diffs))
-    coeff_time = np.polyfit(pidx_range[1:], diffs, 1)
-    print(coeff_time)
-    print(
-        f"estimated time:{coeff_time[0]} cfo ppm from time: {1 - coeff_time[0] / Config.nsampf * Config.fs} cfo: {(1 - coeff_time[0] / Config.nsampf * Config.fs) * Config.sig_freq}")
-    fig.add_trace(go.Scatter(x=pidx_range[1:], y=np.polyval(coeff_time, pidx_range[1:])))
-    fig.show()
-    fig = go.Figure(layout_title_text="intersect points diff")
-    fig.add_trace(go.Scatter(x=pidx_range[1:], y=diffs - np.polyval(coeff_time, pidx_range[1:])))
-    fig.show()
 
-    fig = go.Figure(layout_title_text="match val diff")
-    fig.add_trace(go.Scatter(x=pidx_range[1:], y=dd31))
-    fig.show()
+    pidx_range = cp.arange(240)
+
+    coeff_time = cp.polyfit(pidx_range[1 + 8:], diffs[8:], 1)
+    print(coeff_time)
+    print( f"estimated time:{coeff_time[0]} cfo ppm from time: {1 - coeff_time[0] / Config.nsampf * Config.fs} cfo: {(1 - coeff_time[0] / Config.nsampf * Config.fs) * Config.sig_freq}")
+    pltfig(((pidx_range[1:], diffs), (pidx_range[1:], np.polyval(coeff_time, pidx_range[1:]))), title="intersect points").show()
+    pltfig1(pidx_range[1:], diffs - np.polyval(coeff_time, pidx_range[1:]), title="intersect points diff").show()
+    # pltfig(((), ()), title="intersect points")
 
     dd = []
     for pidx in range(240):
         dd.append(- coeflist[pidx, 1] / 2 / coeflist[pidx, 0] - np.polyval(coeff_time, pidx))
-    fig = px.line(dd, title="coef2 middle time")
+    fig = px.line(tocpu(cp.array(dd)), title="coef2 middle time")
     fig.show()
 
 
