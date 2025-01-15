@@ -272,6 +272,7 @@ def pltfig_hind(addhline, addvline, line_dash_in, fig, yaxisrange):
         for y, ldash in zip(addhline, line_dash): fig.add_hline(y=y, line_dash=ldash)
 
 def symbtime(estf, estt, pktdata_in, coeflist, draw=False):
+    estcoef = [0.01008265, 0.01138625]
     nestt = estt * Config.fs
     nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
     diffs = []
@@ -292,10 +293,11 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False):
         tsymba = nsymba / Config.fs
         ysymba = cp.zeros_like(pktdata_in, dtype=cp.float64)
         ysymba[nsymba] = cp.unwrap(cp.angle(pktdata_in[nsymba]))
+        pltfig1(nsymba, ysymba[nsymba], addvline=(around(nstart) + 1000,), title=f"{pidx=}").show()
 
         val = (ysymba[around(nstart) + 1000] - cp.angle(pktdata_in[around(nstart) + 1000])) / 2 / cp.pi
         # val = (ysymba[nstart+1000] - cp.polyval(coeflist[pidx], x_data[nstart + 1000])) / 2 / cp.pi
-        logger.warning(f"{val=}, {np.polyval(coeflist[pidx], around(nstart) + 1000/Config.fs)}")
+        logger.warning(f"{val=}, {np.polyval(coeflist[pidx], (around(nstart) + 1000)/Config.fs)=}, {ysymba[(around(nstart) + 1000)]=}")
         assert abs(val - around(val)) < 0.001, f'1st uwrap from {nstart=} at {around(nstart) + 1000} ysymb={ysymba[around(nstart) + 1000]} {val=} not int'
         dd2.append(val - around(val))
         coeflist[pidx, 2] += around(val) * 2 * cp.pi
@@ -303,16 +305,18 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False):
         val = (ysymba[around(nstart2) + 1000] - cp.angle(pktdata_in[around(nstart2) + 1000])) / 2 / cp.pi
         # val = (ysymba[around(nstart2) + 1000] - cp.polyval(coeflist[pidx+1], x_data[around(nstart2) + 1000])) / 2 / cp.pi
         dd2.append(val - around(val))
-        logger.warning(f"{val=}")
+        # logger.warning(f"{val=}")
         assert abs(val - around(val)) < 0.001, f'2nd uwrap from {nstart2=} at {around(nstart2)+1000} ysymb={ysymba[around(nstart2) + 1000]} {val=} not int'
         coeflist[pidx + 1, 2] += around(val) * 2 * cp.pi
 
         # compute diff
         coeffs_diff = cp.polysub(coeflist[pidx], coeflist[pidx + 1])
-        logger.error(f"{coeffs_diff=}")
+        # logger.error(f"{coeffs_diff=}")
         isec_t = togpu(np.roots(tocpu(coeffs_diff)))
         tdiff = isec_t[cp.argmin(cp.abs(isec_t - tstart2))]
         diffs.append(tdiff)
+        logger.warning(f"{pidx=} {tdiff=} {np.polyval(estcoef, pidx+1)=} {tdiff - np.polyval(estcoef, pidx+1)=}")
+        dd31.append(tdiff - np.polyval(estcoef, pidx+1))
         if not draw: continue
 
         # draw line at that junction
@@ -359,6 +363,7 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False):
 
     dd2 = cp.array(dd2)
     diffs = cp.array(diffs)
+    # pltfig1(None, cp.array(dd31), mode='lines', title="difference between line").show()
     pltfig1(None, dd2, mode='markers', marker=dict(size=0.5), title="difference dd2").show()
 
     pidx_range = cp.arange(240)
@@ -375,6 +380,17 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False):
         dd.append(- coeflist[pidx, 1] / 2 / coeflist[pidx, 0] - np.polyval(coeff_time, pidx))
     fig = px.line(tocpu(cp.array(dd)), title="coef2 middle time")
     fig.show()
+
+    logger.warning(f"{coeff_time=}")
+    estt = np.polyval(coeff_time, 7)
+    nestt = estt * Config.fs
+
+    nsymbii = cp.arange(around(nestt) - 10, around(nestt) + 10)
+    tsymbii = nsymbii / Config.fs
+    pltfig(((tsymbii, cp.unwrap(cp.angle(pktdata_in[nsymbii]))),),
+           title=f"symbtime pidx=0 intersect smallview",
+           modes=('lines+markers',),
+           addvline=(estt, )).show()
 
 
 def fitcoef(estf, estt, pktdata_in, fitmethod = "2dfit", searchquad = True):
