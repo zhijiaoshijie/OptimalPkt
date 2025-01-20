@@ -289,6 +289,8 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False):
         tstart3 = nstart3 / Config.fs
         nsymbr = cp.arange(around(nstart) + 1000, around(nstart + nsymblen) - 1000)
         tsymbr = nsymbr / Config.fs
+        coefa = coeflist[pidx].copy()
+        coefb = coeflist[pidx + 1].copy()
 
         nsymba = cp.arange(around(nstart) - 1000, around(nstart + nsymblen * 2) + 1000)
         tsymba = nsymba / Config.fs
@@ -297,26 +299,26 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False):
         # pltfig1(tsymba, ysymba[nsymba], addvline=(np.polyval(estcoef, pidx), np.polyval(estcoef, pidx + 1)), title=f"{pidx=} duelsymb").show()
 
         val = (ysymba[around(nstart) + 1000] - cp.angle(pktdata_in[around(nstart) + 1000])) / 2 / cp.pi
-        # val = (ysymba[nstart+1000] - cp.polyval(coeflist[pidx], x_data[nstart + 1000])) / 2 / cp.pi
-        logger.warning(f"{val=}, {np.polyval(coeflist[pidx], (around(nstart) + 1000)/Config.fs)=}, {ysymba[(around(nstart) + 1000)]=}")
+        # val = (ysymba[nstart+1000] - cp.polyval(coefa, x_data[nstart + 1000])) / 2 / cp.pi
+        logger.warning(f"{val=}, {np.polyval(coefa, (around(nstart) + 1000)/Config.fs)=}, {ysymba[(around(nstart) + 1000)]=}")
         assert abs(val - around(val)) < 0.001, f'1st uwrap from {nstart=} at {around(nstart) + 1000} ysymb={ysymba[around(nstart) + 1000]} {val=} not int'
         dd2.append(val - around(val))
-        coeflist[pidx, 2] += around(val) * 2 * cp.pi
+        coefa[2] += around(val) * 2 * cp.pi
 
         val2 = (ysymba[around(nstart2) + 1000] - cp.angle(pktdata_in[around(nstart2) + 1000])) / 2 / cp.pi
-        # val2 = (ysymba[around(nstart2) + 1000] - cp.polyval(coeflist[pidx+1], x_data[around(nstart2) + 1000])) / 2 / cp.pi
+        # val2 = (ysymba[around(nstart2) + 1000] - cp.polyval(coefb, x_data[around(nstart2) + 1000])) / 2 / cp.pi
         dd2.append(val2 - around(val2))
         # logger.warning(f"{val2=}")
         assert abs(val2 - around(val2)) < 0.001, f'2nd uwrap from {nstart2=} at {around(nstart2)+1000} ysymb={ysymba[around(nstart2) + 1000]} {val2=} not int'
-        coeflist[pidx + 1, 2] += around(val2) * 2 * cp.pi
+        coefb[2] += around(val2) * 2 * cp.pi
 
         # compute diff
-        coeffs_diff = cp.polysub(coeflist[pidx], coeflist[pidx + 1])
+        coeffs_diff = cp.polysub(coefa, coefb)
         # logger.error(f"{coeffs_diff=}")
         isec_t = togpu(np.roots(tocpu(coeffs_diff)))
         tdiff = isec_t[cp.argmin(cp.abs(isec_t - tstart2))]
         diffs.append(tdiff)
-        pltfig(((tsymba, ysymba[nsymba]), (tsymba, np.polyval(coeflist[pidx], tsymba)), (tsymba, np.polyval(coeflist[pidx + 1], tsymba)), ),
+        pltfig(((tsymba, ysymba[nsymba]), (tsymba, np.polyval(coefa, tsymba)), (tsymba, np.polyval(coefb, tsymba)), ),
                addvline=(tdiff, np.polyval(estcoef, pidx), np.polyval(estcoef, pidx + 1)), title=f"{pidx=} duelsymb").show()
         logger.warning(f"{pidx=} {tdiff=} {np.polyval(estcoef, pidx+1)=} {tdiff - np.polyval(estcoef, pidx+1)=}")
         dd31.append(tdiff - np.polyval(estcoef, pidx+1))
