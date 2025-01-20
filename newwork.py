@@ -278,7 +278,6 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False):
     nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
     diffs = []
     dd2 = []
-    coeflist2 = coeflist.copy()
     dd31 = []
     for pidx in range(0, Config.preamble_len - 1):
         nstart = pidx * nsymblen + nestt
@@ -318,6 +317,7 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False):
         isec_t = togpu(np.roots(tocpu(coeffs_diff)))
         tdiff = isec_t[cp.argmin(cp.abs(isec_t - tstart2))]
         diffs.append(tdiff)
+        print(coefa, coefb, isec_t)
         pltfig(((tsymba, ysymba[nsymba]), (tsymba, np.polyval(coefa, tsymba)), (tsymba, np.polyval(coefb, tsymba)), ),
                addvline=(tdiff, np.polyval(estcoef, pidx), np.polyval(estcoef, pidx + 1)), title=f"{pidx=} duelsymb").show()
         logger.warning(f"{pidx=} {tdiff=} {np.polyval(estcoef, pidx+1)=} {tdiff - np.polyval(estcoef, pidx+1)=}")
@@ -364,7 +364,6 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False):
                title=f"symbtime {pidx=} intersect smallview",
                modes=('lines+markers', 'lines', 'lines', 'lines'),
                addvline=(tdiff, tstart2)).show()
-        coeflist = coeflist2.copy()
 
     dd2 = cp.array(dd2)
     diffs = cp.array(diffs)
