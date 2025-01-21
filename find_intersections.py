@@ -61,74 +61,44 @@ def find_crossings(coef_in, x_min, x_max):
 
     assert len(crossings) == len(nrangex) - 1
     # print(np.min(np.diff(crossings)) < 0, coef[0] * 2 * x_min + coef[1] < 0, coef[0] * 2 * x_max + coef[1] < 0)
-    assert np.min(np.diff(crossings)) > 0
-    assert np.min(crossings) > x_min, f"{np.min(crossings)=} {x_min=}"
-    assert np.max(crossings) < x_max, f"{np.max(crossings)=} {x_max=}"
+    if len(crossings) > 0:
+        if len(crossings) > 1: assert np.min(np.diff(crossings)) > 0
+        assert np.min(crossings) > x_min, f"{np.min(crossings)=} {x_min=}"
+        assert np.max(crossings) < x_max, f"{np.max(crossings)=} {x_max=}"
     return crossings, nrangex
 
 
 def merge_crossings(crossings_poly1, crossing_n1, crossings_poly2, crossing_n2, x_min, x_max, tol=1e-12):
     # Combine the intersection points and sort them
-    print(crossings_poly1)
-    print(crossings_poly2)
-    print(crossing_n1)
-    print(crossing_n2)
+    # print(crossings_poly1)
+    # print(crossings_poly2)
+    # print(crossing_n1)
+    # print(crossing_n2)
     merged_crossings = sorted(set(crossings_poly1 + crossings_poly2))
 
     # Remove crossings that are too close to each other
-    filtered_crossings = [merged_crossings[0]]
-    for x in merged_crossings[1:]:
-        if abs(x - filtered_crossings[-1]) >= tol:
-            filtered_crossings.append(x)
+    if len(merged_crossings) == 0: filtered_crossings = []
+    else:
+        filtered_crossings = [merged_crossings[0]]
+        for x in merged_crossings[1:]:
+            if abs(x - filtered_crossings[-1]) >= tol:
+                filtered_crossings.append(x)
 
     # Initialize the weight list for the filtered sections
     merged_weights = []
 
-    sections1 = []
-    for i in range(len(crossings_poly1) + 1):
-        if i == 0:
-            x_left = x_min  # Left of the first intersection
-            x_right = crossings_poly1[i]
-        elif i == len(crossings_poly1):
-            x_left = crossings_poly1[i - 1]
-            x_right = x_max  # Right of the last intersection
-        else:
-            x_left = crossings_poly1[i - 1]
-            x_right = crossings_poly1[i]
-        sections1.append([x_left, x_right])
+    sections1 = [x_min, *crossings_poly1, x_max]
+    sections2 = [x_min, *crossings_poly2, x_max]
+    sections = [x_min, *filtered_crossings, x_max]
+    sections1 = [(sections1[x], sections1[x + 1]) for x in range(len(sections1) - 1)]
+    sections2 = [(sections2[x], sections2[x + 1]) for x in range(len(sections2) - 1)]
+    sections = [(sections[x], sections[x + 1]) for x in range(len(sections) - 1)]
 
-    sections2 = []
-    for i in range(len(crossings_poly2) + 1):
-        if i == 0:
-            x_left = x_min  # Left of the first intersection
-            x_right = crossings_poly2[i]
-        elif i == len(crossings_poly2):
-            x_left = crossings_poly2[i - 1]
-            x_right = x_max  # Right of the last intersection
-        else:
-            x_left = crossings_poly2[i - 1]
-            x_right = crossings_poly2[i]
-        sections2.append([x_left, x_right])
-
-    # Iterate through the filtered_crossings to compute the weights for each segment
-    sections = []
-    for i in range(len(filtered_crossings) + 1):
-        # Determine the section bounds
-        if i == 0:
-            x_left = x_min  # Left of the first intersection
-            x_right = filtered_crossings[i]
-        elif i == len(filtered_crossings):
-            x_left = filtered_crossings[i - 1]
-            x_right = x_max  # Right of the last intersection
-        else:
-            x_left = filtered_crossings[i - 1]
-            x_right = filtered_crossings[i]
-        sections.append([x_left, x_right])
-
+    for (x_left, x_right) in sections:
         # Determine the weights for the current section from crossing_n1 and crossing_n2
         weight1 = next((w for (x1, x2), w in zip(sections1, crossing_n1) if x1 <= x_left <= x_right <= x2), None)
         weight2 = next((w for (x1, x2), w in zip(sections2, crossing_n2) if x1 <= x_left <= x_right <= x2), None)
-        print(weight1, weight2)
+        # print(weight1, weight2)
 
         merged_weights.append((weight1, weight2))
 
@@ -156,8 +126,8 @@ def find_intersections(coefa, coefb, tstart2, epsilon):
 
     # Combine and sort all crossing points
     sections, all_weights = merge_crossings(crossings_poly1, crossing_n1, crossings_poly2, crossing_n2, x_min, x_max)
-    print(sections)
-    print(all_weights)
+    # print(sections)
+    # print(all_weights)
     assert len(sections) == len(all_weights)
 
     for i, (x1, x2) in enumerate(sections):
@@ -218,12 +188,12 @@ def find_intersections(coefa, coefb, tstart2, epsilon):
             fig.show()
 
     # Print the intersection points
-    print("Intersection Points within the specified range:")
+    # print("Intersection Points within the specified range:")
     for idx, x in enumerate(intersection_points, 1):
         y1 = wrap(np.polyval(tocpu(coefa), tocpu(x)))
         y2 = wrap(np.polyval(tocpu(coefb), tocpu(x)))
         assert abs(y1 - y2) < 1e-6
 
-        print(f"{idx}: x = {x:.12f}, y1 = {y1:.12f} y2 = {y2:.12f} y1-y2={y1-y2:.12f}")
+        # print(f"{idx}: x = {x:.12f}, y1 = {y1:.12f} y2 = {y2:.12f} y1-y2={y1-y2:.12f}")
 
     return intersection_points, poly1_shifted_coef, poly2_shifted_coef

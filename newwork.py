@@ -173,7 +173,7 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False):
     estcoef = [0.01008263, 0.01015365]
     nestt = estt * Config.fs
     nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
-    diffs = cp.zeros(Config.preamble_len)
+    diffs = cp.zeros(Config.preamble_len - 1)
     dd2 = []
     # dd31 = []
     for pidx in range(0, Config.preamble_len - 1):
@@ -204,7 +204,7 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False):
 
 
         # compute diff
-        tdiff, coefa, coefb = find_intersections(coefa, coefb, tstart2, 1e-4)
+        tdiff, coefa, coefb = find_intersections(coefa, coefb, tstart2, 1e-6)
         logger.warning(f"finditx {pidx=} {tdiff=}, {coefa=}, {coefb=}")
         if len(tdiff) == 1:
             diffs[pidx] = tdiff[0]
@@ -275,18 +275,33 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False):
                modes=('lines+markers', 'lines', 'lines', 'lines'),
                addvline=(tdiff, tstart2)).show()
 
-    dd2 = cp.array(dd2)
+    # dd2 = cp.array(dd2)
     # pltfig1(None, cp.array(dd31), mode='lines', title="difference between line").show()
-    pltfig1(None, dd2, mode='markers', marker=dict(size=2), title="difference dd2(should be very small)").show()
+    # pltfig1(None, dd2, mode='markers', marker=dict(size=2), title="difference dd2(should be very small)").show()
 
     pidx_range = cp.arange(240)
 
     coeff_time = cp.polyfit(pidx_range[1 + 8:], diffs[8:], 1)
-    print(coeff_time)
+    # print(coeff_time)
     print( f"estimated time:{coeff_time=} cfo ppm from time: {1 - coeff_time[0] / Config.nsampf * Config.fs} cfo: {(1 - coeff_time[0] / Config.nsampf * Config.fs) * Config.sig_freq}")
     pltfig(((pidx_range[1:], diffs), (pidx_range[1:], np.polyval(coeff_time, pidx_range[1:]))), title="intersect points").show()
     pltfig1(pidx_range[1:], diffs - np.polyval(coeff_time, pidx_range[1:]), title="intersect points diff").show()
     # pltfig(((), ()), title="intersect points")
+
+    diffs2 = cp.zeros(Config.preamble_len - 1)
+    for pidx in range(0, Config.preamble_len - 1):
+        tstart2 = np.polyval(coeff_time, pidx + 1)
+        tdiffs, coefa, coefb = find_intersections(coeflist[pidx], coeflist[pidx + 1], tstart2, 1e-5)
+        tdiff = min(tdiffs, key=lambda x: abs(x - tstart2))
+        diffs2[pidx] = tdiff
+    coeff_time = cp.polyfit(pidx_range[1 + 8:], diffs2[8:], 1)
+    print(coeff_time)
+    print(
+        f"estimated time 2:{coeff_time=} cfo ppm from time: {1 - coeff_time[0] / Config.nsampf * Config.fs} cfo: {(1 - coeff_time[0] / Config.nsampf * Config.fs) * Config.sig_freq}")
+    pltfig(((pidx_range[1:], diffs2), (pidx_range[1:], np.polyval(coeff_time, pidx_range[1:]))),
+           title="intersect points 2").show()
+    pltfig1(pidx_range[1:], diffs2 - np.polyval(coeff_time, pidx_range[1:]), title="intersect points diff 2").show()
+
 
     dd = []
     for pidx in range(240):
