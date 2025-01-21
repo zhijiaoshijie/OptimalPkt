@@ -24,7 +24,7 @@ if __name__ == "__main__":
             if read_idx == 0: continue
             # if pkt_idx < 1: continue
 
-            estf = -40000
+            estf = -40896.08691837086
 
             nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
             nwindows = len(data1) / nsymblen
@@ -54,7 +54,7 @@ if __name__ == "__main__":
 
             # show_fit_results(data1, estf, estt, coeflist, pkt_idx)
 
-            symbtime(estf, estt, data1, coeflist)
+            estt, estf = symbtime(estf, estt, data1, coeflist)
 
             # objective_decode(estf, estt, data1)
             sys.exit(0)
