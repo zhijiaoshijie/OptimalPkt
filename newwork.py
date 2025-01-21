@@ -1,7 +1,7 @@
 from utils import *
 import plotly.express as px
 import plotly.graph_objects as go
-
+from find_intersections import find_intersections
 
 
 def coarse_est_f_t(data1, estf, window_idx):
@@ -276,7 +276,7 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False):
     estcoef = [0.01008263, 0.01015365]
     nestt = estt * Config.fs
     nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
-    diffs = []
+    diffs = cp.zeros(Config.preamble_len)
     dd2 = []
     # dd31 = []
     for pidx in range(0, Config.preamble_len - 1):
@@ -288,8 +288,16 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False):
         tstart3 = nstart3 / Config.fs
         nsymbr = cp.arange(around(nstart) + 1000, around(nstart + nsymblen) - 1000)
         tsymbr = nsymbr / Config.fs
+        nsymbr2 = cp.arange(around(nstart2) + 1000, around(nstart3) - 1000)
+        tsymbr2 = nsymbr2 / Config.fs
         coefa = coeflist[pidx].copy()
         coefb = coeflist[pidx + 1].copy()
+
+        d2vala = np.angle(pktdata_in[nsymbr].dot(np.exp(-1j * np.polyval(coefa, tsymbr))))
+        d2valb = np.angle(pktdata_in[nsymbr2].dot(np.exp(-1j * np.polyval(coefb, tsymbr2))))
+        print(d2vala, d2valb)
+        coefa[2] += d2vala
+        coefb[2] += d2valb
 
         nsymba = cp.arange(around(nstart) - 1000, around(nstart + nsymblen * 2) + 1000)
         tsymba = nsymba / Config.fs
@@ -297,30 +305,36 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False):
         ysymba[nsymba] = cp.unwrap(cp.angle(pktdata_in[nsymba]))
         # pltfig1(tsymba, ysymba[nsymba], addvline=(np.polyval(estcoef, pidx), np.polyval(estcoef, pidx + 1)), title=f"{pidx=} duelsymb").show()
 
-        val = (ysymba[around(nstart) + 1000] - cp.angle(pktdata_in[around(nstart) + 1000])) / 2 / cp.pi
-        # val = (ysymba[nstart+1000] - cp.polyval(coefa, x_data[nstart + 1000])) / 2 / cp.pi
-        # logger.warning(f"{val=}, {np.polyval(coefa, (around(nstart) + 1000)/Config.fs)=}, {ysymba[(around(nstart) + 1000)]=}")
-        assert abs(val - around(val)) < 0.001, f'1st uwrap from {nstart=} at {around(nstart) + 1000} ysymb={ysymba[around(nstart) + 1000]} {val=} not int'
-        dd2.append(val - around(val))
-        coefa[2] += val * 2 * cp.pi
-
-        val2 = (ysymba[around(nstart2) + 1000] - cp.angle(pktdata_in[around(nstart2) + 1000])) / 2 / cp.pi
-        # val2 = (ysymba[around(nstart2) + 1000] - cp.polyval(coefb, x_data[around(nstart2) + 1000])) / 2 / cp.pi
-        dd2.append(val2 - around(val2))
-        # logger.warning(f"{val2=}")
-        assert abs(val2 - around(val2)) < 0.001, f'2nd uwrap from {nstart2=} at {around(nstart2)+1000} ysymb={ysymba[around(nstart2) + 1000]} {val2=} not int'
-        coefb[2] += val2 * 2 * cp.pi
 
         # compute diff
-        coeffs_diff = cp.polysub(coefa, coefb)
-        # logger.error(f"{coeffs_diff=}")
-        isec_t = togpu(np.roots(tocpu(coeffs_diff)))
-        tdiff = isec_t[cp.argmin(cp.abs(isec_t - tstart2))]
-        diffs.append(tdiff)
-        # pltfig(((tsymba, ysymba[nsymba]), (tsymba, np.polyval(coefa, tsymba)), (tsymba, np.polyval(coefb, tsymba)), ),
-        #        addvline=(tdiff, np.polyval(estcoef, pidx), np.polyval(estcoef, pidx + 1)), title=f"{pidx=} duelsymb").show()
-        # logger.warning(f"{pidx=} {tdiff=} {np.polyval(estcoef, pidx+1)=} {tdiff - np.polyval(estcoef, pidx+1)=}")
-        # dd31.append(tdiff - np.polyval(estcoef, pidx+1))
+        tdiff, coefa, coefb = find_intersections(coefa, coefb, tstart2, 1e-4)
+        logger.warning(f"finditx {pidx=} {tdiff=}, {coefa=}, {coefb=}")
+        if len(tdiff) == 1:
+            diffs[pidx] = tdiff[0]
+            logger.error("findidx success!")
+        else:
+            logger.error("findidx not found!")
+            # todo change unwrap adjust d[2] method: use avg diff
+            val = (ysymba[around(nstart) + 1000] - cp.angle(pktdata_in[around(nstart) + 1000])) / 2 / cp.pi
+            # val = (ysymba[nstart+1000] - cp.polyval(coefa, x_data[nstart + 1000])) / 2 / cp.pi
+            # logger.warning(f"{val=}, {np.polyval(coefa, (around(nstart) + 1000)/Config.fs)=}, {ysymba[(around(nstart) + 1000)]=}")
+            assert abs(val - around(
+                val)) < 0.001, f'1st uwrap from {nstart=} at {around(nstart) + 1000} ysymb={ysymba[around(nstart) + 1000]} {val=} not int'
+            dd2.append(val - around(val))
+            coefa[2] += val * 2 * cp.pi
+
+            val2 = (ysymba[around(nstart2) + 1000] - cp.angle(pktdata_in[around(nstart2) + 1000])) / 2 / cp.pi
+            # val2 = (ysymba[around(nstart2) + 1000] - cp.polyval(coefb, x_data[around(nstart2) + 1000])) / 2 / cp.pi
+            dd2.append(val2 - around(val2))
+            # logger.warning(f"{val2=}")
+            assert abs(val2 - around(
+                val2)) < 0.001, f'2nd uwrap from {nstart2=} at {around(nstart2) + 1000} ysymb={ysymba[around(nstart2) + 1000]} {val2=} not int'
+            coefb[2] += val2 * 2 * cp.pi
+            coeffs_diff = cp.polysub(coefa, coefb)
+            isec_t = togpu(np.roots(tocpu(coeffs_diff)))
+            tdiff = isec_t[cp.argmin(cp.abs(isec_t - tstart2))]
+            diffs[pidx] = tdiff
+            logger.warning(f"oldfind {pidx=} {tdiff=}, {coefa=}, {coefb=}")
         if not draw: continue
 
         # draw line at that junction
@@ -365,7 +379,6 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False):
                addvline=(tdiff, tstart2)).show()
 
     dd2 = cp.array(dd2)
-    diffs = cp.array(diffs)
     # pltfig1(None, cp.array(dd31), mode='lines', title="difference between line").show()
     pltfig1(None, dd2, mode='markers', marker=dict(size=2), title="difference dd2(should be very small)").show()
 

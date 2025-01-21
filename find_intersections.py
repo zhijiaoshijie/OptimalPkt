@@ -1,5 +1,8 @@
 import numpy as np
+import cupy as cp
 from math import ceil, floor
+
+from utils import tocpu, togpu
 
 # Define the coefficients for the two polynomials
 coeflist = [
@@ -9,27 +12,28 @@ coeflist = [
 
 
 # Define the start position and the range around it
-nstart = 0.030318928843199852
+tstart2 = 0.030318928843199852
 epsilon = 1e-6
 
 # Function to find crossing points where poly(x) = (2n +1)*pi
 def find_crossings(coef, x_min, x_max):
-    y_min = np.polyval(coef, x_min)
-    y_max = np.polyval(coef, x_max)
+    y_min = cp.polyval(coef, x_min)
+    y_max = cp.polyval(coef, x_max)
     y_lower = min(y_min, y_max)
     y_upper = max(y_min, y_max)
 
     # Compute the range of n values
-    n_min = ceil((y_lower - np.pi) / (2 * np.pi))
-    n_max = floor((y_upper - np.pi) / (2 * np.pi))
+    n_min = ceil((y_lower - cp.pi) / (2 * cp.pi))
+    n_max = floor((y_upper - cp.pi) / (2 * cp.pi))
 
     crossings = []
     for n in range(int(n_min), int(n_max) + 1):
         # Solve poly(x) - (2n +1)*pi = 0
-        shifted_poly = (coef[0], coef[1], coef[2] - (2 * n + 1) * np.pi)
-        roots = np.roots(shifted_poly)
+        shifted_poly = coef.copy()
+        shifted_poly[2] -= (2 * n + 1) * cp.pi
+        roots = togpu(np.roots(tocpu(shifted_poly)))
         # Filter real roots within [x_min, x_max]
-        real_roots = roots[np.isreal(roots)].real
+        real_roots = roots[cp.isreal(roots)].real
         valid_roots = real_roots[(real_roots >= x_min) & (real_roots <= x_max)]
         crossings.extend(valid_roots.tolist())
     return crossings
@@ -38,18 +42,18 @@ def find_crossings(coef, x_min, x_max):
 def determine_n(coef, x_start, x_end):
     # Choose the midpoint to determine n
     x_mid = (x_start + x_end) / 2
-    y_mid = np.polyval(coef, x_mid)
-    n = floor((y_mid + np.pi) / (2 * np.pi))
+    y_mid = cp.polyval(coef, x_mid)
+    n = floor((y_mid + cp.pi) / (2 * cp.pi))
     return n
 
 
-def find_intersections(coeflist, nstart, epsilon):
-    x_min = nstart - epsilon
-    x_max = nstart + epsilon
+def find_intersections(coefa, coefb, tstart2, epsilon):
+    x_min = tstart2 - epsilon
+    x_max = tstart2 + epsilon
 
     # Find all crossing points for both polynomials
-    crossings_poly1 = find_crossings(coeflist[0], x_min, x_max)
-    crossings_poly2 = find_crossings(coeflist[1], x_min, x_max)
+    crossings_poly1 = find_crossings(coefa, x_min, x_max)
+    crossings_poly2 = find_crossings(coefb, x_min, x_max)
 
     # Combine and sort all crossing points
     all_crossings = sorted(crossings_poly1 + crossings_poly2)
@@ -80,24 +84,24 @@ def find_intersections(coeflist, nstart, epsilon):
     # Iterate over each section to find intersections and plot
     for idx, (x_start, x_end) in enumerate(sections):
         # Determine n for each polynomial
-        n1 = determine_n(coeflist[0], x_start, x_end)
-        n2 = determine_n(coeflist[1], x_start, x_end)
+        n1 = determine_n(coefa, x_start, x_end)
+        n2 = determine_n(coefb, x_start, x_end)
 
         # Adjust the constant term for wrapping
         # Create shifted polynomials by adding (2n -1)*pi to the constant term
-        coef = coeflist[0]
-        poly1_shifted_coef = (coef[0], coef[1], coef[2] - (2 * n1) * np.pi)
+        poly1_shifted_coef = coefa.copy()
+        poly1_shifted_coef -= (2 * n1) * cp.pi
 
-        coef = coeflist[1]
-        poly2_shifted_coef = (coef[0], coef[1], coef[2] - (2 * n2) * np.pi)
+        poly2_shifted_coef = coefb.copy()
+        poly2_shifted_coef -= (2 * n2) * cp.pi
 
         # Compute the difference polynomial
-        poly_diff = np.polysub(poly1_shifted_coef, poly2_shifted_coef)
+        poly_diff = cp.polysub(poly1_shifted_coef, poly2_shifted_coef)
 
         # Find roots of the difference polynomial
-        roots = np.roots(poly_diff)
+        roots = togpu(np.roots(tocpu(poly_diff)))
         # Filter real roots
-        real_roots = roots[np.isreal(roots)].real
+        real_roots = roots[cp.isreal(roots)].real
         # Filter roots within the current section
         valid_roots = real_roots[(real_roots >= x_start) & (real_roots <= x_end)]
         # Convert to float and remove duplicates

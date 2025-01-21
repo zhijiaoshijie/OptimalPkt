@@ -41,7 +41,7 @@ if __name__ == "__main__":
             estt += start_pidx * nsymblen / Config.fs
 
             logger.warning(f"fixed {estt=} from {start_pidx=}")
-            fit1d = False
+            fit1d = True
             if fit1d: fname = f"coeftpkt_{pkt_idx}_f1.pkl"
             else: fname = f"coeftpkt_{pkt_idx}_nf.pkl"
             # fname = f"coefout2.pkl"
