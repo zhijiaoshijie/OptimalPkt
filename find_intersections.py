@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 from math import ceil, floor
 from pltfig import pltfig
 
-from utils import tocpu, togpu
+from utils import tocpu, togpu, wrap
 
 # Define the coefficients for the two polynomials
 coeflist = [
@@ -37,8 +37,8 @@ def find_crossings(coef_in, x_min, x_max):
     nrange = np.arange(int(n_min), int(n_max) + 1)
     nrangex = np.arange(int(n_min), int(n_max) + 2)
 
-    if coef[1] * 2 * x_min + coef[0] < 0: # decreasing
-        assert coef[1] * 2 * x_max + coef[0] < 0
+    if coef[0] * 2 * x_min + coef[1] < 0: # decreasing
+        assert coef[0] * 2 * x_max + coef[1] < 0
         nrange = nrange[::-1]
         nrangex = nrangex[::-1]
 
@@ -60,11 +60,19 @@ def find_crossings(coef_in, x_min, x_max):
         assert - np.pi + 2 * np.pi * nrangex[i + 1] <= np.polyval(coef, xv) <= np.pi + 2 * np.pi * nrangex[i + 1]
 
     assert len(crossings) == len(nrangex) - 1
+    # print(np.min(np.diff(crossings)) < 0, coef[0] * 2 * x_min + coef[1] < 0, coef[0] * 2 * x_max + coef[1] < 0)
+    assert np.min(np.diff(crossings)) > 0
+    assert np.min(crossings) > x_min, f"{np.min(crossings)=} {x_min=}"
+    assert np.max(crossings) < x_max, f"{np.max(crossings)=} {x_max=}"
     return crossings, nrangex
 
 
 def merge_crossings(crossings_poly1, crossing_n1, crossings_poly2, crossing_n2, x_min, x_max, tol=1e-12):
     # Combine the intersection points and sort them
+    print(crossings_poly1)
+    print(crossings_poly2)
+    print(crossing_n1)
+    print(crossing_n2)
     merged_crossings = sorted(set(crossings_poly1 + crossings_poly2))
 
     # Remove crossings that are too close to each other
@@ -75,6 +83,32 @@ def merge_crossings(crossings_poly1, crossing_n1, crossings_poly2, crossing_n2, 
 
     # Initialize the weight list for the filtered sections
     merged_weights = []
+
+    sections1 = []
+    for i in range(len(crossings_poly1) + 1):
+        if i == 0:
+            x_left = x_min  # Left of the first intersection
+            x_right = crossings_poly1[i]
+        elif i == len(crossings_poly1):
+            x_left = crossings_poly1[i - 1]
+            x_right = x_max  # Right of the last intersection
+        else:
+            x_left = crossings_poly1[i - 1]
+            x_right = crossings_poly1[i]
+        sections1.append([x_left, x_right])
+
+    sections2 = []
+    for i in range(len(crossings_poly2) + 1):
+        if i == 0:
+            x_left = x_min  # Left of the first intersection
+            x_right = crossings_poly2[i]
+        elif i == len(crossings_poly2):
+            x_left = crossings_poly2[i - 1]
+            x_right = x_max  # Right of the last intersection
+        else:
+            x_left = crossings_poly2[i - 1]
+            x_right = crossings_poly2[i]
+        sections2.append([x_left, x_right])
 
     # Iterate through the filtered_crossings to compute the weights for each segment
     sections = []
@@ -92,8 +126,9 @@ def merge_crossings(crossings_poly1, crossing_n1, crossings_poly2, crossing_n2, 
         sections.append([x_left, x_right])
 
         # Determine the weights for the current section from crossing_n1 and crossing_n2
-        weight1 = next((w for x, w in zip(crossings_poly1, crossing_n1) if x_left < x <= x_right), crossing_n1[-1])
-        weight2 = next((w for x, w in zip(crossings_poly2, crossing_n2) if x_left < x <= x_right), crossing_n2[-1])
+        weight1 = next((w for (x1, x2), w in zip(sections1, crossing_n1) if x1 <= x_left <= x_right <= x2), None)
+        weight2 = next((w for (x1, x2), w in zip(sections2, crossing_n2) if x1 <= x_left <= x_right <= x2), None)
+        print(weight1, weight2)
 
         merged_weights.append((weight1, weight2))
 
@@ -121,26 +156,27 @@ def find_intersections(coefa, coefb, tstart2, epsilon):
 
     # Combine and sort all crossing points
     sections, all_weights = merge_crossings(crossings_poly1, crossing_n1, crossings_poly2, crossing_n2, x_min, x_max)
+    print(sections)
+    print(all_weights)
     assert len(sections) == len(all_weights)
 
     for i, (x1, x2) in enumerate(sections):
         xv = (x1 + x2) / 2
-        print( - np.pi + 2 * np.pi * all_weights[i + 1][0] , np.polyval(coefa, xv) , np.pi + 2 * np.pi * all_weights[i + 1][0])
-        print( - np.pi + 2 * np.pi * all_weights[i + 1][1] , np.polyval(coefb, xv) , np.pi + 2 * np.pi * all_weights[i + 1][1])
-        assert - np.pi + 2 * np.pi * all_weights[i + 1][0] <= np.polyval(coefa, xv) <= np.pi + 2 * np.pi * all_weights[i + 1][0]
-        assert - np.pi + 2 * np.pi * all_weights[i + 1][1] <= np.polyval(coefb, xv) <= np.pi + 2 * np.pi * all_weights[i + 1][1]
+        # print(i, - np.pi + 2 * np.pi * all_weights[i][0] , np.polyval(coefa, xv) , np.pi + 2 * np.pi * all_weights[i][0])
+        # print(i, - np.pi + 2 * np.pi * all_weights[i][1] , np.polyval(coefb, xv) , np.pi + 2 * np.pi * all_weights[i][1])
+        assert - np.pi + 2 * np.pi * all_weights[i][0] <= np.polyval(coefa, xv) <= np.pi + 2 * np.pi * all_weights[i][0]
+        assert - np.pi + 2 * np.pi * all_weights[i][1] <= np.polyval(coefb, xv) <= np.pi + 2 * np.pi * all_weights[i][1]
 
     intersection_points = []
     for idx, ((x_start, x_end), (n1, n2)) in enumerate(zip(sections, all_weights)):
-        print(idx, n1, n2)
 
         # Adjust the constant term for wrapping
         # Create shifted polynomials by adding (2n -1)*pi to the constant term
         poly1_shifted_coef = coefa.copy()
-        poly1_shifted_coef -= (2 * n1) * cp.pi
+        poly1_shifted_coef[2] -= (2 * n1) * cp.pi
 
         poly2_shifted_coef = coefb.copy()
-        poly2_shifted_coef -= (2 * n2) * cp.pi
+        poly2_shifted_coef[2] -= (2 * n2) * cp.pi
 
         # Compute the difference polynomial
         poly_diff = cp.polysub(poly1_shifted_coef, poly2_shifted_coef)
@@ -158,26 +194,36 @@ def find_intersections(coefa, coefb, tstart2, epsilon):
         intersection_points.extend(valid_roots)
         # Generate x values for plotting
 
-        num_points = 500
-        x_vals = np.linspace(x_start, x_end, num_points)
-        y1_wrapped = np.polyval(poly1_shifted_coef, x_vals)
-        y2_wrapped = np.polyval(poly2_shifted_coef, x_vals)
+        if False:
+            num_points = 500
+            x_vals = np.linspace(x_start, x_end, num_points)
+            y1_wrapped = np.polyval(poly1_shifted_coef, x_vals)
+            y2_wrapped = np.polyval(poly2_shifted_coef, x_vals)
 
-        # Add shifted polynomials to the subplot
-        fig = pltfig(((x_vals, y1_wrapped), (x_vals, y2_wrapped)), addvline=(x_start, x_end), addhline=(-np.pi, np.pi), title=f"{idx=} finditx")
+            # Add shifted polynomials to the subplot
+            fig = pltfig(((x_vals, y1_wrapped), (x_vals, y2_wrapped)), addvline=(x_start, x_end), addhline=(-np.pi, np.pi), title=f"{idx=} finditx")
 
-        # Highlight intersection points within this section
-        for x_int, y_int in valid_roots:
-            fig.add_trace(
-                go.Scatter(x=x_int, y=y_int, mode='markers', name='Intersections',
-                           marker=dict(color='red', size=8, symbol='circle')),
-            )
-        # fig.update_yaxes(range=[-np.pi * 5 - 0.1, np.pi * 5 + 0.1])
-        fig.show()
+            # Highlight intersection points within this section
+            if len(valid_roots) > 0:
+                for x_int in valid_roots:
+                    fig.add_trace(
+                        go.Scatter(x=(tocpu(x_int),), y=(np.polyval(tocpu(poly1_shifted_coef), tocpu(x_int)),), mode='markers', name='Intersections',
+                                   marker=dict(color='red', size=8, symbol='circle')),
+                    )
+                    fig.add_trace(
+                        go.Scatter(x=(tocpu(x_int),), y=(np.polyval(tocpu(poly1_shifted_coef), tocpu(x_int)),), mode='markers', name='Intersections',
+                                   marker=dict(color='red', size=8, symbol='circle')),
+                    )
+                # fig.update_yaxes(range=[-np.pi * 5 - 0.1, np.pi * 5 + 0.1])
+            fig.show()
 
     # Print the intersection points
     print("Intersection Points within the specified range:")
-    for idx, (x, y) in enumerate(intersection_points, 1):
-        print(f"{idx}: x = {x:.12f}, y = {y:.12f}")
+    for idx, x in enumerate(intersection_points, 1):
+        y1 = wrap(np.polyval(tocpu(coefa), tocpu(x)))
+        y2 = wrap(np.polyval(tocpu(coefb), tocpu(x)))
+        assert abs(y1 - y2) < 1e-6
+
+        print(f"{idx}: x = {x:.12f}, y1 = {y1:.12f} y2 = {y2:.12f} y1-y2={y1-y2:.12f}")
 
     return intersection_points, poly1_shifted_coef, poly2_shifted_coef
