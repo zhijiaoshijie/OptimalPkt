@@ -204,13 +204,15 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False):
 
 
         # compute diff
-        tdiff, coefa, coefb = find_intersections(coefa, coefb, tstart2, 1e-6)
-        logger.warning(f"finditx {pidx=} {tdiff=}, {coefa=}, {coefb=}")
-        if len(tdiff) == 1:
-            diffs[pidx] = tdiff[0]
-            logger.error("findidx success!")
-        else:
-            logger.error("findidx not found!")
+        if False:
+            tdiff, coefa, coefb = find_intersections(coefa, coefb, tstart2, pktdata_in,1e-5)
+            logger.warning(f"finditx {pidx=} {tdiff=}, {coefa=}, {coefb=}")
+            if len(tdiff) == 1:
+                diffs[pidx] = tdiff[0]
+                logger.error("findidx success!")
+            else:
+                logger.error("findidx not found!")
+        if True:
             # todo change unwrap adjust d[2] method: use avg diff
             val = (ysymba[around(nstart) + 1000] - cp.angle(pktdata_in[around(nstart) + 1000])) / 2 / cp.pi
             # val = (ysymba[nstart+1000] - cp.polyval(coefa, x_data[nstart + 1000])) / 2 / cp.pi
@@ -291,7 +293,7 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False):
     diffs2 = cp.zeros(Config.preamble_len - 1)
     for pidx in range(0, Config.preamble_len - 1):
         tstart2 = np.polyval(coeff_time, pidx + 1)
-        tdiffs, coefa, coefb = find_intersections(coeflist[pidx], coeflist[pidx + 1], tstart2, 1e-5)
+        tdiffs, coefa, coefb = find_intersections(coeflist[pidx], coeflist[pidx + 1], tstart2, pktdata_in, 1e-5, draw= (pidx == 238))
         tdiff = min(tdiffs, key=lambda x: abs(x - tstart2))
         diffs2[pidx] = tdiff
     coeff_time = cp.polyfit(pidx_range[1 + 8:], diffs2[8:], 1)

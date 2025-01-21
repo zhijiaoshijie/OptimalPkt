@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 from math import ceil, floor
 from pltfig import pltfig
 
-from utils import tocpu, togpu, wrap
+from utils import tocpu, togpu, wrap, Config
 
 # Define the coefficients for the two polynomials
 coeflist = [
@@ -116,7 +116,7 @@ def determine_n(coef, x_start, x_end):
     return n
 
 
-def find_intersections(coefa, coefb, tstart2, epsilon):
+def find_intersections(coefa, coefb, tstart2,pktdata_in, epsilon, draw=False):
     x_min = tstart2 - epsilon
     x_max = tstart2 + epsilon
 
@@ -138,6 +138,7 @@ def find_intersections(coefa, coefb, tstart2, epsilon):
         assert - np.pi + 2 * np.pi * all_weights[i][1] <= np.polyval(coefb, xv) <= np.pi + 2 * np.pi * all_weights[i][1]
 
     intersection_points = []
+    fig = go.Figure(layout_title_text=f"finditx")
     for idx, ((x_start, x_end), (n1, n2)) in enumerate(zip(sections, all_weights)):
 
         # Adjust the constant term for wrapping
@@ -164,14 +165,15 @@ def find_intersections(coefa, coefb, tstart2, epsilon):
         intersection_points.extend(valid_roots)
         # Generate x values for plotting
 
-        if False:
-            num_points = 500
+        if draw:
+            num_points = 20
             x_vals = np.linspace(x_start, x_end, num_points)
             y1_wrapped = np.polyval(poly1_shifted_coef, x_vals)
             y2_wrapped = np.polyval(poly2_shifted_coef, x_vals)
 
             # Add shifted polynomials to the subplot
-            fig = pltfig(((x_vals, y1_wrapped), (x_vals, y2_wrapped)), addvline=(x_start, x_end), addhline=(-np.pi, np.pi), title=f"{idx=} finditx")
+            fig = pltfig(((x_vals, y1_wrapped), (x_vals, y2_wrapped)), addvline=(x_start, x_end), addhline=(-np.pi, np.pi), fig = fig)
+
 
             # Highlight intersection points within this section
             if len(valid_roots) > 0:
@@ -185,7 +187,15 @@ def find_intersections(coefa, coefb, tstart2, epsilon):
                                    marker=dict(color='red', size=8, symbol='circle')),
                     )
                 # fig.update_yaxes(range=[-np.pi * 5 - 0.1, np.pi * 5 + 0.1])
-            fig.show()
+    if draw:
+        xv = togpu(np.arange(np.ceil(tocpu(x_min) * Config.fs), np.ceil(tocpu(x_max) * Config.fs), dtype=int))
+        fig.add_trace(
+            go.Scatter(x=tocpu(xv / Config.fs), y=tocpu(cp.angle(pktdata_in[xv])), mode='markers',
+                       name='rawdata',
+                       marker=dict(color='blue', size=4, symbol='circle')),
+        )
+        fig.add_vline(x = min(intersection_points, key=lambda x: abs(x - tstart2)), line=dict(color='red'))
+        fig.show()
 
     # Print the intersection points
     # print("Intersection Points within the specified range:")
