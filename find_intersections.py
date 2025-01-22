@@ -2,9 +2,9 @@ import numpy as np
 import cupy as cp
 import plotly.graph_objects as go
 from math import ceil, floor
-from pltfig import pltfig
+from pltfig import pltfig, pltfig1
 
-from utils import tocpu, togpu, wrap, Config
+from utils import tocpu, togpu, wrap, Config, around
 
 # Define the coefficients for the two polynomials
 coeflist = [
@@ -195,7 +195,19 @@ def find_intersections(coefa, coefb, tstart2,pktdata_in, epsilon, draw=False):
                        marker=dict(color='blue', size=4, symbol='circle')),
         )
         fig.add_vline(x = min(intersection_points, key=lambda x: abs(x - tstart2)), line=dict(color='red'))
+
+
         fig.show()
+        a1 = np.zeros(20000, dtype=np.float64)
+        for i in range(10, 10000):
+            xv1 = np.arange(around(tstart2 * Config.fs - i), around(tstart2 * Config.fs), dtype=int)
+            a1v = cp.angle(pktdata_in[xv1].dot(cp.exp(-1j * cp.polyval(coefa, xv1 / Config.fs))))
+            a1[10000 - i] = a1v
+            xv1 = np.arange(around(tstart2 * Config.fs), around(tstart2 * Config.fs + i), dtype=int)
+            a1v = cp.angle(pktdata_in[xv1].dot(cp.exp(-1j * cp.polyval(coefb, xv1 / Config.fs))))
+            a1[10000 + i] = a1v
+        pltfig1(None, a1, title="angle difference").show()
+
 
     # Print the intersection points
     # print("Intersection Points within the specified range:")
