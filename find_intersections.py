@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 from math import ceil, floor
 from pltfig import pltfig, pltfig1
 
-from utils import tocpu, togpu, wrap, Config, around
+from utils import tocpu, togpu, wrap, Config, around, logger
 
 # Define the coefficients for the two polynomials
 coeflist = [
@@ -116,7 +116,7 @@ def determine_n(coef, x_start, x_end):
     return n
 
 
-def find_intersections(coefa, coefb, tstart2,pktdata_in, epsilon, draw=False):
+def find_intersections(coefa, coefb, tstart2,pktdata_in, epsilon, margin=1000, draw=False):
     x_min = tstart2 - epsilon
     x_max = tstart2 + epsilon
 
@@ -187,23 +187,26 @@ def find_intersections(coefa, coefb, tstart2,pktdata_in, epsilon, draw=False):
                                    marker=dict(color='red', size=8, symbol='circle')),
                     )
                 # fig.update_yaxes(range=[-np.pi * 5 - 0.1, np.pi * 5 + 0.1])
+    selected = min(intersection_points, key=lambda x: abs(x - tstart2))
+    logger.warning(f"accurate break point against tstart2 {selected - tstart2 =}")
     if draw:
         xv = togpu(np.arange(np.ceil(tocpu(x_min) * Config.fs), np.ceil(tocpu(x_max) * Config.fs), dtype=int))
         fig.add_trace(
             go.Scatter(x=tocpu(xv / Config.fs), y=tocpu(cp.angle(pktdata_in[xv])), mode='markers',
                        name='rawdata',
-                       marker=dict(color='blue', size=4, symbol='circle')),
+                       marker=dict(color='blue', size=8, symbol='circle')),
         )
-        fig.add_vline(x = min(intersection_points, key=lambda x: abs(x - tstart2)), line=dict(color='red'))
+        fig.add_vline(x = selected, line=dict(color='red'))
 
 
         fig.show()
+
         a1 = np.zeros(20000, dtype=np.float64)
-        for i in range(10, 10000):
-            xv1 = np.arange(around(tstart2 * Config.fs - i), around(tstart2 * Config.fs), dtype=int)
+        for i in range(margin, 10000):
+            xv1 = np.arange(around(tstart2 * Config.fs - i), around(tstart2 * Config.fs - margin), dtype=int)
             a1v = cp.angle(pktdata_in[xv1].dot(cp.exp(-1j * cp.polyval(coefa, xv1 / Config.fs))))
             a1[10000 - i] = a1v
-            xv1 = np.arange(around(tstart2 * Config.fs), around(tstart2 * Config.fs + i), dtype=int)
+            xv1 = np.arange(around(tstart2 * Config.fs + margin), around(tstart2 * Config.fs + i), dtype=int)
             a1v = cp.angle(pktdata_in[xv1].dot(cp.exp(-1j * cp.polyval(coefb, xv1 / Config.fs))))
             a1[10000 + i] = a1v
         pltfig1(None, a1, title="angle difference").show()

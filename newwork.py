@@ -45,14 +45,14 @@ def start_pidx_pow_detect(data1, estf, estt, window_idx = 10):
         if pow2 > pow1 * 0.5:
             return pidx
 
-def show_fit_results(pktdata_in, estf, estt, coeflist_in, pkt_idx):
+def show_fit_results(pktdata_in, estf, estt, coeflist_in, pkt_idx, margin):
     coeflist = coeflist_in.copy()
     betai = Config.bw / ((2 ** Config.sf) / Config.bw)
     nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
     tsymblen = nsymblen / Config.fs
     for pidx in range(0, Config.preamble_len):
         nstart = pidx * nsymblen + estt * Config.fs
-        nsymbr = cp.arange(around(nstart) + 1000, around(nstart + nsymblen) - 1000)
+        nsymbr = cp.arange(around(nstart) + margin, around(nstart + nsymblen) - margin)
         tsymbr = nsymbr / Config.fs
         coeflist[pidx, 2] += cp.angle(pktdata_in[nsymbr].dot(cp.exp(-1j * cp.polyval(coeflist[pidx], tsymbr))))
     c0mean = cp.mean(coeflist[8:, 0])
@@ -77,7 +77,7 @@ def show_fit_results(pktdata_in, estf, estt, coeflist_in, pkt_idx):
 
 
 
-def plot_fit2d(coefficients_2d_in, estf, estt, pidx, pktdata_in):
+def plot_fit2d(coefficients_2d_in, estf, estt, pidx, pktdata_in, margin):
     logger.warning(f'''
     plt_fit2d called with {coefficients_2d_in=} {estf=} {pidx=}
     draw 3 imgs:
@@ -92,10 +92,10 @@ def plot_fit2d(coefficients_2d_in, estf, estt, pidx, pktdata_in):
     nstart2 = (pidx + 1) * nsymblen + estt * Config.fs
     tstart = nstart / Config.fs
     tend = tstart + tsymblen
-    nsymbr = cp.arange(around(nstart) + 1000, around(nstart2) - 1000)
+    nsymbr = cp.arange(around(nstart) + margin, around(nstart2) - margin)
     tsymbr = nsymbr / Config.fs
-    p0idx = 1000
-    nsymbrp = cp.arange(around(nstart) - p0idx, around(nstart) + Config.nsamp + 1000)
+    p0idx = margin
+    nsymbrp = cp.arange(around(nstart) - p0idx, around(nstart) + Config.nsamp + margin)
     assert nsymbrp[p0idx] == around(nstart)
     tsymbrp = nsymbrp / Config.fs
 
@@ -121,7 +121,7 @@ def plot_fit2d(coefficients_2d_in, estf, estt, pidx, pktdata_in):
            addvline=(tstart, tend)).show()
 
 
-def plot_fit2d_after_refine(coefficients_2d_in, coef2d_refined_in, estf, estt, pidx, pktdata_in):
+def plot_fit2d_after_refine(coefficients_2d_in, coef2d_refined_in, estf, estt, pidx, pktdata_in, margin):
     logger.warning(f'''
     plt_fit2d after_refine called with {coefficients_2d_in=} {coef2d_refined_in=} {estf=} {pidx=}
     draw 3 imgs:
@@ -134,12 +134,13 @@ def plot_fit2d_after_refine(coefficients_2d_in, coef2d_refined_in, estf, estt, p
     nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
     tsymblen = nsymblen / Config.fs
     nstart = pidx * nsymblen + estt * Config.fs
+    nstart2 = (pidx + 1) * nsymblen + estt * Config.fs
     tstart = nstart / Config.fs
     tend = tstart + tsymblen
-    nsymbr = cp.arange(around(nstart) + 1000, around(nstart2) - 1000)
+    nsymbr = cp.arange(around(nstart) + margin, around(nstart2) - margin)
     tsymbr = nsymbr / Config.fs
-    p0idx = 1000
-    nsymbrp = cp.arange(around(nstart) - p0idx, around(nstart) + Config.nsamp + 1000)
+    p0idx = margin
+    nsymbrp = cp.arange(around(nstart) - p0idx, around(nstart) + Config.nsamp + margin)
     assert nsymbrp[p0idx] == around(nstart)
     tsymbrp = nsymbrp / Config.fs
 
@@ -169,7 +170,7 @@ def plot_fit2d_after_refine(coefficients_2d_in, coef2d_refined_in, estf, estt, p
                   title=f"{pidx=} fit 2d no-uw angles after_refine",
                   addvline=(tstart, tend)).show()
 
-def symbtime(estf, estt, pktdata_in, coeflist, draw=False):
+def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
     estcoef = [0.01008263, 0.01015365]
     nestt = estt * Config.fs
     nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
@@ -183,9 +184,9 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False):
         tstart2 = nstart2 / Config.fs
         nstart3 = (pidx + 2) * nsymblen + nestt
         tstart3 = nstart3 / Config.fs
-        nsymbr = cp.arange(around(nstart) + 1000, around(nstart + nsymblen) - 1000)
+        nsymbr = cp.arange(around(nstart) + margin, around(nstart + nsymblen) - margin)
         tsymbr = nsymbr / Config.fs
-        nsymbr2 = cp.arange(around(nstart2) + 1000, around(nstart3) - 1000)
+        nsymbr2 = cp.arange(around(nstart2) + margin, around(nstart3) - margin)
         tsymbr2 = nsymbr2 / Config.fs
         coefa = coeflist[pidx].copy()
         coefb = coeflist[pidx + 1].copy()
@@ -196,7 +197,7 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False):
         coefa[2] += d2vala
         coefb[2] += d2valb
 
-        nsymba = cp.arange(around(nstart) - 1000, around(nstart + nsymblen * 2) + 1000)
+        nsymba = cp.arange(around(nstart) - margin, around(nstart + nsymblen * 2) + margin)
         tsymba = nsymba / Config.fs
         ysymba = cp.zeros_like(pktdata_in, dtype=cp.float64)
         ysymba[nsymba] = cp.unwrap(cp.angle(pktdata_in[nsymba]))
@@ -214,72 +215,27 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False):
                 logger.error("findidx not found!")
         if True:
             # todo change unwrap adjust d[2] method: use avg diff
-            val = (ysymba[around(nstart) + 1000] - cp.angle(pktdata_in[around(nstart) + 1000])) / 2 / cp.pi
-            # val = (ysymba[nstart+1000] - cp.polyval(coefa, x_data[nstart + 1000])) / 2 / cp.pi
-            # logger.warning(f"{val=}, {np.polyval(coefa, (around(nstart) + 1000)/Config.fs)=}, {ysymba[(around(nstart) + 1000)]=}")
+            val = (ysymba[around(nstart) + margin] - cp.angle(pktdata_in[around(nstart) + margin])) / 2 / cp.pi
+            # val = (ysymba[nstart+margin] - cp.polyval(coefa, x_data[nstart + margin])) / 2 / cp.pi
+            # logger.warning(f"{val=}, {np.polyval(coefa, (around(nstart) + margin)/Config.fs)=}, {ysymba[(around(nstart) + margin)]=}")
             assert abs(val - around(
-                val)) < 0.001, f'1st uwrap from {nstart=} at {around(nstart) + 1000} ysymb={ysymba[around(nstart) + 1000]} {val=} not int'
+                val)) < 0.001, f'1st uwrap from {nstart=} at {around(nstart) + margin} ysymb={ysymba[around(nstart) + margin]} {val=} not int'
             dd2.append(val - around(val))
             coefa[2] += val * 2 * cp.pi
 
-            val2 = (ysymba[around(nstart2) + 1000] - cp.angle(pktdata_in[around(nstart2) + 1000])) / 2 / cp.pi
-            # val2 = (ysymba[around(nstart2) + 1000] - cp.polyval(coefb, x_data[around(nstart2) + 1000])) / 2 / cp.pi
+            val2 = (ysymba[around(nstart2) + margin] - cp.angle(pktdata_in[around(nstart2) + margin])) / 2 / cp.pi
+            # val2 = (ysymba[around(nstart2) + margin] - cp.polyval(coefb, x_data[around(nstart2) + margin])) / 2 / cp.pi
             dd2.append(val2 - around(val2))
             # logger.warning(f"{val2=}")
             assert abs(val2 - around(
-                val2)) < 0.001, f'2nd uwrap from {nstart2=} at {around(nstart2) + 1000} ysymb={ysymba[around(nstart2) + 1000]} {val2=} not int'
+                val2)) < 0.001, f'2nd uwrap from {nstart2=} at {around(nstart2) + margin} ysymb={ysymba[around(nstart2) + margin]} {val2=} not int'
             coefb[2] += val2 * 2 * cp.pi
             coeffs_diff = cp.polysub(coefa, coefb)
             isec_t = togpu(np.roots(tocpu(coeffs_diff)))
             tdiff = isec_t[cp.argmin(cp.abs(isec_t - tstart2))]
             diffs[pidx] = tdiff
-            logger.warning(f"oldfind {pidx=} {tdiff=}, {coefa=}, {coefb=}")
-        if not draw: continue
+            # logger.warning(f"oldfind {pidx=} {tdiff=}, {coefa=}, {coefb=}")
 
-        # draw line at that junction
-        ndiff = tdiff * Config.fs
-        coplt = cp.zeros((2,))
-        coplt[0] = 2 * coeflist[pidx, 0] * tdiff + coeflist[pidx, 1]
-        coplt[1] = cp.polyval(coeflist[pidx], tdiff) - cp.polyval(coplt, tdiff)
-        nsymbi = cp.arange(around(ndiff) - 1000, around(ndiff) + 1000)
-        tsymbi = nsymbi / Config.fs
-
-        nsymbl = cp.arange(around(nstart) + 1000, around(nstart2) - 1000)
-        tsymbl = nsymbl / Config.fs
-        coef2d1 = cp.polyfit(tsymbl, cp.unwrap(cp.angle(ysymba[nsymbl])), 2)
-
-        nsymblp = cp.arange(around(nstart) - 1000, around(nstart2) + 1000)
-        tsymblp = nsymblp / Config.fs
-
-        nsymbr = cp.arange(around(nstart2) + 1000, around(nstart3) - 1000)
-        tsymbr = nsymbr / Config.fs
-        coef2d2 = cp.polyfit(tsymbr, cp.unwrap(cp.angle(ysymba[nsymbr])), 2)
-
-        # logger.warning(f"diff at 2:{(coef2d1[2] - coeflist[pidx, 2]) / 2 / cp.pi}  {(coef2d2[2] - coeflist[pidx + 1, 2]) / 2 / cp.pi}")
-        # logger.warning(f"{coeflist[pidx]=} {(coef2d1 - coeflist[pidx])=}")
-        # logger.warning(f"{coeflist[pidx+1]=} {(coef2d2 - coeflist[pidx+1])=}")
-
-        nsymbrp = cp.arange(around(nstart2) - 1000, around(nstart3) + 1000)
-        tsymbrp = nsymbrp / Config.fs
-
-        pltfig(((tsymba, ysymba[nsymba]), (tsymbi, cp.polyval(coplt, tsymbi)),
-               (tsymblp, cp.polyval(coeflist[pidx], tsymblp)),
-                (tsymbrp, cp.polyval(coeflist[pidx + 1], tsymbrp))),
-               title=f"symbtime {pidx=} intersect fullview",
-               modes=('lines+markers', 'lines', 'lines', 'lines'),
-               addvline=(tdiff, tstart, tstart2, tstart3)).show()
-        nsymbii = cp.arange(around(ndiff) - 100, around(ndiff) + 100)
-        tsymbii = nsymbii / Config.fs
-        pltfig(((tsymbii, ysymba[nsymbii]), (tsymbii, cp.polyval(coplt, tsymbii)),
-               (tsymbii, cp.polyval(coeflist[pidx], tsymbii)),
-                (tsymbii, cp.polyval(coeflist[pidx + 1], tsymbii))),
-               title=f"symbtime {pidx=} intersect smallview",
-               modes=('lines+markers', 'lines', 'lines', 'lines'),
-               addvline=(tdiff, tstart2)).show()
-
-    # dd2 = cp.array(dd2)
-    # pltfig1(None, cp.array(dd31), mode='lines', title="difference between line").show()
-    # pltfig1(None, dd2, mode='markers', marker=dict(size=2), title="difference dd2(should be very small)").show()
 
     pidx_range = cp.arange(240)
 
@@ -293,7 +249,7 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False):
     diffs2 = cp.zeros(Config.preamble_len - 1)
     for pidx in range(0, Config.preamble_len - 1):
         tstart2 = np.polyval(coeff_time, pidx + 1)
-        tdiffs, coefa, coefb = find_intersections(coeflist[pidx], coeflist[pidx + 1], tstart2, pktdata_in, 1e-5, draw= (pidx == 238))
+        tdiffs, coefa, coefb = find_intersections(coeflist[pidx], coeflist[pidx + 1], tstart2, pktdata_in, 1e-4, margin=margin, draw= (pidx == 120))
         tdiff = min(tdiffs, key=lambda x: abs(x - tstart2))
         diffs2[pidx] = tdiff
     coeff_time = cp.polyfit(pidx_range[1 + 8:], diffs2[8:], 1)
@@ -329,21 +285,22 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False):
     logger.warning(f"coef2 end freq {avgdd2=} estf={avgdd2 - Config.bw / 2}")
     pltfig1(None, dd, addhline=(Config.bw / 2 + estf, avgdd2), title="coef2 end freq freq=bw/2+estf").show()
 
-    for pidx in [0, 120, 239, 240]:
-        estt = np.polyval(coeff_time, pidx)
-        nestt = estt * Config.fs
-        nsymbii = cp.arange(around(nestt) - 10, around(nestt) + 10)
-        tsymbii = nsymbii / Config.fs
-        pltfig(((tsymbii, cp.unwrap(cp.angle(pktdata_in[nsymbii]))),),
-               title=f"symbtime {pidx=} intersect smallview",
-               modes=('lines+markers',),
-           addvline=(estt, )).show()
+    if draw:
+        for pidx in [0, 120, 239, 240]:
+            estt = np.polyval(coeff_time, pidx)
+            nestt = estt * Config.fs
+            nsymbii = cp.arange(around(nestt) - 10, around(nestt) + 10)
+            tsymbii = nsymbii / Config.fs
+            pltfig(((tsymbii, cp.unwrap(cp.angle(pktdata_in[nsymbii]))),),
+                   title=f"symbtime {pidx=} intersect smallview",
+                   modes=('lines+markers',),
+               addvline=(estt, )).show()
     estf_ret = (avgdd1 + avgdd2) / 2
     return coeff_time[0], estf_ret
 
 
 
-def fitcoef(estf, estt, pktdata_in, fitmethod = "2dfit", searchquad = True):
+def fitcoef(estf, estt, pktdata_in, margin, fitmethod = "2dfit", searchquad = True):
     nestt = estt * Config.fs
     betai = Config.bw / ((2 ** Config.sf) / Config.bw) * cp.pi
     betat = betai * (1 + estf / Config.sig_freq)
@@ -353,7 +310,7 @@ def fitcoef(estf, estt, pktdata_in, fitmethod = "2dfit", searchquad = True):
     coeflist = []
     for pidx in range(0, Config.preamble_len):
         nstart = pidx * nsymblen + nestt
-        nsymbr = cp.arange(around(nstart) + 1000, around(nstart + nsymblen) - 1000)
+        nsymbr = cp.arange(around(nstart) + margin, around(nstart + nsymblen) - margin)
         tsymbr = nsymbr / Config.fs
         # nstart = cp.polyval(coeff_time, pidx) * Config.fs
 
@@ -385,17 +342,17 @@ def fitcoef(estf, estt, pktdata_in, fitmethod = "2dfit", searchquad = True):
         #
         # find accurate coefficients_2d by power
         #
-        coef2d_refined = refine_coef(estf, estt, pidx, pktdata_in, coefficients_2d, searchquad = searchquad)
+        coef2d_refined = refine_coef(estf, estt, pidx, pktdata_in, coefficients_2d, margin=margin, searchquad = searchquad)
         coeflist.append(coef2d_refined)
 
         # plot_fit2d_after_refine(coefficients_2d, coef2d_refined, estf, estt, pidx, pktdata_in)
     return cp.array(coeflist)
 
-def refine_coef(estf, estt, pidx, pktdata_in, coefficients_2d_in, searchquad = False):
+def refine_coef(estf, estt, pidx, pktdata_in, coefficients_2d_in, margin, searchquad = False):
     coefficients_2d = coefficients_2d_in.copy()
     nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
     nstart = pidx * nsymblen + estt * Config.fs
-    nsymbr = cp.arange(around(nstart) + 1000, around(nstart + nsymblen) - 1000)
+    nsymbr = cp.arange(around(nstart) + margin, around(nstart + nsymblen) - margin)
     tsymbr = nsymbr / Config.fs
 
     val = obj(tsymbr, pktdata_in[nsymbr], coefficients_2d)
@@ -403,7 +360,7 @@ def refine_coef(estf, estt, pidx, pktdata_in, coefficients_2d_in, searchquad = F
         f'find accurate coefficients_2d by power. before start, result from linear fit {coefficients_2d=} {val=}')
 
     rangeval = 0.005
-    for i in range(20):
+    for i in range(3):
 
         # search for both 1st (quad) and 2nd (linear) value, or only 2nd value
         for j in range(0 if searchquad else 1, 2):
@@ -413,16 +370,14 @@ def refine_coef(estf, estt, pidx, pktdata_in, coefficients_2d_in, searchquad = F
                 coef2 = coefficients_2d.copy()
                 coef2[j] = x
                 yvals.append(obj(tsymbr, pktdata_in[nsymbr], coef2))
+            yvals = cp.array(yvals)
             oldv = coefficients_2d[j]
-            coefficients_2d[j] = xvals[cp.argmax(togpu(yvals))]
+            coefficients_2d[j] = xvals[cp.argmax(yvals)]
             valnew = obj(tsymbr, pktdata_in[nsymbr], coefficients_2d)
             if valnew < val*(1-1e-7):
-                fig = go.Figure(layout_title_text=f"{pidx=} {i=} {j=} {val=} {valnew=}")
-                fig.add_trace(go.Scatter(x=xvals, y=yvals))
-                fig.add_vline(x=oldv)
-                fig.show()
+                pltfig1(xvals, yvals, addvline=(oldv,), title=f"{pidx=} {i=} {j=} {val=} {valnew=}").show()
             assert valnew >= val * (1 - 1e-7), f"{val=} {valnew=} {i=} {j=} {coefficients_2d=} {val-valnew=}"
-            if abs(valnew - val) < 1e-7: rangeval /= 2
+            if abs(valnew - val) < 1e-7: rangeval /= 64
             val = valnew
 
     # align with phase. here may have a 2pi difference when evaluated in unwrap

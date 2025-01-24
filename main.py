@@ -24,7 +24,46 @@ if __name__ == "__main__":
             if read_idx == 0: continue
             # if pkt_idx < 1: continue
 
-            estf = -40896.08691837086
+            estf= -40971.948630148894
+            estt =  0.01015242
+            # coeflist = fitcoef(estf, estt, data1, margin=10, fitmethod='1dfit', searchquad=False)
+            with open('1dfittemp.pkl', "rb") as fl: coeflist = pickle.load(fl)
+            for pidx in range(Config.preamble_len - 1):
+                a1 = []#np.zeros(20001, dtype=np.float64)
+                margin = 1000
+                estcoef = [0.01008263, 0.01015365]
+                nestt = estt * Config.fs
+                nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
+                logger.warning(f"{nsymblen / Config.fs=} {estcoef[0]=} TT")
+                nstart = (pidx) * nsymblen + nestt
+                tstart = nstart / Config.fs
+                nstart2 = (pidx + 1) * nsymblen + nestt
+                tstart2 = nstart2 / Config.fs
+                nstart3 = (pidx + 2) * nsymblen + nestt
+                tstart3 = nstart3 / Config.fs
+
+                x1 = []#np.zeros(20001, dtype=np.float64)
+                for i in range(margin, 10001):
+                    coefa = coeflist[pidx]
+                    coefb = coeflist[pidx + 1]
+                    xv1 = np.arange(around(tstart2 * Config.fs - i), around(tstart2 * Config.fs - i + margin), dtype=int)
+                    a1v = cp.angle(data1[xv1].dot(cp.exp(-1j * cp.polyval(coefa, xv1 / Config.fs))))
+                    # a1[10000 - i] = a1v
+                    # x1[10000 - i] = around(tstart2 * Config.fs - i) / Config.fs
+                    a1.append(a1v)
+                    x1.append(around(tstart2 * Config.fs - i) / Config.fs)
+                    xv1 = np.arange(around(tstart2 * Config.fs + i - margin), around(tstart2 * Config.fs + i), dtype=int)
+                    a1v = cp.angle(data1[xv1].dot(cp.exp(-1j * cp.polyval(coefb, xv1 / Config.fs))))
+                    a1.append(a1v)
+                    x1.append(around(tstart2 * Config.fs + i) / Config.fs)
+                a1 = togpu(cp.array(a1))
+                x1 = togpu(cp.array(x1))
+                pltfig1(x1, a1, addvline=(tstart2, tstart, tstart3), mode='markers', title="angle difference").show()
+
+            estt, estf = symbtime(estf, estt, data1, coeflist)
+            # with open('1dfittemp.pkl', "wb") as fl: pickle.dump(coeflist, fl)
+            logger.warning(f"symbtime end: {estt=} {estf=}")
+            sys.exit(0)
 
             nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
             nwindows = len(data1) / nsymblen
@@ -46,8 +85,8 @@ if __name__ == "__main__":
             else: fname = f"coeftpkt_{pkt_idx}_nf.pkl"
             # fname = f"coefout2.pkl"
             if not os.path.exists(fname):
-                if fit1d: coeflist = fitcoef(estf, estt, data1, fitmethod='1dfit', searchquad=True)
-                else: coeflist = fitcoef(estf, estt, data1)
+                if fit1d: coeflist = fitcoef(estf, estt, data1, margin=1000,fitmethod='1dfit', searchquad=False)
+                else: coeflist = fitcoef(estf, estt, data1, margin=1000, fitmethod='2dfit', searchquad=True)
                 with open(fname, "wb") as fl: pickle.dump(coeflist, fl)
             else:
                 with open(fname, "rb") as fl: coeflist = pickle.load(fl)
@@ -55,7 +94,25 @@ if __name__ == "__main__":
             # show_fit_results(data1, estf, estt, coeflist, pkt_idx)
 
             estt, estf = symbtime(estf, estt, data1, coeflist)
+            logger.warning(f"symbtime end: {estt=} {estf=}")
 
+            fit1d = True
+            if fit1d:
+                fname = f"coeftpktA_{pkt_idx}_f1.pkl"
+            else:
+                fname = f"coeftpktA_{pkt_idx}_nf.pkl"
+            # fname = f"coefout2.pkl"
+            if not os.path.exists(fname):
+                if fit1d:
+                    coeflist = fitcoef(estf, estt, data1,margin=10, fitmethod='1dfit', searchquad=True)
+                else:
+                    coeflist = fitcoef(estf, estt, data1, margin=10)
+                with open(fname, "wb") as fl:
+                    pickle.dump(coeflist, fl)
+            else:
+                with open(fname, "rb") as fl:
+                    coeflist = pickle.load(fl)
+            estt, estf = symbtime(estf, estt, data1, coeflist, margin=10, draw=True)
             # objective_decode(estf, estt, data1)
             sys.exit(0)
 
