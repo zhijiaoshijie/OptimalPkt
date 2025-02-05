@@ -283,7 +283,7 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
                    title=f"symbtime {pidx=} intersect smallview",
                    modes=('lines+markers',),
                addvline=(estt, )).show()
-    estf_ret = (avgdd1 + avgdd2) / 2
+    estf_ret = np.mean(avgdds)
     return coeff_time[0], estf_ret
 
 
@@ -317,10 +317,6 @@ def fitcoef(estf, estt, pktdata_in, margin, fitmethod = "2dfit", searchquad = Tr
             coefficients_2d = togpu([betat, *tocpu(coefficients_2d)])
         else: assert False, "fitmethod not in (2dfit, 1dfit)"
         logger.warning(f"{pidx=} {nstart=} {fitmethod=} {coefficients_2d=} {betat=} {betai=}")
-
-        # align with phase. here may have a 2pi difference when evaluated in unwrap
-        coefficients_2d[-1] -= cp.angle(
-            pktdata_in[nsymbr].dot(cp.exp(-1j * cp.polyval(coefficients_2d, tsymbr))))
 
         #
         # plot the results:
@@ -369,5 +365,6 @@ def refine_coef(estf, estt, pidx, pktdata_in, coefficients_2d_in, margin, search
             val = valnew
 
     # align with phase. here may have a 2pi difference when evaluated in unwrap
-    coefficients_2d[-1] -= cp.angle(pktdata_in[nsymbr].dot(cp.exp(-1j * cp.polyval(coefficients_2d, tsymbr))))
+    coefficients_2d[-1] += cp.angle(pktdata_in[nsymbr].dot(cp.exp(-1j * cp.polyval(coefficients_2d, tsymbr))))
+    # assert cp.angle(pktdata_in[nsymbr].dot(cp.exp(-1j * cp.polyval(coefficients_2d, tsymbr)))) < 1e-4, 'err angle not resolved'
     return coefficients_2d

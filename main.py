@@ -39,7 +39,23 @@ if __name__ == "__main__":
             estf= -40971.948630148894
             estt =  0.01015365
             # coeflist = fitcoef(estf, estt, data1, margin=10, fitmethod='1dfit', searchquad=False)
-            with open('1dfittemp.pkl', "rb") as fl: coeflist = pickle.load(fl)
+            # with open('1dfittemp.pkl', "rb") as fl: coeflist = pickle.load(fl)
+            fit1d = False
+            if fit1d:
+                fname = f"coeftpktB_{pkt_idx}_f1.pkl"
+            else:
+                fname = f"coeftpktB_{pkt_idx}_nf.pkl"
+            # fname = f"coefout2.pkl"
+            if not os.path.exists(fname):
+                if fit1d:
+                    coeflist = fitcoef(estf, estt, data1,margin=10, fitmethod='1dfit', searchquad=True)
+                else:
+                    coeflist = fitcoef(estf, estt, data1, margin=10)
+                with open(fname, "wb") as fl:
+                    pickle.dump(coeflist, fl)
+            else:
+                with open(fname, "rb") as fl:
+                    coeflist = pickle.load(fl)
 
             a1vs = remove_phase_diff(estf, estt, data1, coeflist)
             pltfig1(None, a1vs, title="residue angles").show()
@@ -50,7 +66,21 @@ if __name__ == "__main__":
             estt, estf = symbtime(estf, estt, data1, coeflist)
             # with open('1dfittemp.pkl', "wb") as fl: pickle.dump(coeflist, fl)
             logger.warning(f"symbtime end: {estt=} {estf=}")
+            with open(fname, "wb") as fl:
+                pickle.dump(coeflist, fl)
             sys.exit(0)
+
+
+
+
+
+
+
+
+
+
+
+
 
             nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
             nwindows = len(data1) / nsymblen
@@ -101,32 +131,6 @@ if __name__ == "__main__":
                     coeflist = pickle.load(fl)
             estt, estf = symbtime(estf, estt, data1, coeflist, margin=10, draw=True)
             sys.exit(0)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
             if True:
