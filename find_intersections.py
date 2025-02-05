@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 from math import ceil, floor
 from pltfig import pltfig, pltfig1
 
-from utils import tocpu, togpu, wrap, Config, around, logger
+from utils import tocpu, togpu, sqlist, wrap, Config, around, logger
 
 # Define the coefficients for the two polynomials
 coeflist = [
@@ -116,7 +116,7 @@ def determine_n(coef, x_start, x_end):
     return n
 
 
-def find_intersections(coefa, coefb, tstart2,pktdata_in, epsilon, margin=1000, draw=False):
+def find_intersections(coefa, coefb, tstart2,pktdata_in, epsilon, margin=10, draw=False):
     x_min = tstart2 - epsilon
     x_max = tstart2 + epsilon
 
@@ -187,9 +187,20 @@ def find_intersections(coefa, coefb, tstart2,pktdata_in, epsilon, margin=1000, d
                                    marker=dict(color='red', size=8, symbol='circle')),
                     )
                 # fig.update_yaxes(range=[-np.pi * 5 - 0.1, np.pi * 5 + 0.1])
-    selected = min(intersection_points, key=lambda x: abs(x - tstart2))
-    logger.warning(f"accurate break point against tstart2 {selected - tstart2 =}")
+
+    xv = togpu(np.arange(np.ceil(tocpu(x_min) * Config.fs), np.ceil(tocpu(x_max) * Config.fs), dtype=int))
+    val1 = cp.cos(cp.polyval(coefa, xv / Config.fs) - cp.angle(pktdata_in[xv]))
+    val2 = cp.cos(cp.polyval(coefb, xv / Config.fs) - cp.angle(pktdata_in[xv]))
+
+    selected = max(intersection_points, key=lambda x: np.sum(val1[:np.ceil(x * Config.fs - xv[0])]) + np.sum(val2[np.ceil(x * Config.fs - xv[0]):]))
+    selected2 = min(intersection_points, key=lambda x: abs(x - tstart2))
+    if selected2 != selected:
+        logger.warning(f"accurate break point against tstart2 {selected - tstart2 =}")
+
     if draw:
+        vals = [cp.sum(val1[:np.ceil(x * Config.fs - xv[0])]) + cp.sum(val2[np.ceil(x * Config.fs - xv[0]):]) for x in
+                intersection_points]
+        pltfig1(intersection_points, vals, addvline=(tstart2,), mode="markers", title="temp1").show()
         xv = togpu(np.arange(np.ceil(tocpu(x_min) * Config.fs), np.ceil(tocpu(x_max) * Config.fs), dtype=int))
         fig.add_trace(
             go.Scatter(x=tocpu(xv / Config.fs), y=tocpu(cp.angle(pktdata_in[xv])), mode='markers',
@@ -201,15 +212,19 @@ def find_intersections(coefa, coefb, tstart2,pktdata_in, epsilon, margin=1000, d
 
         fig.show()
 
-        a1 = np.zeros(20000, dtype=np.float64)
-        for i in range(margin, 10000):
-            xv1 = np.arange(around(tstart2 * Config.fs - i), around(tstart2 * Config.fs - margin), dtype=int)
+        a1 = []
+        x1 = []
+        for i in range(-3000, 0):
+            xv1 = np.arange(around(tstart2 * Config.fs + i - margin), around(tstart2 * Config.fs + i + margin), dtype=int)
             a1v = cp.angle(pktdata_in[xv1].dot(cp.exp(-1j * cp.polyval(coefa, xv1 / Config.fs))))
-            a1[10000 - i] = a1v
-            xv1 = np.arange(around(tstart2 * Config.fs + margin), around(tstart2 * Config.fs + i), dtype=int)
+            x1.append(around(tstart2 * Config.fs + i) )
+            a1.append(a1v)
+        for i in range(1, 3000):
+            xv1 = np.arange(around(tstart2 * Config.fs + i - margin), around(tstart2 * Config.fs + i + margin), dtype=int)
             a1v = cp.angle(pktdata_in[xv1].dot(cp.exp(-1j * cp.polyval(coefb, xv1 / Config.fs))))
-            a1[10000 + i] = a1v
-        pltfig1(None, a1, title="angle difference").show()
+            x1.append(around(tstart2 * Config.fs + i) )
+            a1.append(a1v)
+        pltfig1(x1, a1, title="angle difference").show()
 
 
     # Print the intersection points

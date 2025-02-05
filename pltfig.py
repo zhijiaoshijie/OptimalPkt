@@ -1,6 +1,6 @@
 import plotly.express as px
 import plotly.graph_objects as go
-from utils import tocpu, togpu
+from utils import tocpu, togpu, sqlist
 import numpy as np
 def pltfig(datas, title = None, yaxisrange = None, modes = None, marker = None, addvline = None, addhline = None, line_dash = None, fig = None, line=None):
     """
@@ -41,7 +41,7 @@ def pltfig(datas, title = None, yaxisrange = None, modes = None, marker = None, 
         modes = [modes for _ in datas]
     for idx, ((xdata, ydata), mode) in enumerate(zip(datas, modes)):
         if line == None and idx == 1: line = dict(dash='dash')
-        fig.add_trace(go.Scatter(x=tocpu(xdata), y=tocpu(ydata), mode=mode, marker=marker, line=line))
+        fig.add_trace(go.Scatter(x=tocpu(sqlist(xdata)), y=tocpu(sqlist(ydata)), mode=mode, marker=marker, line=line))
     pltfig_hind(addhline, addvline, line_dash, fig, yaxisrange)
     return fig
 
@@ -83,7 +83,7 @@ def pltfig1(xdata, ydata, title = None, yaxisrange = None, mode = None, marker =
     if fig is None: fig = go.Figure(layout_title_text=title)
     elif title is not None: fig.update_layout(title_text=title)
     if mode is None: mode = 'lines'
-    fig.add_trace(go.Scatter(x=tocpu(xdata), y=tocpu(ydata), mode=mode, marker=marker, line=line))
+    fig.add_trace(go.Scatter(x=tocpu(sqlist(xdata)), y=tocpu(sqlist(ydata)), mode=mode, marker=marker, line=line))
     pltfig_hind(addhline, addvline, line_dash, fig, yaxisrange)
     return fig
 

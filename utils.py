@@ -28,6 +28,14 @@ def tocpu(x):
     else:
         return x
 
+def sqlist(lst):
+    if all(isinstance(arr, np.ndarray) and arr.shape == () for arr in lst):
+        return np.squeeze(np.array(lst))
+    elif all(isinstance(arr, cp.ndarray) and arr.shape == () for arr in lst):
+        return cp.squeeze(cp.array(lst))
+    else:
+        return lst
+
 def mychirp(t, f0, f1, t1):
     betai = (f1 - f0) / t1
     phase = 2 * cp.pi * (f0 * t + 0.5 * betai * t * t)

@@ -28,7 +28,34 @@ if __name__ == "__main__":
             estt =  0.01015242
             # coeflist = fitcoef(estf, estt, data1, margin=10, fitmethod='1dfit', searchquad=False)
             with open('1dfittemp.pkl', "rb") as fl: coeflist = pickle.load(fl)
-            for pidx in range(Config.preamble_len - 1):
+
+            a1vs = []
+            for pidx2 in range(Config.preamble_len):
+                coefa = coeflist[pidx2]
+                nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
+                # coeff_time = [0.01008263, 0.01015366]
+                nestt = 0.01015365 * Config.fs
+                margin = 1000
+                nstart = pidx2 * nsymblen + nestt
+                nsymbr = cp.arange(around(nstart) + margin, around(nstart + nsymblen) - margin)
+                a1v = cp.angle(data1[nsymbr].dot(cp.exp(-1j * cp.polyval(coefa, nsymbr / Config.fs))))
+                a1vs.append(tocpu(a1v))
+            pltfig1(None, a1vs, title="residue angles").show()
+            coeflist[:, 2] += togpu(a1vs)
+            a1vs = []
+            for pidx2 in range(Config.preamble_len):
+                coefa = coeflist[pidx2]
+                nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
+                # coeff_time = [0.01008263, 0.01015366]
+                nestt = 0.01015365 * Config.fs
+                margin = 1000
+                nstart = pidx2 * nsymblen + nestt
+                nsymbr = cp.arange(around(nstart) + margin, around(nstart + nsymblen) - margin)
+                a1v = cp.angle(data1[nsymbr].dot(cp.exp(-1j * cp.polyval(coefa, nsymbr / Config.fs))))
+                a1vs.append(tocpu(a1v))
+            pltfig1(None, a1vs, title="residue angles2").show()
+
+            if False:#for pidx in range(50, Config.preamble_len - 1, 50):
                 a1 = []#np.zeros(20001, dtype=np.float64)
                 margin = 1000
                 estcoef = [0.01008263, 0.01015365]
@@ -43,7 +70,7 @@ if __name__ == "__main__":
                 tstart3 = nstart3 / Config.fs
 
                 x1 = []#np.zeros(20001, dtype=np.float64)
-                for i in range(margin, 10001):
+                for i in range(margin, 10001, 10):
                     coefa = coeflist[pidx]
                     coefb = coeflist[pidx + 1]
                     xv1 = np.arange(around(tstart2 * Config.fs - i), around(tstart2 * Config.fs - i + margin), dtype=int)
@@ -58,7 +85,18 @@ if __name__ == "__main__":
                     x1.append(around(tstart2 * Config.fs + i) / Config.fs)
                 a1 = togpu(cp.array(a1))
                 x1 = togpu(cp.array(x1))
-                pltfig1(x1, a1, addvline=(tstart2, tstart, tstart3), mode='markers', title="angle difference").show()
+
+                a1vs = []
+                for pidx2 in range(pidx, pidx + 2):
+                    coefa = coeflist[pidx2]
+                    nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
+                    # coeff_time = [0.01008263, 0.01015366]
+                    nstart = pidx2 * nsymblen + nestt
+                    nsymbr = cp.arange(around(nstart) + margin, around(nstart + nsymblen) - margin)
+                    a1v = cp.angle(data1[nsymbr].dot(cp.exp(-1j * cp.polyval(coefa, nsymbr / Config.fs))))
+                    a1vs.append(a1v)
+
+                pltfig1(x1, a1, addvline=(tstart2, tstart, tstart3), mode='markers', addhline=a1vs, title=f"angle difference {pidx=}").show()
 
             estt, estf = symbtime(estf, estt, data1, coeflist)
             # with open('1dfittemp.pkl', "wb") as fl: pickle.dump(coeflist, fl)
