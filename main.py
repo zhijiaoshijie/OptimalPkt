@@ -6,6 +6,18 @@ from reader import *
 from newwork import *
 
 
+def remove_phase_diff(estf, estt, pktdata_in, coeflist, margin=1000):
+    a1vs = []
+    for pidx2 in range(Config.preamble_len):
+        coefa = coeflist[pidx2]
+        nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
+        # coeff_time = [0.01008263, 0.01015366]
+        nestt = estt * Config.fs
+        nstart = pidx2 * nsymblen + nestt
+        nsymbr = cp.arange(around(nstart) + margin, around(nstart + nsymblen) - margin)
+        a1v = cp.angle(pktdata_in[nsymbr].dot(cp.exp(-1j * cp.polyval(coefa, nsymbr / Config.fs))))
+        a1vs.append(tocpu(a1v))
+    return sqlist(a1vs)
 
 # read packets from file
 if __name__ == "__main__":
@@ -25,37 +37,17 @@ if __name__ == "__main__":
             # if pkt_idx < 1: continue
 
             estf= -40971.948630148894
-            estt =  0.01015242
+            estt =  0.01015365
             # coeflist = fitcoef(estf, estt, data1, margin=10, fitmethod='1dfit', searchquad=False)
             with open('1dfittemp.pkl', "rb") as fl: coeflist = pickle.load(fl)
 
-            a1vs = []
-            for pidx2 in range(Config.preamble_len):
-                coefa = coeflist[pidx2]
-                nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
-                # coeff_time = [0.01008263, 0.01015366]
-                nestt = 0.01015365 * Config.fs
-                margin = 1000
-                nstart = pidx2 * nsymblen + nestt
-                nsymbr = cp.arange(around(nstart) + margin, around(nstart + nsymblen) - margin)
-                a1v = cp.angle(data1[nsymbr].dot(cp.exp(-1j * cp.polyval(coefa, nsymbr / Config.fs))))
-                a1vs.append(tocpu(a1v))
+            a1vs = remove_phase_diff(estf, estt, data1, coeflist)
             pltfig1(None, a1vs, title="residue angles").show()
             coeflist[:, 2] += togpu(a1vs)
-            a1vs = []
-            for pidx2 in range(Config.preamble_len):
-                coefa = coeflist[pidx2]
-                nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
-                # coeff_time = [0.01008263, 0.01015366]
-                nestt = 0.01015365 * Config.fs
-                margin = 1000
-                nstart = pidx2 * nsymblen + nestt
-                nsymbr = cp.arange(around(nstart) + margin, around(nstart + nsymblen) - margin)
-                a1v = cp.angle(data1[nsymbr].dot(cp.exp(-1j * cp.polyval(coefa, nsymbr / Config.fs))))
-                a1vs.append(tocpu(a1v))
-            pltfig1(None, a1vs, title="residue angles2").show()
+            a2vs = remove_phase_diff(estf, estt, data1, coeflist)
+            assert max(a2vs) < 1e-4, "residue angles remove failure max>1e-4"
 
-            if False:#for pidx in range(50, Config.preamble_len - 1, 50):
+            for pidx in range(50, Config.preamble_len - 1, 50):
                 a1 = []#np.zeros(20001, dtype=np.float64)
                 margin = 1000
                 estcoef = [0.01008263, 0.01015365]

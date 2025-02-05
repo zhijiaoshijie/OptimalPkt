@@ -171,7 +171,7 @@ def plot_fit2d_after_refine(coefficients_2d_in, coef2d_refined_in, estf, estt, p
                   addvline=(tstart, tend)).show()
 
 def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
-    estcoef = [0.01008263, 0.01015365]
+    estcoef = [0.010082632769, 0.01015366531] #todo !!!
     nestt = estt * Config.fs
     nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
     diffs = cp.zeros(Config.preamble_len - 1)
@@ -193,7 +193,7 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
 
         d2vala = np.angle(pktdata_in[nsymbr].dot(np.exp(-1j * np.polyval(coefa, tsymbr))))
         d2valb = np.angle(pktdata_in[nsymbr2].dot(np.exp(-1j * np.polyval(coefb, tsymbr2))))
-        print(d2vala, d2valb)
+        assert d2vala < 1e-4 and d2valb < 1e-4, f"ERR anglediff>1e-4, {pidx=} angle={d2vala} {pidx+1=} angle={d2valb}"
         coefa[2] += d2vala
         coefb[2] += d2valb
 
@@ -203,60 +203,18 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
         ysymba[nsymba] = cp.unwrap(cp.angle(pktdata_in[nsymba]))
         # pltfig1(tsymba, ysymba[nsymba], addvline=(np.polyval(estcoef, pidx), np.polyval(estcoef, pidx + 1)), title=f"{pidx=} duelsymb").show()
 
-
-        # compute diff
-        if False:
-            tdiff, coefa, coefb = find_intersections(coefa, coefb, tstart2, pktdata_in,1e-5)
-            logger.warning(f"finditx {pidx=} {tdiff=}, {coefa=}, {coefb=}")
-            if len(tdiff) == 1:
-                diffs[pidx] = tdiff[0]
-                logger.error("findidx success!")
-            else:
-                logger.error("findidx not found!")
-        if True:
-            # todo change unwrap adjust d[2] method: use avg diff
-            val = (ysymba[around(nstart) + margin] - cp.angle(pktdata_in[around(nstart) + margin])) / 2 / cp.pi
-            # val = (ysymba[nstart+margin] - cp.polyval(coefa, x_data[nstart + margin])) / 2 / cp.pi
-            # logger.warning(f"{val=}, {np.polyval(coefa, (around(nstart) + margin)/Config.fs)=}, {ysymba[(around(nstart) + margin)]=}")
-            assert abs(val - around(
-                val)) < 0.001, f'1st uwrap from {nstart=} at {around(nstart) + margin} ysymb={ysymba[around(nstart) + margin]} {val=} not int'
-            dd2.append(val - around(val))
-            coefa[2] += val * 2 * cp.pi
-
-            val2 = (ysymba[around(nstart2) + margin] - cp.angle(pktdata_in[around(nstart2) + margin])) / 2 / cp.pi
-            # val2 = (ysymba[around(nstart2) + margin] - cp.polyval(coefb, x_data[around(nstart2) + margin])) / 2 / cp.pi
-            dd2.append(val2 - around(val2))
-            # logger.warning(f"{val2=}")
-            assert abs(val2 - around(
-                val2)) < 0.001, f'2nd uwrap from {nstart2=} at {around(nstart2) + margin} ysymb={ysymba[around(nstart2) + margin]} {val2=} not int'
-            coefb[2] += val2 * 2 * cp.pi
-            coeffs_diff = cp.polysub(coefa, coefb)
-            isec_t = togpu(np.roots(tocpu(coeffs_diff)))
-            tdiff = isec_t[cp.argmin(cp.abs(isec_t - tstart2))]
-            diffs[pidx] = tdiff
-            # logger.warning(f"oldfind {pidx=} {tdiff=}, {coefa=}, {coefb=}")
-
-
-    pidx_range = cp.arange(240)
-
-    coeff_time = cp.polyfit(pidx_range[1 + 8:], diffs[8:], 1)
-    # print(coeff_time)
-    logger.warning( f"estimated time:{coeff_time[0]:.12f},{coeff_time[1]:.12f} cfo ppm from time: {1 - coeff_time[0] / Config.nsampf * Config.fs} cfo: {(1 - coeff_time[0] / Config.nsampf * Config.fs) * Config.sig_freq}")
-    pltfig(((pidx_range[1:], diffs), (pidx_range[1:], np.polyval(coeff_time, pidx_range[1:]))), title="intersect points").show()
-    pltfig1(pidx_range[1:], diffs - np.polyval(coeff_time, pidx_range[1:]), title="intersect points diff").show()
-    # pltfig(((), ()), title="intersect points")
-
+    pidx_range = cp.arange(Config.preamble_len)
     diffs2 = cp.zeros(Config.preamble_len - 1)
     for pidx in range(0, Config.preamble_len - 1):
-        tstart2 = np.polyval(coeff_time, pidx + 1)
+        tstart2 = np.polyval(estcoef, pidx + 1)
         tdiffs, coefa, coefb = find_intersections(coeflist[pidx], coeflist[pidx + 1], tstart2, pktdata_in, 1e-5, margin=margin, draw= (pidx == 120))
         tdiff = min(tdiffs, key=lambda x: abs(x - tstart2))
         diffs2[pidx] = tdiff
     coeff_time = cp.polyfit(pidx_range[1 + 8:], diffs2[8:], 1)
     logger.warning(f"estimated time 2:{coeff_time[0]:.12f},{coeff_time[1]:.12f} cfo ppm from time: {1 - coeff_time[0] / Config.nsampf * Config.fs} cfo: {(1 - coeff_time[0] / Config.nsampf * Config.fs) * Config.sig_freq}")
-    pltfig(((pidx_range[1:], diffs2), (pidx_range[1:], np.polyval(coeff_time, pidx_range[1:]))),
-           title="intersect points 2").show()
-    pltfig1(pidx_range[1:], diffs2 - np.polyval(coeff_time, pidx_range[1:]), title="intersect points diff 2").show()
+    # pltfig(((pidx_range[1:], diffs2), (pidx_range[1:], np.polyval(coeff_time, pidx_range[1:]))),
+    #        title="intersect points fitline").show()
+    pltfig1(pidx_range[1:], diffs2 - np.polyval(coeff_time, pidx_range[1:]), title="intersect points diff").show()
 
 
     dd = []
