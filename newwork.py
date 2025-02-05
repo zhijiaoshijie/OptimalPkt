@@ -5,6 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from find_intersections import find_intersections
 from pltfig import *
+import scipy.stats as stats
 
 
 def coarse_est_f_t(data1, estf, window_idx):
@@ -253,7 +254,23 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
         a2 = (coeflist[pidx, 0] * 2 * np.polyval(coeff_time, pidx + 1) + coeflist[pidx, 1]) / 2 / np.pi
         dd.append(a2 - a1)
     pltfig1(None, dd, title=f"diff of each single symb").show()
-    logger.warning(f"{np.mean(sqlist(dd))=:.12f}")
+    for ixx in range(1, 3):
+        estbw = (1 + ixx * estf / Config.sig_freq) * Config.bw
+
+        dd = tocpu(sqlist(dd))
+        n = len(dd)
+        if n < 2:
+            raise ValueError("The array 'dd' must have at least two elements.")
+
+        sample_mean = np.mean(dd)
+        sample_std = np.std(dd, ddof=1)  # ddof=1 for sample standard deviation
+        standard_error = sample_std / np.sqrt(n)
+
+        t_statistic = (sample_mean - estbw) / standard_error
+        # Calculate two-tailed p-value
+        confidence_value = 1 - 2 * stats.t.sf(np.abs(t_statistic), df=n - 1)
+
+        logger.warning(f"{np.mean(sqlist(dd))=:.12f} (1+{ixx}*ppm)=>{estbw=} {confidence_value=:.12f}")
 
     dd = []
     dd2 = []
