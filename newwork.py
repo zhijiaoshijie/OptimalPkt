@@ -1,3 +1,5 @@
+import numpy as np
+
 from utils import *
 import plotly.express as px
 import plotly.graph_objects as go
@@ -225,28 +227,47 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
     logger.warning(f"coef2 time for freq=0 {avgdd=} estf={(0.5 - avgdd / coeff_time[0]) * Config.bw}")
     pltfig1(None, dd, addhline=((-estf / Config.bw + 0.5) * coeff_time[0], avgdd), title="coef2 time for freq=0").show()
 
-    dd = []
-    for pidx in range(240):
-        dd.append((coeflist[pidx, 0] * 2 * np.polyval(coeff_time, pidx) + coeflist[pidx, 1]) / 2 / np.pi)
-    dd = tocpu(cp.array(dd))
-    avgdd1 = np.mean(dd)
-    logger.warning(f"coef2 start freq {avgdd1=} estf={avgdd1 + Config.bw / 2}")
-    pltfig1(None, dd, addhline=(-Config.bw / 2 + estf, avgdd1), title="coef2 start freq freq=-bw/2+estf").show()
+
+    for ixx in range(2):
+        dd = []
+        if ixx == 0: bwdiff = -Config.bw / 2
+        else: bwdiff = Config.bw / 2
+        for pidx in range(240):
+            dd.append((coeflist[pidx, 0] * 2 * np.polyval(coeff_time, pidx + ixx) + coeflist[pidx, 1]) / 2 / np.pi)
+        dd = sqlist(dd)
+        pidx_range2 = np.arange(50, Config.preamble_len)
+        estfcoef_to_time = np.polyfit(np.polyval(coeff_time, pidx_range2), dd[pidx_range2] - bwdiff, 1)
+        avgdd1 = np.mean(dd)
+        logger.warning(f"coef2 {'start' if ixx == 0 else 'end'}  freq {avgdd1=} estf={avgdd1 - bwdiff} estf at t=0: {estfcoef_to_time[1]:.12f} estf change rate per sec: {estfcoef_to_time[0]:.12f}")
+        fig = pltfig1(None, dd, addhline=(bwdiff + estf, avgdd1), title=f"coef2 {'start' if ixx == 0 else 'end'} freq line:freq=-bw/2+estf")
+        pltfig1(pidx_range, np.polyval(estfcoef_to_time, np.polyval(coeff_time, pidx_range)) + bwdiff, fig = fig).show()
+
+
 
     dd = []
-    for pidx in range(240):
+    for pidx in range(Config.preamble_len):
         dd.append((coeflist[pidx, 0] * 2 * np.polyval(coeff_time, pidx + 1) + coeflist[pidx, 1]) / 2 / np.pi)
     dd = tocpu(cp.array(dd))
     avgdd2 = np.mean(dd)
     logger.warning(f"coef2 end freq {avgdd2=} estf={avgdd2 - Config.bw / 2}")
     pltfig1(None, dd, addhline=(Config.bw / 2 + estf, avgdd2), title="coef2 end freq freq=bw/2+estf").show()
 
-    for ixx in range(2):
-        dd = []
-        for pidx in range(240):
-            dd.append(wrap(np.polyval(coeflist[pidx], np.polyval(coeff_time, pidx + ixx))))
-        dd = np.unwrap(sqlist(dd))
-        pltfig1(None, dd, title=f"phase {'start' if ixx==0 else 'end'}").show()
+    dd = []
+    dd2 = []
+    for pidx in range(1, Config.preamble_len):
+        dd.append(wrap(np.polyval(coeflist[pidx - 1], np.polyval(coeff_time, pidx))))
+        dd2.append(wrap(np.polyval(coeflist[pidx], np.polyval(coeff_time, pidx))))
+    dd = sqlist(dd)
+    dd2= sqlist(dd2)
+    pltfig(((np.arange(1, Config.preamble_len), dd), (np.arange(1, Config.preamble_len), dd2)), title=f"phases 1-240 lastpoly and newpoly").show()
+    dx = []
+    dy = []
+    for pidx in range(Config.preamble_len):
+        xx = around(np.polyval(coeff_time, pidx) * Config.fs)
+        dx.append(xx / Config.fs)
+        dy.append(cp.angle(pktdata_in[xx]))
+    pltfig1(dx, dy, title=f"real dot phase").show()
+
 
 
     if draw:
