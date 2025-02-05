@@ -227,30 +227,33 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
     logger.warning(f"coef2 time for freq=0 {avgdd=} estf={(0.5 - avgdd / coeff_time[0]) * Config.bw}")
     pltfig1(None, dd, addhline=((-estf / Config.bw + 0.5) * coeff_time[0], avgdd), title="coef2 time for freq=0").show()
 
-
+    fig = None
+    avgdds = []
     for ixx in range(2):
         dd = []
         if ixx == 0: bwdiff = -Config.bw / 2
         else: bwdiff = Config.bw / 2
         for pidx in range(240):
             dd.append((coeflist[pidx, 0] * 2 * np.polyval(coeff_time, pidx + ixx) + coeflist[pidx, 1]) / 2 / np.pi)
-        dd = sqlist(dd)
+        dd = sqlist(dd) - bwdiff
         pidx_range2 = np.arange(50, Config.preamble_len)
-        estfcoef_to_time = np.polyfit(np.polyval(coeff_time, pidx_range2), dd[pidx_range2] - bwdiff, 1)
+        estfcoef_to_time = np.polyfit(np.polyval(coeff_time, pidx_range2), dd[pidx_range2], 1)
         avgdd1 = np.mean(dd)
-        logger.warning(f"coef2 {'start' if ixx == 0 else 'end'}  freq {avgdd1=} estf={avgdd1 - bwdiff} estf at t=0: {estfcoef_to_time[1]:.12f} estf change rate per sec: {estfcoef_to_time[0]:.12f}")
-        fig = pltfig1(None, dd, addhline=(bwdiff + estf, avgdd1), title=f"coef2 {'start' if ixx == 0 else 'end'} freq line:freq=-bw/2+estf")
-        pltfig1(pidx_range, np.polyval(estfcoef_to_time, np.polyval(coeff_time, pidx_range)) + bwdiff, fig = fig).show()
+        avgdds.append(avgdd)
+        logger.warning(f"coef2 {'start' if ixx == 0 else 'end'} cfo={avgdd1} estf at t=0: {estfcoef_to_time[1]:.12f} estf change rate per sec: {estfcoef_to_time[0]:.12f}")
+        fig = pltfig1(None, dd, addhline=(estf, avgdd1), title=f"coef2 freq line:freq=-bw/2+estf", fig = fig)
+        fig = pltfig1(pidx_range, np.polyval(estfcoef_to_time, np.polyval(coeff_time, pidx_range)), fig = fig)
+    fig.show()
 
-
+    logger.warning(f"{avgdds[1] - avgdds[0]=} {(avgdds[1] - avgdds[0]) / Config.bw=}")
 
     dd = []
-    for pidx in range(Config.preamble_len):
-        dd.append((coeflist[pidx, 0] * 2 * np.polyval(coeff_time, pidx + 1) + coeflist[pidx, 1]) / 2 / np.pi)
-    dd = tocpu(cp.array(dd))
-    avgdd2 = np.mean(dd)
-    logger.warning(f"coef2 end freq {avgdd2=} estf={avgdd2 - Config.bw / 2}")
-    pltfig1(None, dd, addhline=(Config.bw / 2 + estf, avgdd2), title="coef2 end freq freq=bw/2+estf").show()
+    for pidx in range(240):
+        a1 = (coeflist[pidx, 0] * 2 * np.polyval(coeff_time, pidx) + coeflist[pidx, 1]) / 2 / np.pi
+        a2 = (coeflist[pidx, 0] * 2 * np.polyval(coeff_time, pidx + 1) + coeflist[pidx, 1]) / 2 / np.pi
+        dd.append(a2 - a1)
+    pltfig1(None, dd, title=f"diff of each single symb").show()
+    logger.warning(f"{np.mean(sqlist(dd))=:.12f}")
 
     dd = []
     dd2 = []
