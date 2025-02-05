@@ -217,7 +217,7 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
     logger.warning(f"estimated time 2:{coeff_time[0]:.12f},{coeff_time[1]:.12f} cfo ppm from time: {1 - coeff_time[0] / Config.nsampf * Config.fs} cfo: {(1 - coeff_time[0] / Config.nsampf * Config.fs) * Config.sig_freq}")
     # pltfig(((pidx_range[1:], diffs2), (pidx_range[1:], np.polyval(coeff_time, pidx_range[1:]))),
     #        title="intersect points fitline").show()
-    pltfig1(pidx_range[1:], diffs2 - np.polyval(coeff_time, pidx_range[1:]), title="intersect points diff").show()
+    # pltfig1(pidx_range[1:], diffs2 - np.polyval(coeff_time, pidx_range[1:]), title="intersect points diff").show()
 
 
     dd = []
@@ -226,7 +226,7 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
     dd = tocpu(cp.array(dd))
     avgdd = np.mean(dd)
     logger.warning(f"coef2 time for freq=0 {avgdd=} estf={(0.5 - avgdd / coeff_time[0]) * Config.bw}")
-    pltfig1(None, dd, addhline=((-estf / Config.bw + 0.5) * coeff_time[0], avgdd), title="coef2 time for freq=0").show()
+    # pltfig1(None, dd, addhline=((-estf / Config.bw + 0.5) * coeff_time[0], avgdd), title="coef2 time for freq=0").show()
 
     fig = None
     avgdds = []
@@ -242,9 +242,11 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
         avgdd1 = np.mean(dd)
         avgdds.append(avgdd)
         logger.warning(f"coef2 {'start' if ixx == 0 else 'end'} cfo={avgdd1} estf at t=0: {estfcoef_to_time[1]:.12f} estf change rate per sec: {estfcoef_to_time[0]:.12f}")
-        fig = pltfig1(None, dd, addhline=(estf, avgdd1), title=f"coef2 freq line:freq=-bw/2+estf", fig = fig)
-        fig = pltfig1(pidx_range, np.polyval(estfcoef_to_time, np.polyval(coeff_time, pidx_range)), fig = fig)
-    fig.show()
+        estfcoef_to_num = np.polyfit(pidx_range2, tocpu(dd[pidx_range2]), 1)
+        logger.warning(f"coef2 {'start' if ixx == 0 else 'end'} cfo={avgdd1} estf at t=0: {estfcoef_to_num[1]:.12f} estf change rate per symb: {estfcoef_to_num[0]:.12f}")
+        # fig = pltfig1(None, dd, addhline=(estf, avgdd1), title=f"coef2 freq line:freq=-bw/2+estf", fig = fig)
+        # fig = pltfig1(pidx_range, np.polyval(estfcoef_to_time, np.polyval(coeff_time, pidx_range)), fig = fig)
+    # fig.show()
 
     logger.warning(f"{avgdds[1] - avgdds[0]=} {(avgdds[1] - avgdds[0]) / Config.bw=}")
 
@@ -253,27 +255,38 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
         a1 = (coeflist[pidx, 0] * 2 * np.polyval(coeff_time, pidx) + coeflist[pidx, 1]) / 2 / np.pi
         a2 = (coeflist[pidx, 0] * 2 * np.polyval(coeff_time, pidx + 1) + coeflist[pidx, 1]) / 2 / np.pi
         dd.append(a2 - a1)
-    pltfig1(None, dd, title=f"diff of each single symb").show()
+    # pltfig1(None, dd, title=f"diff of each single symb").show()
     for ixx in range(1, 3):
         estbw = (1 + ixx * estf / Config.sig_freq) * Config.bw
         logger.warning(f"{np.mean(sqlist(dd))=:.12f} (1+{ixx}*ppm)=>{estbw=}")\
 
+
+    pltfig1(None, coeflist[:, 0]).show()
 
     dd = []
     dd2 = []
     for pidx in range(1, Config.preamble_len):
         dd.append(wrap(np.polyval(coeflist[pidx - 1], np.polyval(coeff_time, pidx))))
         dd2.append(wrap(np.polyval(coeflist[pidx], np.polyval(coeff_time, pidx))))
-    dd = sqlist(dd)
-    dd2= sqlist(dd2)
-    pltfig(((np.arange(1, Config.preamble_len), dd), (np.arange(1, Config.preamble_len), dd2)), title=f"phases 1-240 lastpoly and newpoly").show()
+    dd = np.unwrap(sqlist(dd))
+    dd2= np.unwrap(sqlist(dd2))
+    pidx_range3 = np.arange(Config.preamble_len - 1)
+    pidx_range4 = np.arange(15, 90)
+    estfcoef_phase_curve = np.polyfit(pidx_range4, tocpu(dd2[pidx_range4]), 2)
+    estf1 = 2 * estfcoef_to_num[0] * 2 * np.pi
+    logger.warning(f"{estfcoef_phase_curve=} {estf1=}")
+    pidx_range4 = np.arange(110, 230)
+    estfcoef_phase_curve2 = np.polyfit(pidx_range4, tocpu(dd2[pidx_range4]), 2)
+    estf1 = 2 * estfcoef_to_num[0] * 2 * np.pi * coeff_time[0]
+    logger.warning(f"{estfcoef_phase_curve2=} {estf1=}")
+    pltfig(((pidx_range3, dd), (pidx_range3, dd2), (pidx_range3, np.polyval(estfcoef_phase_curve, pidx_range3)), (pidx_range3, np.polyval(estfcoef_phase_curve2, pidx_range3))), title=f"phases 1-240 lastpoly and newpoly").show()
     dx = []
     dy = []
     for pidx in range(Config.preamble_len):
         xx = around(np.polyval(coeff_time, pidx) * Config.fs)
         dx.append(xx / Config.fs)
         dy.append(cp.angle(pktdata_in[xx]))
-    pltfig1(dx, dy, title=f"real dot phase").show()
+    # pltfig1(dx, dy, title=f"real dot phase").show()
 
 
 

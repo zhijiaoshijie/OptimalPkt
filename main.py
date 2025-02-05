@@ -58,7 +58,7 @@ if __name__ == "__main__":
                     coeflist = pickle.load(fl)
 
             a1vs = remove_phase_diff(estf, estt, data1, coeflist)
-            pltfig1(None, a1vs, title="residue angles").show()
+            # pltfig1(None, a1vs, title="residue angles").show()
             coeflist[:, 2] += togpu(a1vs)
             a2vs = remove_phase_diff(estf, estt, data1, coeflist)
             assert max(a2vs) < 1e-4, "residue angles remove failure max>1e-4"
