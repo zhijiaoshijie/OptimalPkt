@@ -100,8 +100,34 @@ if __name__ == "__main__":
                 with open(fname, "rb") as fl:
                     coeflist = pickle.load(fl)
             estt, estf = symbtime(estf, estt, data1, coeflist, margin=10, draw=True)
-            # objective_decode(estf, estt, data1)
             sys.exit(0)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
             if True:
                 # objective_decode(-41890.277+25, 12802.113, data1)

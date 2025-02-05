@@ -207,7 +207,7 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
     diffs2 = cp.zeros(Config.preamble_len - 1)
     for pidx in range(0, Config.preamble_len - 1):
         tstart2 = np.polyval(estcoef, pidx + 1)
-        tdiffs, coefa, coefb = find_intersections(coeflist[pidx], coeflist[pidx + 1], tstart2, pktdata_in, 1e-5, margin=margin, draw= (pidx == 120))
+        tdiffs, coefa, coefb = find_intersections(coeflist[pidx], coeflist[pidx + 1], tstart2, pktdata_in, 1e-5, margin=margin, draw=False)#draw= (pidx == 120))
         tdiff = min(tdiffs, key=lambda x: abs(x - tstart2))
         diffs2[pidx] = tdiff
     coeff_time = cp.polyfit(pidx_range[1 + 8:], diffs2[8:], 1)
@@ -240,6 +240,14 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
     avgdd2 = np.mean(dd)
     logger.warning(f"coef2 end freq {avgdd2=} estf={avgdd2 - Config.bw / 2}")
     pltfig1(None, dd, addhline=(Config.bw / 2 + estf, avgdd2), title="coef2 end freq freq=bw/2+estf").show()
+
+    for ixx in range(2):
+        dd = []
+        for pidx in range(240):
+            dd.append(wrap(np.polyval(coeflist[pidx], np.polyval(coeff_time, pidx + ixx))))
+        dd = np.unwrap(sqlist(dd))
+        pltfig1(None, dd, title=f"phase {'start' if ixx==0 else 'end'}").show()
+
 
     if draw:
         for pidx in [0, 120, 239, 240]:
