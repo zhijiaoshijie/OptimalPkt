@@ -66,8 +66,7 @@ if __name__ == "__main__":
             estt, estf = symbtime(estf, estt, data1, coeflist)
             # with open('1dfittemp.pkl', "wb") as fl: pickle.dump(coeflist, fl)
             logger.warning(f"symbtime end: {estt=} {estf=}")
-            with open(fname, "wb") as fl:
-                pickle.dump(coeflist, fl)
+            # with open(fname, "wb") as fl: pickle.dump(coeflist, fl)
             sys.exit(0)
 
 
