@@ -34,7 +34,7 @@ def sqlist(lst):
     elif all(isinstance(arr, cp.ndarray) and arr.shape == () for arr in lst):
         return cp.squeeze(cp.array(lst))
     else:
-        return lst
+        return np.array(lst)
 
 def mychirp(t, f0, f1, t1):
     betai = (f1 - f0) / t1

@@ -274,13 +274,11 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
 
     pltfig1(None, coeflist[:, 0]).show()
 
-    dd = []
-    dd2 = []
-    for pidx in range(1, Config.preamble_len):
-        dd.append(wrap(np.polyval(coeflist[pidx - 1], np.polyval(coeff_time, pidx))))
-        dd2.append(wrap(np.polyval(coeflist[pidx], np.polyval(coeff_time, pidx))))
-    dd = np.unwrap(sqlist(dd))
-    dd2= np.unwrap(sqlist(dd2))
+    dd1 = np.zeros(Config.preamble_len)
+    dd2 = np.zeros(Config.preamble_len)
+    for pidx in range(Config.preamble_len):
+        dd1[pidx] = (wrap(np.polyval(coeflist[pidx - 1], np.polyval(coeff_time, pidx))))
+        dd2[pidx] = (wrap(np.polyval(coeflist[pidx], np.polyval(coeff_time, pidx))))
     pidx_range3 = np.arange(Config.preamble_len - 1)
     pidx_range4 = np.arange(15, 90)
     estfcoef_phase_curve = np.polyfit(pidx_range4, tocpu(dd2[pidx_range4]), 2)
@@ -288,8 +286,53 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
     logger.warning(f"{estfcoef_phase_curve=} {estf1=}")
     pidx_range4 = np.arange(110, 230)
     estfcoef_phase_curve2 = np.polyfit(pidx_range4, tocpu(dd2[pidx_range4]), 2)
-    estf1 = 2 * estfcoef_to_num[0] * 2 * np.pi * coeff_time[0]
-    logger.warning(f"{estfcoef_phase_curve2=} {estf1=}")
+    estf1 = estfcoef_to_num[0] * 2 * np.pi * coeff_time[0]
+    betai = Config.bw / ((2 ** Config.sf) / Config.bw) * np.pi
+    betat = betai * (1 + 2 * estfcoef_to_num[1] / Config.sig_freq)
+    pidx_range = tocpu(pidx_range)
+    pltfig(
+        ((pidx_range, coeflist[:, 0]),
+         (pidx_range, betai * (1 + 2 * np.polyval(estfcoef_to_num, pidx_range) / Config.sig_freq)),
+         (pidx_range, betai * (1 + np.polyval(estfcoef_to_num, pidx_range) / Config.sig_freq))),
+        title="coeflist[0] fit").show()
+    coeffitlist = np.zeros((Config.preamble_len, 3), dtype=np.float64)
+    coeffitlist[:, 0] = betai * (1 + 2 * np.polyval(estfcoef_to_num, pidx_range) / Config.sig_freq)
+
+    # dd.append((coeflist[pidx, 0] * 2 * np.polyval(coeff_time, pidx + ixx) + coeflist[pidx, 1]) / 2 / np.pi)
+    # estfcoef_to_num = np.polyfit(pidx_range2, tocpu(dd[pidx_range2]), 1)
+
+    coeffitlist[:, 1] = 2 * np.pi * np.polyval(estfcoef_to_num, pidx_range) - np.polyval(tocpu(coeff_time), pidx_range) * 2 * coeffitlist[:, 0]
+    dd = []
+    for pidx in pidx_range:
+        dd.append((coeffitlist[pidx, 0] * 2 * np.polyval(coeff_time, pidx) + coeffitlist[pidx, 1]) / 2 / np.pi)
+    dd = tocpu(sqlist(dd))
+    pltfig1(None, dd - np.polyval(estfcoef_to_num, pidx_range),  title="fitcoeflist[0] and [1] to initial freq diff").show()
+    pltfig(
+        ((pidx_range, np.polyval(estfcoef_to_num, pidx_range)),
+         (pidx_range, dd)), title="coeflist[0] and [1] to initial freq fit").show()
+
+    dd = [0, ]
+    for pidx in pidx_range[1:]:
+        dd.append(np.polyval(coeffitlist[pidx], np.polyval(tocpu(coeff_time), pidx)) - np.polyval(coeffitlist[pidx], np.polyval(tocpu(coeff_time), pidx - 1)))
+    # pltfig1(None, dd,  title="each curve end minus start").show()
+
+    dd = np.unwrap(wrap(np.cumsum(tocpu(sqlist(dd)))))
+
+    pltfig1(None, np.unwrap(wrap(dd2 - dd)),  title="fitcoeflist[0] and [1] and [2] to phase diff").show()
+    # pltfig(
+    #     ((pidx_range, dd2),
+    #      (pidx_range, dd)), title="coeflist[0] and [1] and [2] to phase fit").show()
+
+
+    # pltfig1(pidx_range, tocpu(coeflist[:, 1]) - coeffitlist[:, 1], title="fitcoeflist differential at timestart point").show()
+    # pltfig(
+    #     ((pidx_range, coeflist[:, 1]),
+    #      (pidx_range, coeffitlist[:, 1])), title="coeflist[1] fit").show()
+    # pltfig1(pidx_range, tocpu(coeflist[:, 1]) - coeffitlist[:, 1], title="coeflist[1] fitdiff").show()
+
+    estf2 = estfcoef_to_num[1] * 2 * np.pi * coeff_time[0] + betat * coeff_time[0] * coeff_time[0]
+    logger.warning(f"{estfcoef_phase_curve2=} 2*differential={estfcoef_phase_curve2[0]*2:.12f} {estf1=:.12f} equal startdiff={estfcoef_phase_curve2[1]} {estf2=:.12f} ")
+    # estfcoef_phase_curve2[0] = estfcoef_to_num[0] * np.pi * coeff_time[0], ax2+bx+c a=cfo_change_rate_per_symb * tsymb * pi. ax+b = (ax2+bx+c)-(ax2+bx+c) 2a = 2pi(b2-b1)(t2-t1)
     pltfig(((pidx_range3, dd), (pidx_range3, np.polyval(estfcoef_phase_curve, pidx_range3)), (pidx_range3, np.polyval(estfcoef_phase_curve2, pidx_range3))), title=f"phases 1-240 lastpoly and newpoly", fig=fig).show()
     dx = []
     dy = []
