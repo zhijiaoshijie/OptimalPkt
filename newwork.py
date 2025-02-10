@@ -300,21 +300,72 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
     for pidx in range(Config.preamble_len):
         x1 = math.ceil(np.polyval(coeff_time, pidx) * Config.fs)
         x2 = math.ceil(np.polyval(coeff_time, pidx + 1) * Config.fs)
-        xr = cp.arange(x1, x2)
-        xrt = xr / Config.fs
-        data = cp.exp(-1j * cp.polyval(togpu(coeffitlist[pidx]), xrt))
-        pow = pktdata_in[xr].dot(data) / cp.sum(cp.abs(pktdata_in[xr]))
+        nsymbr = cp.arange(x1, x2)
+        tsymbr = nsymbr / Config.fs
+        data = cp.exp(-1j * cp.polyval(togpu(coeffitlist[pidx]), tsymbr))
+        pow = pktdata_in[nsymbr].dot(data) / cp.sum(cp.abs(pktdata_in[nsymbr]))
         dx.append(pow)
-        if pidx == 0 or pidx == 10 or pidx == 120 or pidx == 220:
-            pltfig(((xrt, cp.unwrap(cp.angle(pktdata_in[xr]))), (xrt, cp.unwrap(-cp.angle(data)))),
+        if False:# pidx == 0 or pidx == 10 or pidx == 120 or pidx == 220:
+            pltfig(((tsymbr, cp.unwrap(cp.angle(pktdata_in[nsymbr]))), (tsymbr, cp.unwrap(-cp.angle(data)))),
                    title=f"{pidx=} fit curve {pow=}").show()
-            pltfig1(xrt, cp.angle(pktdata_in[xr] * data), title=f"{pidx=} fit curve diff angle {pow=}").show()
-            pltfig1(xrt, cp.abs(cp.cumsum(pktdata_in[xr] * data)) / cp.cumsum(cp.abs(pktdata_in[xr])), title=f"{pidx=} fit curve diff powercurve {pow=}").show()
+            pltfig1(tsymbr, cp.angle(pktdata_in[nsymbr] * data), title=f"{pidx=} fit curve diff angle {pow=}").show()
+            pltfig1(tsymbr, cp.abs(cp.cumsum(pktdata_in[nsymbr] * data)) / cp.cumsum(cp.abs(pktdata_in[nsymbr])), title=f"{pidx=} fit curve diff powercurve {pow=}").show()
 
     dx = sqlist(dx)
-    pltfig1(None, cp.angle(dx), title=f"fit phase diff").show()
-    pltfig1(None, cp.abs(dx), title=f"fit power").show()
+    # pltfig1(None, cp.angle(dx), title=f"fit phase diff").show()
+    # pltfig1(None, cp.abs(dx), title=f"fit power").show()
 
+    for pidx in range(Config.preamble_len + 2, Config.preamble_len + 4):
+        x1 = math.ceil(np.polyval(coeff_time, pidx) * Config.fs)
+        x2 = math.ceil(np.polyval(coeff_time, pidx + 1) * Config.fs)
+        nsymbr = cp.arange(x1, x2)
+        tsymbr = nsymbr / Config.fs
+        coefficients_2d = cp.polyfit(tsymbr, cp.unwrap(cp.angle(pktdata_in[nsymbr])), 2)
+        logger.warning(f"downchirp {pidx=} {coefficients_2d=}")
+        coef2d_refined = refine_coef(nsymbr, pidx, pktdata_in, coefficients_2d, margin=margin, searchquad=True)
+        logger.warning(f"downchirp {pidx=} {coef2d_refined=}")
+
+        estcoef_this = np.polyval(estfcoef_to_num, pidx)
+        beta1 = - betai * (1 + 2 * estcoef_this / Config.sig_freq)
+        bwdiff = - Config.bw * (1 + estcoef_this / Config.sig_freq) / 2
+        beta2 = 2 * np.pi * (np.polyval(estfcoef_to_num, pidx) - bwdiff) - np.polyval(tocpu(coeff_time), pidx) * 2 * beta1 # 2ax+b=differential b=differential - 2 * beta1 * time
+        logger.warning(f"{beta1=} {beta2=} {(coef2d_refined[0]-beta1)/beta1=} {(coef2d_refined[1]-beta2)/beta2=}")
+        coef2d_est = (beta1, beta2, 0)
+
+        data = cp.exp(-1j * cp.polyval(togpu(coef2d_refined), tsymbr))
+        pow = cp.abs(pktdata_in[nsymbr].dot(data)) / cp.sum(cp.abs(pktdata_in[nsymbr]))
+        pow = pow.item()
+        logger.warning(f"search {pow=}")
+        # pltfig(((tsymbr, cp.unwrap(cp.angle(pktdata_in[nsymbr]))), (tsymbr, cp.unwrap(-cp.angle(data)))),
+        #        title=f"{pidx=} search fit curve {pow=}").show()
+        # pltfig1(tsymbr, cp.angle(pktdata_in[nsymbr] * data), title=f"{pidx=} search fit curve diff angle {pow=}").show()
+        # pltfig1(tsymbr, cp.abs(cp.cumsum(pktdata_in[nsymbr] * data)) / cp.cumsum(cp.abs(pktdata_in[nsymbr])),
+        #         title=f"{pidx=} search fit curve diff powercurve {pow=}").show()
+
+        data = cp.exp(-1j * cp.polyval(togpu(coef2d_est), tsymbr))
+        pow = cp.abs(pktdata_in[nsymbr].dot(data)) / cp.sum(cp.abs(pktdata_in[nsymbr]))
+        pow = pow.item()
+        logger.warning(f"fit {pow=}")
+        # pltfig(((tsymbr, cp.unwrap(cp.angle(pktdata_in[nsymbr]))), (tsymbr, cp.unwrap(-cp.angle(data)))),
+        #        title=f"{pidx=}  est fit curve {pow=}").show()
+        # pltfig1(tsymbr, cp.angle(pktdata_in[nsymbr] * data), title=f"{pidx=} fit curve diff angle {pow=}").show()
+        # pltfig1(tsymbr, cp.abs(cp.cumsum(pktdata_in[nsymbr] * data)) / cp.cumsum(cp.abs(pktdata_in[nsymbr])),
+        #         title=f"{pidx=} est fit curve diff powercurve {pow=}").show()
+
+        sig1 = pktdata_in[nsymbr]
+        refchirp = data
+        sig2 = sig1 * refchirp
+        # freqdiff = start_pos_d / nsymblen * Config.bw / Config.fs * Config.fft_n
+        # if ispreamble:
+        #     freqdiff -= fstart / Config.sig_freq * Config.bw * pidx
+        # else:
+        #     freqdiff += fstart / Config.sig_freq * Config.bw * pidx
+        # sig2 = add_freq(sig2, freqdiff)
+        data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
+        freq = cp.fft.fftshift(cp.fft.fftfreq(Config.fft_n, d=1 / Config.fs))[cp.argmax(cp.abs(data0))]
+        logger.warning(f"fft {freq=} maxpow={cp.max(cp.abs(data0))}")
+        pltfig1(None, cp.unwrap(cp.angle(sig2)), title=f"sig2 phase {pidx=}").show()
+        # pltfig1(None,cp.abs(data0), title=f"fft {freq=} maxpow={cp.max(cp.abs(data0))}").show()
 
 
 
@@ -373,7 +424,7 @@ def fitcoef(estf, estt, pktdata_in, margin, fitmethod = "2dfit", searchquad = Tr
         #
         # find accurate coefficients_2d by power
         #
-        coef2d_refined = refine_coef(estf, estt, pidx, pktdata_in, coefficients_2d, margin=margin, searchquad = searchquad)
+        coef2d_refined = refine_coef(nsymbr, pidx, pktdata_in, coefficients_2d, margin=margin, searchquad = searchquad)
         coeflist.append(coef2d_refined)
 
 
@@ -381,11 +432,8 @@ def fitcoef(estf, estt, pktdata_in, margin, fitmethod = "2dfit", searchquad = Tr
         # plot_fit2d_after_refine(coefficients_2d, coef2d_refined, estf, estt, pidx, pktdata_in)
     return cp.array(coeflist)
 
-def refine_coef(estf, estt, pidx, pktdata_in, coefficients_2d_in, margin, searchquad = False):
+def refine_coef(nsymbr, pidx, pktdata_in, coefficients_2d_in, margin, searchquad = False):
     coefficients_2d = coefficients_2d_in.copy()
-    nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
-    nstart = pidx * nsymblen + estt * Config.fs
-    nsymbr = cp.arange(around(nstart) + margin, around(nstart + nsymblen) - margin)
     tsymbr = nsymbr / Config.fs
 
     val = obj(tsymbr, pktdata_in[nsymbr], coefficients_2d)
@@ -393,7 +441,7 @@ def refine_coef(estf, estt, pidx, pktdata_in, coefficients_2d_in, margin, search
         f'find accurate coefficients_2d by power. before start, result from linear fit {coefficients_2d=} {val=}')
 
     rangeval = 0.005
-    for i in range(3):
+    for i in range(10):
 
         # search for both 1st (quad) and 2nd (linear) value, or only 2nd value
         for j in range(0 if searchquad else 1, 2):
@@ -410,7 +458,7 @@ def refine_coef(estf, estt, pidx, pktdata_in, coefficients_2d_in, margin, search
             if valnew < val*(1-1e-7):
                 pltfig1(xvals, yvals, addvline=(oldv,), title=f"{pidx=} {i=} {j=} {val=} {valnew=}").show()
             assert valnew >= val * (1 - 1e-7), f"{val=} {valnew=} {i=} {j=} {coefficients_2d=} {val-valnew=}"
-            if abs(valnew - val) < 1e-7: rangeval /= 64
+            if abs(valnew - val) < 1e-7: rangeval /= 4
             val = valnew
 
     # align with phase. here may have a 2pi difference when evaluated in unwrap
