@@ -315,7 +315,7 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
     # pltfig1(None, cp.angle(dx), title=f"fit phase diff").show()
     # pltfig1(None, cp.abs(dx), title=f"fit power").show()
 
-    for pidx in range(Config.preamble_len + 2, Config.preamble_len + 4):
+    if False:#for pidx in range(Config.preamble_len + 2, Config.preamble_len + 4):
         x1 = math.ceil(np.polyval(coeff_time, pidx) * Config.fs)
         x2 = math.ceil(np.polyval(coeff_time, pidx + 1) * Config.fs)
         nsymbr = cp.arange(x1, x2)
@@ -352,20 +352,50 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
         # pltfig1(tsymbr, cp.abs(cp.cumsum(pktdata_in[nsymbr] * data)) / cp.cumsum(cp.abs(pktdata_in[nsymbr])),
         #         title=f"{pidx=} est fit curve diff powercurve {pow=}").show()
 
+
+
+    for pidx in range(Config.preamble_len, Config.preamble_len + 2):
+        x1 = math.ceil(np.polyval(coeff_time, pidx) * Config.fs)
+        x2 = math.ceil(np.polyval(coeff_time, pidx + 1) * Config.fs)
+        nsymbr = cp.arange(x1, x2)
+        tsymbr = nsymbr / Config.fs
+
+        estcoef_this = np.polyval(estfcoef_to_num, pidx)
+        beta1 = betai * (1 + 2 * estcoef_this / Config.sig_freq)
+        bwdiff = Config.bw * (1 + estcoef_this / Config.sig_freq) / 2
+        beta2 = 2 * np.pi * (np.polyval(estfcoef_to_num, pidx) - bwdiff) - np.polyval(tocpu(coeff_time), pidx) * 2 * beta1 # 2ax+b=differential b=differential - 2 * beta1 * time
+        coef2d_est = (beta1, beta2, 0)
+
+        data = cp.exp(-1j * cp.polyval(togpu(coef2d_est), tsymbr))
         sig1 = pktdata_in[nsymbr]
         refchirp = data
         sig2 = sig1 * refchirp
-        # freqdiff = start_pos_d / nsymblen * Config.bw / Config.fs * Config.fft_n
-        # if ispreamble:
-        #     freqdiff -= fstart / Config.sig_freq * Config.bw * pidx
-        # else:
-        #     freqdiff += fstart / Config.sig_freq * Config.bw * pidx
-        # sig2 = add_freq(sig2, freqdiff)
         data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
         freq = cp.fft.fftshift(cp.fft.fftfreq(Config.fft_n, d=1 / Config.fs))[cp.argmax(cp.abs(data0))]
         logger.warning(f"fft {freq=} maxpow={cp.max(cp.abs(data0))}")
-        pltfig1(None, cp.unwrap(cp.angle(sig2)), title=f"sig2 phase {pidx=}").show()
         # pltfig1(None,cp.abs(data0), title=f"fft {freq=} maxpow={cp.max(cp.abs(data0))}").show()
+        # pltfig1(None, cp.unwrap(cp.angle(sig2)), title=f"sig2 phase {pidx=}").show()
+
+        def obj1(xdata, ydata, freq):
+            return cp.abs(ydata.dot(cp.exp(-1j * 2 * cp.pi * freq * xdata)))
+
+        rangeval = 500
+        val = obj1(tsymbr, sig2, freq)
+        for i in range(10):
+            xvals = cp.linspace(freq - rangeval, freq + rangeval, 1001)
+            yvals = [obj1(tsymbr, sig2, f) for f in xvals]
+            yvals = sqlist(yvals)
+            freq = xvals[cp.argmax(yvals)]
+            valnew = cp.max(yvals)
+            if valnew < val * (1 - 1e-7):
+                pltfig1(xvals, yvals, addvline=(freq,), title=f"{pidx=} {i=} {val=} {valnew=}").show()
+            assert valnew >= val * (1 - 1e-7), f"{val=} {valnew=} {i=} {coefficients_2d=} {val-valnew=}"
+            if abs(valnew - val) < 1e-7: rangeval /= 4
+            val = valnew
+
+        logger.warning(f"{pidx=} optimized fft {freq=} maxpow={valnew}")
+        logger.warning(f"END for {pidx=} \n\n")
+
 
 
 
