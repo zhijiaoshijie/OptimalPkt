@@ -278,6 +278,7 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
     betai = Config.bw / ((2 ** Config.sf) / Config.bw) * np.pi
     betat = betai * (1 + 2 * estfcoef_to_num[1] / Config.sig_freq)
     pidx_range = tocpu(pidx_range)
+    logger.warning(f"{estfcoef_to_num[0]=:.12f} {estfcoef_to_num[1]=:.12f}")
 
     coeffitlist = np.zeros((Config.preamble_len, 3), dtype=np.float64)
     coeffitlist[:, 0] = betai * (1 + 2 * np.polyval(estfcoef_to_num, pidx_range) / Config.sig_freq)
@@ -304,6 +305,11 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
         data = cp.exp(-1j * cp.polyval(togpu(coeffitlist[pidx]), xrt))
         pow = pktdata_in[xr].dot(data) / cp.sum(cp.abs(pktdata_in[xr]))
         dx.append(pow)
+        if pidx == 0 or pidx == 10 or pidx == 120 or pidx == 220:
+            pltfig(((xrt, cp.unwrap(cp.angle(pktdata_in[xr]))), (xrt, cp.unwrap(-cp.angle(data)))),
+                   title=f"{pidx=} fit curve {pow=}").show()
+            pltfig1(xrt, cp.angle(pktdata_in[xr] * data), title=f"{pidx=} fit curve diff angle {pow=}").show()
+            pltfig1(xrt, cp.abs(cp.cumsum(pktdata_in[xr] * data)) / cp.cumsum(cp.abs(pktdata_in[xr])), title=f"{pidx=} fit curve diff powercurve {pow=}").show()
 
     dx = sqlist(dx)
     pltfig1(None, cp.angle(dx), title=f"fit phase diff").show()
