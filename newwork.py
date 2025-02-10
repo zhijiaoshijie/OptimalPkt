@@ -317,7 +317,7 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
     # pltfig1(None, dd,  title="each curve end minus start").show()
 
     dd = np.unwrap(wrap(np.cumsum(tocpu(sqlist(dd)))))
-    coeffitlist[:, 2] = -dd
+    coeffitlist[:, 2] = dd
 
     pltfig1(None, np.unwrap(wrap(dd2 - dd)),  title="fitcoeflist[0] and [1] and [2] to phase diff").show()
     # pltfig(
@@ -341,14 +341,9 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
         x2 = math.ceil(np.polyval(coeff_time, pidx + 1) * Config.fs)
         xr = cp.arange(x1, x2)
         xrt = xr / Config.fs
-        data = cp.exp(1j * cp.polyval(togpu(coeflist[pidx]), xrt))
-        logger.warning(f"{pidx=} f0={(coeffitlist[pidx, 0] * 2 * np.polyval(coeff_time, pidx) + coeffitlist[pidx, 1]) / 2 / np.pi} f1={(coeffitlist[pidx, 0] * 2 * np.polyval(coeff_time, pidx + 1) + coeffitlist[pidx, 1]) / 2 / np.pi=} {np.polyval(coeff_time, pidx)=} {xrt[0]=} {np.polyval(coeff_time, pidx + 1)=} {xrt[1]=}")
-        pow = pktdata_in[xr].dot(data)
-        logger.warning(f"{coeflist[pidx]=} {coeffitlist[pidx]=} {np.angle(pow)=} {np.abs(pow)=} {np.mean(np.abs(pktdata_in[xr]))=}")
+        data = cp.exp(-1j * cp.polyval(togpu(coeffitlist[pidx]), xrt))
+        pow = pktdata_in[xr].dot(data) / cp.sum(cp.abs(pktdata_in[xr]))
         dx.append(pow)
-        if pidx == 0 or pidx == 10 or pidx == 120:
-            pltfig(((xrt, cp.unwrap(cp.angle(pktdata_in[xr]))), (xrt, cp.unwrap(cp.angle(data)))), title=f"{pidx=} fit curve").show()
-            pltfig1(xrt, cp.angle(pktdata_in[xr] * data), title=f"{pidx=} fit curve diff angle").show()
 
     dx = sqlist(dx)
     pltfig1(None, cp.angle(dx), title=f"fit phase diff").show()
