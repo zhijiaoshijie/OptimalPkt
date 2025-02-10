@@ -56,6 +56,27 @@ if __name__ == "__main__":
             else:
                 with open(fname, "rb") as fl:
                     coeflist = pickle.load(fl)
+            coeff_time = [0.010082632767, 0.010153665634]
+            pktdata_in = data1
+            dx = []
+            for pidx in range(Config.preamble_len):
+                x1 = math.ceil(np.polyval(coeff_time, pidx) * Config.fs)
+                x2 = math.ceil(np.polyval(coeff_time, pidx + 1) * Config.fs)
+                xr = cp.arange(x1, x2)
+                xrt = xr / Config.fs
+                data = cp.exp(-1j * cp.polyval(togpu(coeflist[pidx]), xrt))
+                logger.warning(
+                    f"{pidx=} f0={(coeflist[pidx, 0] * 2 * np.polyval(coeff_time, pidx) + coeflist[pidx, 1]) / 2 / np.pi} f1={(coeflist[pidx, 0] * 2 * np.polyval(coeff_time, pidx + 1) + coeflist[pidx, 1]) / 2 / np.pi=} {np.polyval(coeff_time, pidx)=} {xrt[0]=} {np.polyval(coeff_time, pidx + 1)=} {xrt[1]=}")
+                pow = pktdata_in[xr].dot(data)
+                logger.warning(
+                    f"{np.angle(pow)=} {np.abs(pow)=} {np.mean(np.abs(pktdata_in[xr]))=}")
+                dx.append(np.abs(pow))
+                if pidx == 0 or pidx == 10 or pidx == 120:
+                    pltfig(((xrt, cp.unwrap(cp.angle(pktdata_in[xr]))), (xrt, -cp.unwrap(cp.angle(data)))),
+                           title=f"{pidx=} fit curve").show()
+                    pltfig1(xrt, cp.angle(pktdata_in[xr] * data), title=f"{pidx=} fit curve diff angle pow={np.abs(pow) / np.sum(np.abs(pktdata_in[xr]))}").show()
+            pltfig1(None, dx, title="power of each pkt")
+            sys.exit(0)
 
             a1vs = remove_phase_diff(estf, estt, data1, coeflist)
             # pltfig1(None, a1vs, title="residue angles").show()

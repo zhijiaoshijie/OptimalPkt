@@ -214,7 +214,7 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
         tdiff = min(tdiffs, key=lambda x: abs(x - tstart2))
         diffs2[pidx] = tdiff
     coeff_time = cp.polyfit(pidx_range[1 + 8:], diffs2[8:], 1)
-    logger.warning(f"estimated time 2:{coeff_time[0]:.12f},{coeff_time[1]:.12f} cfo ppm from time: {1 - coeff_time[0] / Config.nsampf * Config.fs} cfo: {(1 - coeff_time[0] / Config.nsampf * Config.fs) * Config.sig_freq}")
+    logger.warning(f"estimated time 2:coeff_time={coeff_time[0]:.12f},{coeff_time[1]:.12f} cfo ppm from time: {1 - coeff_time[0] / Config.nsampf * Config.fs} cfo: {(1 - coeff_time[0] / Config.nsampf * Config.fs) * Config.sig_freq}")
     # pltfig(((pidx_range[1:], diffs2), (pidx_range[1:], np.polyval(coeff_time, pidx_range[1:]))),
     #        title="intersect points fitline").show()
     # pltfig1(pidx_range[1:], diffs2 - np.polyval(coeff_time, pidx_range[1:]), title="intersect points diff").show()
@@ -407,11 +407,15 @@ def fitcoef(estf, estt, pktdata_in, margin, fitmethod = "2dfit", searchquad = Tr
         #
         # plot_fit2d(coefficients_2d, estf, estt, pidx, pktdata_in)
 
+
+
         #
         # find accurate coefficients_2d by power
         #
         coef2d_refined = refine_coef(estf, estt, pidx, pktdata_in, coefficients_2d, margin=margin, searchquad = searchquad)
         coeflist.append(coef2d_refined)
+
+
 
         # plot_fit2d_after_refine(coefficients_2d, coef2d_refined, estf, estt, pidx, pktdata_in)
     return cp.array(coeflist)
