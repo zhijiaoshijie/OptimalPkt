@@ -300,23 +300,24 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
 
     # dd.append((coeflist[pidx, 0] * 2 * np.polyval(coeff_time, pidx + ixx) + coeflist[pidx, 1]) / 2 / np.pi)
     # estfcoef_to_num = np.polyfit(pidx_range2, tocpu(dd[pidx_range2]), 1)
-
-    coeffitlist[:, 1] = 2 * np.pi * np.polyval(estfcoef_to_num, pidx_range) - np.polyval(tocpu(coeff_time), pidx_range) * 2 * coeffitlist[:, 0]
+    bwdiff = - Config.bw * (1 + estfcoef_to_num[1] / Config.sig_freq) / 2
+    coeffitlist[:, 1] = 2 * np.pi * np.polyval(estfcoef_to_num, pidx_range) - np.polyval(tocpu(coeff_time), pidx_range) * 2 * coeffitlist[:, 0] + bwdiff * 2 * np.pi
     dd = []
     for pidx in pidx_range:
         dd.append((coeffitlist[pidx, 0] * 2 * np.polyval(coeff_time, pidx) + coeffitlist[pidx, 1]) / 2 / np.pi)
     dd = tocpu(sqlist(dd))
-    pltfig1(None, dd - np.polyval(estfcoef_to_num, pidx_range),  title="fitcoeflist[0] and [1] to initial freq diff").show()
+    pltfig1(None, dd - np.polyval(estfcoef_to_num, pidx_range) - bwdiff,  title="fitcoeflist[0] and [1] to initial freq diff").show()
     pltfig(
-        ((pidx_range, np.polyval(estfcoef_to_num, pidx_range)),
+        ((pidx_range, np.polyval(estfcoef_to_num, pidx_range) + bwdiff),
          (pidx_range, dd)), title="coeflist[0] and [1] to initial freq fit").show()
 
     dd = [0, ]
     for pidx in pidx_range[1:]:
-        dd.append(np.polyval(coeffitlist[pidx], np.polyval(tocpu(coeff_time), pidx)) - np.polyval(coeffitlist[pidx], np.polyval(tocpu(coeff_time), pidx - 1)))
+        dd.append(np.polyval(coeffitlist[pidx], np.polyval(tocpu(coeff_time), pidx + 1)) - np.polyval(coeffitlist[pidx], np.polyval(tocpu(coeff_time), pidx)))
     # pltfig1(None, dd,  title="each curve end minus start").show()
 
     dd = np.unwrap(wrap(np.cumsum(tocpu(sqlist(dd)))))
+    coeffitlist[:, 2] = -dd
 
     pltfig1(None, np.unwrap(wrap(dd2 - dd)),  title="fitcoeflist[0] and [1] and [2] to phase diff").show()
     # pltfig(
@@ -335,12 +336,24 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
     # estfcoef_phase_curve2[0] = estfcoef_to_num[0] * np.pi * coeff_time[0], ax2+bx+c a=cfo_change_rate_per_symb * tsymb * pi. ax+b = (ax2+bx+c)-(ax2+bx+c) 2a = 2pi(b2-b1)(t2-t1)
     pltfig(((pidx_range3, dd), (pidx_range3, np.polyval(estfcoef_phase_curve, pidx_range3)), (pidx_range3, np.polyval(estfcoef_phase_curve2, pidx_range3))), title=f"phases 1-240 lastpoly and newpoly", fig=fig).show()
     dx = []
-    dy = []
     for pidx in range(Config.preamble_len):
-        xx = around(np.polyval(coeff_time, pidx) * Config.fs)
-        dx.append(xx / Config.fs)
-        dy.append(cp.angle(pktdata_in[xx]))
-    # pltfig1(dx, dy, title=f"real dot phase").show()
+        x1 = math.ceil(np.polyval(coeff_time, pidx) * Config.fs)
+        x2 = math.ceil(np.polyval(coeff_time, pidx + 1) * Config.fs)
+        xr = cp.arange(x1, x2)
+        xrt = xr / Config.fs
+        data = cp.exp(1j * cp.polyval(togpu(coeflist[pidx]), xrt))
+        logger.warning(f"{pidx=} f0={(coeffitlist[pidx, 0] * 2 * np.polyval(coeff_time, pidx) + coeffitlist[pidx, 1]) / 2 / np.pi} f1={(coeffitlist[pidx, 0] * 2 * np.polyval(coeff_time, pidx + 1) + coeffitlist[pidx, 1]) / 2 / np.pi=} {np.polyval(coeff_time, pidx)=} {xrt[0]=} {np.polyval(coeff_time, pidx + 1)=} {xrt[1]=}")
+        pow = pktdata_in[xr].dot(data)
+        logger.warning(f"{coeflist[pidx]=} {coeffitlist[pidx]=} {np.angle(pow)=} {np.abs(pow)=} {np.mean(np.abs(pktdata_in[xr]))=}")
+        dx.append(pow)
+        if pidx == 0 or pidx == 10 or pidx == 120:
+            pltfig(((xrt, cp.unwrap(cp.angle(pktdata_in[xr]))), (xrt, cp.unwrap(cp.angle(data)))), title=f"{pidx=} fit curve").show()
+            pltfig1(xrt, cp.angle(pktdata_in[xr] * data), title=f"{pidx=} fit curve diff angle").show()
+
+    dx = sqlist(dx)
+    pltfig1(None, cp.angle(dx), title=f"fit phase diff").show()
+    pltfig1(None, cp.abs(dx), title=f"fit power").show()
+
 
 
 
