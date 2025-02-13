@@ -173,6 +173,27 @@ def plot_fit2d_after_refine(coefficients_2d_in, coef2d_refined_in, estf, estt, p
                   title=f"{pidx=} fit 2d no-uw angles after_refine",
                   addvline=(tstart, tend)).show()
 
+
+def optimize_1dfreq(sig2, tsymbr, freq):
+    def obj1(xdata, ydata, freq):
+        return cp.abs(ydata.dot(cp.exp(-1j * 2 * cp.pi * freq * xdata)))
+
+    rangeval = 500
+    val = obj1(tsymbr, sig2, freq)
+    for i in range(10):
+        xvals = cp.linspace(freq - rangeval, freq + rangeval, 1001)
+        yvals = [obj1(tsymbr, sig2, f) for f in xvals]
+        yvals = sqlist(yvals)
+        freq = xvals[cp.argmax(yvals)]
+        valnew = cp.max(yvals)
+        if valnew < val * (1 - 1e-7):
+            pltfig1(xvals, yvals, addvline=(freq,), title=f"{i=} {val=} {valnew=}").show()
+        assert valnew >= val * (1 - 1e-7), f"{val=} {valnew=} {i=} {val-valnew=}"
+        if abs(valnew - val) < 1e-7: rangeval /= 4
+        val = valnew
+    return freq, valnew / cp.sum(cp.abs(sig2))
+
+
 def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
     estcoef = [0.010082632769, 0.01015366531] #todo !!!
     nestt = estt * Config.fs
@@ -352,8 +373,19 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
         # pltfig1(tsymbr, cp.abs(cp.cumsum(pktdata_in[nsymbr] * data)) / cp.cumsum(cp.abs(pktdata_in[nsymbr])),
         #         title=f"{pidx=} est fit curve diff powercurve {pow=}").show()
 
+    codephase = []
+    for pidx in range(Config.preamble_len):
+        x1 = math.ceil(np.polyval(coeff_time, pidx) * Config.fs)
+        x2 = math.ceil(np.polyval(coeff_time, pidx + 1) * Config.fs)
+        nsymbr = cp.arange(x1, x2)
+        tsymbr = nsymbr / Config.fs
+        res = pktdata_in[nsymbr].dot(cp.exp(-1j * cp.polyval(togpu(coeffitlist[pidx]), tsymbr)))
+        codephase.append(cp.angle(res).item())
+    pltfig1(None, cp.unwrap(codephase), title="unwrap phase").show()
 
-
+    codesd = []
+    codesd2 = []
+    coeffitlist = np.concatenate((coeffitlist, np.zeros((4, 3))), axis=0)
     for pidx in range(Config.preamble_len, Config.preamble_len + 2):
         x1 = math.ceil(np.polyval(coeff_time, pidx) * Config.fs)
         x2 = math.ceil(np.polyval(coeff_time, pidx + 1) * Config.fs)
@@ -362,8 +394,8 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
 
         estcoef_this = np.polyval(estfcoef_to_num, pidx)
         beta1 = betai * (1 + 2 * estcoef_this / Config.sig_freq)
-        bwdiff = Config.bw * (1 + estcoef_this / Config.sig_freq) / 2
-        beta2 = 2 * np.pi * (np.polyval(estfcoef_to_num, pidx) - bwdiff) - np.polyval(tocpu(coeff_time), pidx) * 2 * beta1 # 2ax+b=differential b=differential - 2 * beta1 * time
+        estbw = Config.bw * (1 + estcoef_this / Config.sig_freq)
+        beta2 = 2 * np.pi * (np.polyval(estfcoef_to_num, pidx) - estbw / 2) - np.polyval(tocpu(coeff_time), pidx) * 2 * beta1 # 2ax+b=differential b=differential - 2 * beta1 * time
         coef2d_est = (beta1, beta2, 0)
 
         data = cp.exp(-1j * cp.polyval(togpu(coef2d_est), tsymbr))
@@ -376,25 +408,43 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
         # pltfig1(None,cp.abs(data0), title=f"fft {freq=} maxpow={cp.max(cp.abs(data0))}").show()
         # pltfig1(None, cp.unwrap(cp.angle(sig2)), title=f"sig2 phase {pidx=}").show()
 
-        def obj1(xdata, ydata, freq):
-            return cp.abs(ydata.dot(cp.exp(-1j * 2 * cp.pi * freq * xdata)))
+        freq, valnew = optimize_1dfreq(sig2, tsymbr, freq)
 
-        rangeval = 500
-        val = obj1(tsymbr, sig2, freq)
-        for i in range(10):
-            xvals = cp.linspace(freq - rangeval, freq + rangeval, 1001)
-            yvals = [obj1(tsymbr, sig2, f) for f in xvals]
-            yvals = sqlist(yvals)
-            freq = xvals[cp.argmax(yvals)]
-            valnew = cp.max(yvals)
-            if valnew < val * (1 - 1e-7):
-                pltfig1(xvals, yvals, addvline=(freq,), title=f"{pidx=} {i=} {val=} {valnew=}").show()
-            assert valnew >= val * (1 - 1e-7), f"{val=} {valnew=} {i=} {coefficients_2d=} {val-valnew=}"
-            if abs(valnew - val) < 1e-7: rangeval /= 4
-            val = valnew
+        code = freq / estbw * 2 ** Config.sf
+        logger.warning(f"{pidx=} optimized fft {freq=} maxpow={valnew} {code=:.12f}")
+        codesd.append(code - around(code))
+        code = around(code)
 
-        logger.warning(f"{pidx=} optimized fft {freq=} maxpow={valnew}")
+        x3 = math.ceil(np.polyval(coeff_time, pidx + 1 - code / 2 ** Config.sf ) * Config.fs)
+        nsymbr1 = cp.arange(x1, x3)
+        tsymbr1 = nsymbr1 / Config.fs
+
+        beta2 = (2 * np.pi * (np.polyval(estfcoef_to_num, pidx) + estbw * (code / 2 ** Config.sf - 0.5))
+                 - np.polyval(tocpu(coeff_time), pidx) * 2 * beta1)
+        coef2d_est2 = [beta1, beta2, 0]
+        coef2d_est2_2d = np.polyval(coef2d_est2, np.polyval(tocpu(coeff_time), pidx)) - np.polyval(coeffitlist[pidx - 1], np.polyval(tocpu(coeff_time), pidx))
+        coef2d_est2[2] -= coef2d_est2_2d
+        codesd2.append(coef2d_est2_2d)
+        coeffitlist[pidx] = coef2d_est2
+
+
+        sig21 = pktdata_in[nsymbr1] * cp.exp(-1j * cp.polyval(togpu(coef2d_est2), tsymbr1))
+        freq1, valnew1 = optimize_1dfreq(sig21, tsymbr1, 0)
+        res1 = sig21.dot(cp.exp(-1j * 2 * cp.pi * freq1 * (tsymbr1 - tsymbr1[around(len(tsymbr1) / 2)])))
+        res2 = pktdata_in[nsymbr1].dot(cp.exp(-1j * cp.polyval(togpu(coef2d_est2), tsymbr1)) )
+
+        codephase.append(cp.angle(res2).item())
+
+        # pltfig1(tsymbr1, cp.angle(sig21 * cp.exp(-1j * 2 * cp.pi * freq1 * tsymbr1)), title=f"residue {pidx=}").show()
+        logger.warning(f"{pidx=} 1sthalf optimized fft {freq1=} maxpow={valnew1} {cp.angle(res1)=} pow={cp.abs(res1)/cp.sum(cp.abs(sig21))} {cp.angle(res2)=} pow={cp.abs(res2)/cp.sum(cp.abs(sig21))}")
+
+
         logger.warning(f"END for {pidx=} \n\n")
+    # pltfig1(None, codesd, title="codesd").show()
+    # pltfig1(None, codesd2, title="codesd2").show()
+    # pltfig1(None, cp.unwrap(coeffitlist[230:, 2])).show()
+    pltfig1(None, cp.unwrap(codephase), title="unwrap phase").show()
+
 
 
 
