@@ -42,6 +42,7 @@ def pltfig(datas, title = None, yaxisrange = None, modes = None, marker = None, 
     for idx, ((xdata, ydata), mode) in enumerate(zip(datas, modes)):
         if line == None and idx == 1: line = dict(dash='dash')
         fig.add_trace(go.Scatter(x=tocpu(sqlist(xdata)), y=tocpu(sqlist(ydata)), mode=mode, marker=marker, line=line))
+        assert len(tocpu(sqlist(xdata))) == len(tocpu(sqlist(ydata)))
     pltfig_hind(addhline, addvline, line_dash, fig, yaxisrange)
     return fig
 
@@ -84,6 +85,7 @@ def pltfig1(xdata, ydata, title = None, yaxisrange = None, mode = None, marker =
     elif title is not None: fig.update_layout(title_text=title)
     if mode is None: mode = 'lines'
     fig.add_trace(go.Scatter(x=tocpu(sqlist(xdata)), y=tocpu(sqlist(ydata)), mode=mode, marker=marker, line=line))
+    assert len(tocpu(sqlist(xdata))) == len(tocpu(sqlist(ydata)))
     pltfig_hind(addhline, addvline, line_dash, fig, yaxisrange)
     return fig
 
