@@ -18,6 +18,8 @@ def around(x):
 def togpu(x):
     if use_gpu and not isinstance(x, cp.ndarray):
         return cp.array(x)
+    elif isinstance(x, list):
+        return cp.squeeze(cp.array(x))
     else:
         return x
 
@@ -25,6 +27,8 @@ def togpu(x):
 def tocpu(x):
     if use_gpu and isinstance(x, cp.ndarray):
         return x.get()
+    elif isinstance(x, list):
+        return np.squeeze(np.array(x))
     else:
         return x
 
