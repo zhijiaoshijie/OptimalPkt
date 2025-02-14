@@ -192,10 +192,11 @@ def find_intersections(coefa, coefb, tstart2,pktdata_in, epsilon, margin=10, dra
     val1 = cp.cos(cp.polyval(coefa, xv / Config.fs) - cp.angle(pktdata_in[xv]))
     val2 = cp.cos(cp.polyval(coefb, xv / Config.fs) - cp.angle(pktdata_in[xv]))
 
-    selected = max(intersection_points, key=lambda x: np.sum(val1[:np.ceil(x * Config.fs - xv[0])]) + np.sum(val2[np.ceil(x * Config.fs - xv[0]):]))
-    selected2 = min(intersection_points, key=lambda x: abs(x - tstart2))
-    if selected2 != selected:
-        logger.warning(f"find_intersections(): break point not closeset to tstart2 selected {selected - tstart2 =}")
+    if len(intersection_points) != 0:
+        selected = max(intersection_points, key=lambda x: np.sum(val1[:np.ceil(x * Config.fs - xv[0])]) + np.sum(val2[np.ceil(x * Config.fs - xv[0]):]))
+        selected2 = min(intersection_points, key=lambda x: abs(x - tstart2))
+        if selected2 != selected:
+            logger.warning(f"find_intersections(): break point not closeset to tstart2 selected {selected - tstart2 =}")
 
     if draw:
         vals = [cp.sum(val1[:np.ceil(x * Config.fs - xv[0])]) + cp.sum(val2[np.ceil(x * Config.fs - xv[0]):]) for x in
@@ -207,7 +208,7 @@ def find_intersections(coefa, coefb, tstart2,pktdata_in, epsilon, margin=10, dra
                        name='rawdata',
                        marker=dict(color='blue', size=8, symbol='circle')),
         )
-        fig.add_vline(x = selected, line=dict(color='red'))
+        if len(intersection_points) != 0: fig.add_vline(x = selected, line=dict(color='red'))
 
 
         fig.show()

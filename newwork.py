@@ -548,7 +548,7 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
 
         beta2a = (2 * cp.pi * (cp.polyval(estfcoef_to_num, pidx) + estbw * (code / 2 ** Config.sf - 1.5))
                  - cp.polyval(coeff_time, pidx) * 2 * beta1)
-        coef2d_est2a = cp.array([beta1.get(), beta2.get(), 0])
+        coef2d_est2a = cp.array([beta1.get(), beta2a.get(), 0])
         coef2d_est2a_2d = cp.polyval(coef2d_est2a, cp.polyval(coeff_time, pidx + 1 - code / 2 ** Config.sf)) - cp.polyval(coef2d_est2, cp.polyval(coeff_time, pidx + 1 - code / 2 ** Config.sf))
         coef2d_est2a[2] -= coef2d_est2a_2d
         logger.warning(f"{coef2d_est2=} {coef2d_est2a=} {(coef2d_est2[0] * 2 * cp.polyval(coeff_time, pidx) + coef2d_est2[1])/2/cp.pi=} {(coef2d_est2a[0] * 2 * cp.polyval(coeff_time, pidx) + coef2d_est2a[1])/2/cp.pi=}")
