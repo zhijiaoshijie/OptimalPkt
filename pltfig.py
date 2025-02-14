@@ -1,6 +1,6 @@
 import plotly.express as px
 import plotly.graph_objects as go
-from utils import tocpu, togpu, sqlist
+from utils import tocpu, togpu, sqlist, mget
 import numpy as np
 def pltfig(datas, title = None, yaxisrange = None, modes = None, marker = None, addvline = None, addhline = None, line_dash = None, fig = None, line=None):
     """
@@ -98,7 +98,7 @@ def pltfig_hind(addhline, addvline, line_dash_in, fig, yaxisrange):
         elif isinstance(line_dash_in, str):
             line_dash = [line_dash_in for _ in range(len(addvline))]
         else: line_dash = line_dash_in
-        for x, ldash in zip(addvline, line_dash): fig.add_vline(x=x, line_dash=ldash)
+        for x, ldash in zip(addvline, line_dash): fig.add_vline(x=mget(x), line_dash=ldash)
     if addhline is not None:
         if line_dash_in is None:
             line_dash = ['dash' for _ in range(len(addhline))]
@@ -106,4 +106,4 @@ def pltfig_hind(addhline, addvline, line_dash_in, fig, yaxisrange):
         elif isinstance(line_dash_in, str):
             line_dash = [line_dash_in for _ in range(len(addhline))]
         else: line_dash = line_dash_in
-        for y, ldash in zip(addhline, line_dash): fig.add_hline(y=y, line_dash=ldash)
+        for y, ldash in zip(addhline, line_dash): fig.add_hline(y=mget(y), line_dash=ldash)

@@ -32,6 +32,12 @@ def tocpu(x):
     else:
         return x
 
+def mget(x):
+    if isinstance(x, cp.ndarray) or isinstance(x, np.ndarray):
+        assert x.shape == ()
+        return x.item()
+    else: return x
+
 def sqlist(lst):
     if all(isinstance(arr, np.ndarray) and arr.shape == () for arr in lst):
         return np.squeeze(np.array(lst))

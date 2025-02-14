@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 from math import ceil, floor
 from pltfig import pltfig, pltfig1
 
-from utils import tocpu, togpu, sqlist, wrap, Config, around, logger
+from utils import tocpu, togpu, sqlist, wrap, Config, around, logger, mget
 
 # Define the coefficients for the two polynomials
 coeflist = [
@@ -138,7 +138,7 @@ def find_intersections(coefa, coefb, tstart2,pktdata_in, epsilon, margin=10, dra
         assert - np.pi + 2 * np.pi * all_weights[i][1] <= np.polyval(coefb, xv) <= np.pi + 2 * np.pi * all_weights[i][1]
 
     intersection_points = []
-    fig = go.Figure(layout_title_text=f"finditx")
+    fig = go.Figure(layout_title_text=f"finditx {tstart2=}")
     for idx, ((x_start, x_end), (n1, n2)) in enumerate(zip(sections, all_weights)):
 
         # Adjust the constant term for wrapping
@@ -172,7 +172,8 @@ def find_intersections(coefa, coefb, tstart2,pktdata_in, epsilon, margin=10, dra
             y2_wrapped = np.polyval(poly2_shifted_coef, x_vals)
 
             # Add shifted polynomials to the subplot
-            fig = pltfig(((x_vals, y1_wrapped), (x_vals, y2_wrapped)), addvline=(x_start, x_end), addhline=(-np.pi, np.pi), fig = fig)
+            fig = pltfig(((x_vals, y1_wrapped), (x_vals, y2_wrapped)), addvline=(x_start, x_end), line = dict(dash='dash'), addhline=(-np.pi, np.pi), fig = fig)
+            fig.add_vline(x = mget(tstart2), line=dict(dash='longdash', color='blue'))
 
 
             # Highlight intersection points within this section
@@ -201,14 +202,15 @@ def find_intersections(coefa, coefb, tstart2,pktdata_in, epsilon, margin=10, dra
     if draw:
         vals = [cp.sum(val1[:np.ceil(x * Config.fs - xv[0])]) + cp.sum(val2[np.ceil(x * Config.fs - xv[0]):]) for x in
                 intersection_points]
-        pltfig1(intersection_points, vals, addvline=(tstart2,), mode="markers", title="temp1").show()
+        pltfig1(intersection_points, vals, mode="markers", title="temp1").show()
         xv = togpu(np.arange(np.ceil(tocpu(x_min) * Config.fs), np.ceil(tocpu(x_max) * Config.fs), dtype=int))
         fig.add_trace(
             go.Scatter(x=tocpu(xv / Config.fs), y=tocpu(cp.angle(pktdata_in[xv])), mode='markers',
                        name='rawdata',
-                       marker=dict(color='blue', size=8, symbol='circle')),
+                       marker=dict(color='blue', size=4, symbol='circle')),
         )
-        if len(intersection_points) != 0: fig.add_vline(x = selected, line=dict(color='red'))
+        if len(intersection_points) != 0:
+            fig.add_vline(x = selected, line=dict(color='red'))
 
 
         fig.show()
