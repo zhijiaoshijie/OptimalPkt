@@ -500,8 +500,8 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
     codepdiff = []
     pidx_max = math.floor((len(pktdata_in)/Config.fs-coeff_time[1])/coeff_time[0])
     logger.warning(f"{pidx_max-Config.preamble_len-5=}")
-    # for pidx in range(Config.preamble_len + 5, pidx_max):
-    for pidx in range(Config.preamble_len + 5, Config.preamble_len + 8):
+    for pidx in range(Config.preamble_len + 5, pidx_max):
+    # for pidx in range(Config.preamble_len + 5, Config.preamble_len + 8):
         x1 = math.ceil(cp.polyval(coeff_time, pidx) * Config.fs)
         x2 = math.ceil(cp.polyval(coeff_time, pidx + 1) * Config.fs)
         nsymbr = cp.arange(x1, x2)
@@ -542,6 +542,7 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
         coef2d_est2 = cp.array([beta1.get(), beta2.get(), 0])
         coef2d_est2_2d = cp.polyval(coef2d_est2, cp.polyval(coeff_time, pidx )) - cp.polyval(coeffitlist[pidx - 1], cp.polyval(coeff_time, pidx))
         coef2d_est2[2] -= coef2d_est2_2d
+        coef2d_est2[2] += cp.angle(pktdata_in[nsymbr1].dot(cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr1)) ))#!!!!!!
         logger.warning(f"2phase: {pidx=} {wrap(cp.polyval(coef2d_est2, cp.polyval(coeff_time, pidx)))}, {wrap(cp.polyval(coef2d_est2, cp.polyval(coeff_time, pidx + 1 - code / 2 ** Config.sf)))} {wrap(cp.polyval(coef2d_est2, cp.polyval(coeff_time, pidx + 1)))}")
         codesd2.append(coef2d_est2_2d)
         # coeffitlist[pidx] = coef2d_est2
@@ -551,6 +552,7 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
         coef2d_est2a = cp.array([beta1.get(), beta2a.get(), 0])
         coef2d_est2a_2d = cp.polyval(coef2d_est2a, cp.polyval(coeff_time, pidx + 1 - code / 2 ** Config.sf)) - cp.polyval(coef2d_est2, cp.polyval(coeff_time, pidx + 1 - code / 2 ** Config.sf))
         coef2d_est2a[2] -= coef2d_est2a_2d
+        coef2d_est2a[2] += cp.angle(pktdata_in[nsymbr2].dot(cp.exp(-1j * cp.polyval(coef2d_est2a, tsymbr2)) ))#!!!!!
         logger.warning(f"{coef2d_est2=} {coef2d_est2a=} {(coef2d_est2[0] * 2 * cp.polyval(coeff_time, pidx) + coef2d_est2[1])/2/cp.pi=} {(coef2d_est2a[0] * 2 * cp.polyval(coeff_time, pidx) + coef2d_est2a[1])/2/cp.pi=}")
         logger.warning(f"2Aphase: {pidx=} {wrap(cp.polyval(coef2d_est2a, cp.polyval(coeff_time, pidx)))} {wrap(cp.polyval(coef2d_est2a, cp.polyval(coeff_time, pidx + 1 - code / 2 ** Config.sf)))}, {wrap(cp.polyval(coef2d_est2a, cp.polyval(coeff_time, pidx + 1)))}")
         codesd2.append(coef2d_est2a_2d)
@@ -577,9 +579,8 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
         # codephase.append(cp.angle(res2a).item())
         logger.warning(f"{cp.angle(res2).item()=} {cp.angle(res2a).item()=} {code=}")
 
-        coef2d_est2[2] += cp.angle(pktdata_in[nsymbr1].dot(cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr1)) ))
-        coef2d_est2a[2] += cp.angle(pktdata_in[nsymbr2].dot(cp.exp(-1j * cp.polyval(coef2d_est2a, tsymbr2)) ))
-        find_intersections(coef2d_est2, coef2d_est2a, cp.polyval(coeff_time, pidx + 1 - code / 2 ** Config.sf), pktdata_in, 3e-5, draw=True)
+        # find_intersections(coef2d_est2, coef2d_est2a, cp.polyval(coeff_time, pidx + 1 - code / 2 ** Config.sf), pktdata_in, 3e-5, draw=True)
+        if code < 1000 and codes[-2] > 3000: find_intersections(coeffitlist[pidx - 1], coef2d_est2, cp.polyval(coeff_time, pidx), pktdata_in, 3e-5, draw=True)
         # pltfig1(tsymbr1, cp.angle(sig21 * cp.exp(-1j * 2 * cp.pi   * freq1 * tsymbr1)), title=f"residue {pidx=}").show()
         # logger.warning(f"{pidx=} 1sthalf optimized fft {freq1=} maxpow={valnew1} {cp.angle(res1)=} pow={cp.abs(res1)/cp.sum(cp.abs(sig21))} {cp.angle(res2)=} pow={cp.abs(res2)/cp.sum(cp.abs(sig21))}")
         # logger.warning(f"{pidx=} 2sthalf optimized fft {freq2=} maxpow={valnew2} {cp.angle(res1a)=} pow={cp.abs(res1a)/cp.sum(cp.abs(sig21a))} {cp.angle(res2a)=} pow={cp.abs(res2a)/cp.sum(cp.abs(sig21a))}")
