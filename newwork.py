@@ -271,9 +271,9 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
         avgdd1 = cp.mean(dd)
         logger.warning(f"{avgdd1=:.12f}")
         avgdds.append(avgdd1)
-        logger.warning(f"coef2 {'start' if ixx == 0 else 'end'} cfo={avgdd1} estf at t=0: {estfcoef_to_time[1]:.12f} estf change rate per sec: {estfcoef_to_time[0]:.12f}")
+        logger.warning(f"coef2 {'start' if ixx == 0 else 'end'} avgcfo={avgdd1} estf at t=0: {estfcoef_to_time[1]:.12f} estf change rate per sec: {estfcoef_to_time[0]:.12f}")
         estfcoef_to_num = cp.polyfit(pidx_range2, dd[pidx_range2], 1)
-        logger.warning(f"coef2 {'start' if ixx == 0 else 'end'} cfo={avgdd1} estf at t=0: {estfcoef_to_num[1]:.12f} estf change rate per symb: {estfcoef_to_num[0]:.12f}")
+        logger.warning(f"coef2 {'start' if ixx == 0 else 'end'} avgcfo={avgdd1} estf at t=0: {estfcoef_to_num[1]:.12f} estf change rate per symb: {estfcoef_to_num[0]:.12f}")
 
     logger.warning(f"{avgdds[1]=:.12f} {avgdds[0]=:.12f} {avgdds[1] - avgdds[0]=:.12f} {(avgdds[1] - avgdds[0]) / Config.bw=:.12f}")
 
@@ -515,7 +515,7 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
     # pltfig1(None, cp.unwrap(codephase), title="unwrap phase").show()
 
     coeff_time[1] -= 0.75 * coeff_time[0]
-    coeff_time[1] += 2.5e-6 #!!!!TODO!!!!!
+    coeff_time[1] -= 2.5e-6 #!!!!TODO!!!!!
 
 
     # x1 = math.ceil(cp.polyval(coeff_time, 244) * Config.fs)
