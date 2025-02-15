@@ -116,7 +116,7 @@ def determine_n(coef, x_start, x_end):
     return n
 
 
-def find_intersections(coefa, coefb, tstart2,pktdata_in, epsilon, margin=10, draw=False):
+def find_intersections(coefa, coefb, tstart2,pktdata_in, epsilon, margin=10, draw=False, remove_range = True):
     selected = None
     x_min = tstart2 - epsilon
     x_max = tstart2 + epsilon
@@ -199,6 +199,7 @@ def find_intersections(coefa, coefb, tstart2,pktdata_in, epsilon, margin=10, dra
         selected2 = min(intersection_points, key=lambda x: abs(x - tstart2))
         if selected2 != selected:
             logger.warning(f"find_intersections(): break point not closeset to tstart2 selected {selected - tstart2 =}")
+            if remove_range: return None
 
     if draw:
         vals = [cp.sum(val1[:np.ceil(x * Config.fs - xv[0])]) + cp.sum(val2[np.ceil(x * Config.fs - xv[0]):]) for x in
