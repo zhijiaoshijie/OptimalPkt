@@ -117,6 +117,7 @@ def determine_n(coef, x_start, x_end):
 
 
 def find_intersections(coefa, coefb, tstart2,pktdata_in, epsilon, margin=10, draw=False):
+    selected = None
     x_min = tstart2 - epsilon
     x_max = tstart2 + epsilon
 
@@ -172,8 +173,8 @@ def find_intersections(coefa, coefb, tstart2,pktdata_in, epsilon, margin=10, dra
             y2_wrapped = np.polyval(poly2_shifted_coef, x_vals)
 
             # Add shifted polynomials to the subplot
-            fig = pltfig(((x_vals, y1_wrapped), (x_vals, y2_wrapped)), addvline=(x_start, x_end), line = dict(dash='dash'), addhline=(-np.pi, np.pi), fig = fig)
-            fig.add_vline(x = mget(tstart2), line=dict(dash='longdash', color='blue'))
+            fig = pltfig(((x_vals, y1_wrapped), (x_vals, y2_wrapped)), addvline=(x_start, x_end), addhline=(-np.pi, np.pi), fig = fig)
+            fig.add_vline(x = mget(tstart2), line=dict(color='blue'))
 
 
             # Highlight intersection points within this section
@@ -202,7 +203,7 @@ def find_intersections(coefa, coefb, tstart2,pktdata_in, epsilon, margin=10, dra
     if draw:
         vals = [cp.sum(val1[:np.ceil(x * Config.fs - xv[0])]) + cp.sum(val2[np.ceil(x * Config.fs - xv[0]):]) for x in
                 intersection_points]
-        pltfig1(intersection_points, vals, mode="markers", title="temp1").show()
+        # pltfig1(intersection_points, vals, mode="markers", title="temp1").show()
         xv = togpu(np.arange(np.ceil(tocpu(x_min) * Config.fs), np.ceil(tocpu(x_max) * Config.fs), dtype=int))
         fig.add_trace(
             go.Scatter(x=tocpu(xv / Config.fs), y=tocpu(cp.angle(pktdata_in[xv])), mode='markers',
@@ -215,19 +216,19 @@ def find_intersections(coefa, coefb, tstart2,pktdata_in, epsilon, margin=10, dra
 
         fig.show()
 
-        a1 = []
-        x1 = []
-        for i in range(-3000, 0):
-            xv1 = np.arange(around(tstart2 * Config.fs + i - margin), around(tstart2 * Config.fs + i + margin), dtype=int)
-            a1v = cp.angle(pktdata_in[xv1].dot(cp.exp(-1j * cp.polyval(coefa, xv1 / Config.fs))))
-            x1.append(around(tstart2 * Config.fs + i) )
-            a1.append(a1v)
-        for i in range(1, 3000):
-            xv1 = np.arange(around(tstart2 * Config.fs + i - margin), around(tstart2 * Config.fs + i + margin), dtype=int)
-            a1v = cp.angle(pktdata_in[xv1].dot(cp.exp(-1j * cp.polyval(coefb, xv1 / Config.fs))))
-            x1.append(around(tstart2 * Config.fs + i) )
-            a1.append(a1v)
-        pltfig1(x1, a1, title="angle difference").show()
+        # a1 = []
+        # x1 = []
+        # for i in range(-3000, 0):
+        #     xv1 = np.arange(around(tstart2 * Config.fs + i - margin), around(tstart2 * Config.fs + i + margin), dtype=int)
+        #     a1v = cp.angle(pktdata_in[xv1].dot(cp.exp(-1j * cp.polyval(coefa, xv1 / Config.fs))))
+        #     x1.append(around(tstart2 * Config.fs + i) )
+        #     a1.append(a1v)
+        # for i in range(1, 3000):
+        #     xv1 = np.arange(around(tstart2 * Config.fs + i - margin), around(tstart2 * Config.fs + i + margin), dtype=int)
+        #     a1v = cp.angle(pktdata_in[xv1].dot(cp.exp(-1j * cp.polyval(coefb, xv1 / Config.fs))))
+        #     x1.append(around(tstart2 * Config.fs + i) )
+        #     a1.append(a1v)
+        # pltfig1(x1, a1, title="angle difference").show()
 
 
     # Print the intersection points
@@ -238,5 +239,4 @@ def find_intersections(coefa, coefb, tstart2,pktdata_in, epsilon, margin=10, dra
         assert abs(y1 - y2) < 1e-6
 
         # print(f"{idx}: x = {x:.12f}, y1 = {y1:.12f} y2 = {y2:.12f} y1-y2={y1-y2:.12f}")
-
-    return intersection_points, poly1_shifted_coef, poly2_shifted_coef
+    return selected
