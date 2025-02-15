@@ -37,7 +37,7 @@ if __name__ == "__main__":
             # if pkt_idx < 1: continue
 
             estf= -40971.948630148894
-            estt =  0.01015365
+            estt =  0.01015366531
             # coeflist = fitcoef(estf, estt, data1, margin=10, fitmethod='1dfit', searchquad=False)
             # with open('1dfittemp.pkl', "rb") as fl: coeflist = pickle.load(fl)
             fit1d = False
