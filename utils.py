@@ -34,7 +34,7 @@ def mychirp(t, f0, f1, t1):
 
 class Config:
 
-    sf = 12
+    sf = 7
     bw = 406250#*(1-20*1e-6)
     fs = 1e6
     sig_freq = 2.4e9
@@ -71,10 +71,10 @@ class Config:
         # file_paths_zip = (("/data/djl/temp/OptimalPkt/hou2", 0),) # !!! TODO FOR DEBUG
         # file_paths_zip = (("/data/djl/OptimalPkt/test_1218_4", 0),) # !!! TODO FOR DEBUG
         file_paths_zip = (("/data/djl/OptimalPkt/fin/data0_test_200", 0),)  # !!! TODO FOR DEBUG
-    if False:
-        preamble_len = 64
-        total_len = 90.25-16+64
-        file_paths_zip = (("/data/djl/OptimalPkt/wired_1213", 0),) # !!! TODO FOR DEBUG
+    if True:
+        preamble_len = 15
+        total_len = 89
+        file_paths_zip = ((f"/data/djl/OptimalPkt/data0217/sf_{sf}_0116", 0),) # !!! TODO FOR DEBUG
 
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples

@@ -25,7 +25,7 @@ if __name__ == "__main__":
         # fig = go.Figure(layout_title_text=f"Angle {file_path_id=}")
         # fig.add_vline(x=Config.preamble_len)
         # fig.add_vline(x=Config.sfdpos + 2)
-        for pkt_idx, pkt_data in enumerate(read_pkt(file_path, file_path.replace("data0", "data1"), thresh, min_length=30)):
+        for pkt_idx, pkt_data in enumerate(read_pkt(file_path, file_path, thresh, min_length=30)):
 
             # read data: read_idx is the index of packet end window in the file
             read_idx, data1, data2 = pkt_data
@@ -35,7 +35,7 @@ if __name__ == "__main__":
             # plt.show()
             # plt.plot(tocpu(cp.unwrap(cp.angle(data2[:200000]))))
             # plt.show()
-            if pkt_idx < 1: continue
+            # if pkt_idx < 1: continue
             # if pkt_idx > 2: break
 
             # normalization
@@ -115,12 +115,14 @@ if __name__ == "__main__":
             # plt.show()
 
 
-            # objective_decode(f, t, data1)
+            codes, angdiffs = objective_decode(f, t, data1)
+            print(codes)
+
             # save data for output line
             if t > 0 and abs(f + 38000) < 10000:
                 est_cfo_f, est_to_s = f, t
                 est_to_s_full = est_to_s + (read_idx * Config.nsamp)
-                logger.warning(f"est f{file_path_id:3d} {est_cfo_f=:.6f} {est_to_s=:.6f} {pkt_idx=:3d} {read_idx=:5d} tot {est_to_s_full:15.2f} {retval=:.6f}")
+                # logger.warning(f"est f{file_path_id:3d} {est_cfo_f=:.6f} {est_to_s=:.6f} {pkt_idx=:3d} {read_idx=:5d} tot {est_to_s_full:15.2f} {retval=:.6f}")
 
                 fulldata.append([file_path_id, pkt_idx, est_cfo_f, est_to_s_full , retval,  *(np.angle(np.array(data_angles))), *(np.abs(np.array(data_angles)))])
                 if True:
@@ -130,7 +132,7 @@ if __name__ == "__main__":
                     sig2.tofile(os.path.join(Config.outfolder, f"{os.path.basename(file_path)}_pkt_{pkt_idx}"))
             else:
                 est_cfo_f, est_to_s = f, t
-                logger.error(f"ERR f{file_path_id} {est_cfo_f=} {est_to_s=} {pkt_idx=} {read_idx=} tot {est_to_s + read_idx * Config.nsamp} {retval=}")
+                # logger.error(f"ERR f{file_path_id} {est_cfo_f=} {est_to_s=} {pkt_idx=} {read_idx=} tot {est_to_s + read_idx * Config.nsamp} {retval=}")
             # save data for plotting
             # ps.extend(data_angles)
             # psa1.append(len(ps))

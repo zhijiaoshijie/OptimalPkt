@@ -60,124 +60,56 @@ def gen_matrix2(dt, est_cfo_f):
     decode_matrix_a = Config.decode_matrix_a * cfosymb
     decode_matrix_b = Config.decode_matrix_b * cfosymb
     return decode_matrix_a, decode_matrix_b
-
-# todo 斜率是否不受cfo sfo影响
 def objective_decode(est_cfo_f, est_to_s, pktdata_in):
-    tstandard = cp.arange(len(pktdata_in))
+    vals = np.zeros(Config.sfdpos + 2, dtype=np.complex64)
+    yvals2 = np.zeros(Config.sfdpos + 2, dtype=int)
+    vallen = Config.preamble_len - Config.skip_preambles + 2
+
     nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
-    pstart = nsamp_small * (0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
-    # pktdata_in *= np.exp(1j * np.pi * Config.cfo_change_rate * (tstandard - pstart) ** 2 / Config.fs)
     codes = []
     angdiffs = []
-    amaxdfs = []
-    # for pidx in range(Config.sfdpos + 2, round(Config.total_len)):
-    dvx = []
-    for pidx in range(0, Config.preamble_len):
-        # fig = FigureResampler(go.Figure(layout_title_text=f"OL fit {pidx=} {est_cfo_f=:.3f} {est_to_s=:.3f}"))
-        if True:# for deltaf in np.arange(0, 200, 10):
-            deltaf = 0
-            estf = est_cfo_f + deltaf
-            start_pos_all_new = nsamp_small * (pidx ) * (1 - estf / Config.sig_freq) + est_to_s
-            start_pos = round(start_pos_all_new)
+    for pidx in range(Config.sfdpos + 2, Config.total_len):
+        # codes1 = []
+        # codes2 = []
+        codesv = []
+        angdv = []
+        start_pos_all_new = nsamp_small * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
+        start_pos = round(start_pos_all_new)
+        cfoppm1 = (1 + est_cfo_f / Config.sig_freq)  # TODO!!!
+        tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1] + (start_pos - start_pos_all_new) / Config.fs
+        for code in range(Config.n_classes):
+            nsamples = round(Config.nsamp / Config.n_classes * (Config.n_classes - code))
+            refchirp = mychirp(tstandard, f0=Config.bw * (-0.5 + code / Config.n_classes) * cfoppm1 + est_cfo_f, f1=Config.bw * (0.5 + code / Config.n_classes) * cfoppm1 + est_cfo_f,
+                                t1=2 ** Config.sf / Config.bw * cfoppm1)[:nsamples]
+            sig1 = pktdata_in[start_pos: nsamples + start_pos]
+            if len(sig1) > 0: sig2 = cp.abs(sig1.dot(cp.conj(refchirp))) #/ cp.sum(cp.abs(sig1))
+            else: sig2 = cp.array(0)
 
-            tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
-            refchirp = mychirp(tstandard, f0=Config.bw * -0.5 , f1=Config.bw * 0.5, t1=2 ** Config.sf / Config.bw)
-            dt = (start_pos - start_pos_all_new) / Config.fs
-            beta = Config.bw / ((2 ** Config.sf) / Config.bw)
-            df = -estf #+ dt * beta)
-            sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
-
-            x = (cp.arange(len(pktdata_in)) - est_to_s) * (1 + estf / Config.sig_freq)
-            yi = cp.zeros_like(x, dtype=np.complex64)
-            bwnew = Config.bw * (1 + estf / Config.sig_freq)
-            betanew = beta * (1 + 2 * estf / Config.sig_freq)
-            for i in range(Config.preamble_len):
-                mask = (i * Config.nsampf < x) & (x <= (i + 1) * Config.nsampf)
-                yi[mask] = cp.exp(2j * cp.pi * (betanew / 2 * (x[mask] - i * Config.nsampf) ** 2 / Config.fs**2 + (- bwnew / 2 + estf) * (x[mask] - i * Config.nsampf)/Config.fs))
-            xv = cp.arange(start_pos , start_pos + Config.preamble_len * Config.nsamp)
-            diffdata = np.diff(tocpu(cp.unwrap(cp.angle(pktdata_in[xv]*cp.conj(yi[xv])))), prepend=0)
-            d2data = np.ones_like(diffdata)
-            for i in range(1, Config.preamble_len):
-                d2data[abs(x[xv] - i * Config.nsampf) < Config.gen_refchirp_deadzone] = 0
-            p2 = pktdata_in[xv] * togpu(d2data)
-            # val = cp.abs(cp.conj(togpu(yi[xv])).dot(p2))
-            val2 = cp.concatenate( [cp.abs(cp.cumsum(cp.conj(togpu(yi[xv][round(i * Config.nsampf): round((i+1)*Config.nsampf)])) * p2[round(i * Config.nsampf): round((i+1)*Config.nsampf)])) for i in range(0, Config.preamble_len)])
-            val3 = cp.array( [cp.angle(cp.conj(togpu(yi[xv][round(i * Config.nsampf): round((i+1)*Config.nsampf)])) .dot( p2[round(i * Config.nsampf): round((i+1)*Config.nsampf)])) for i in range(0, Config.preamble_len)])
-
-            # fig.add_trace(go.Scatter(x=x[xv], y=tocpu(cp.unwrap(cp.angle(yi[xv])))))
-            # fig.add_trace(go.Scatter(x=x[xv], y=tocpu(cp.unwrap(cp.angle(pktdata_in[xv])))))
-            # fig.add_trace(go.Scatter(x=x[xv], y=tocpu(val2), name=f"{estf=:.3f}"))
+            refchirp = mychirp(tstandard, f0=Config.bw * (-1.5 + code / Config.n_classes) * cfoppm1 + est_cfo_f, f1=Config.bw * (-0.5 + code / Config.n_classes) * cfoppm1 + est_cfo_f,
+                               t1=2 ** Config.sf / Config.bw * cfoppm1)[nsamples:]
+            sig1 = pktdata_in[start_pos + nsamples: start_pos + Config.nsamp]
+            if len(sig1) > 0: sig3 = sig1.dot(cp.conj(refchirp)) #/ cp.sum(cp.abs(sig1))
+            else: sig3 = cp.array(0)
+            codesv.append(cp.abs(sig2).item() ** 2 + cp.abs(sig3).item() ** 2)
+            angdv.append(cp.angle(sig3).item() - cp.angle(sig2).item())
+            # codes1.append(sig2.item())
+            # codes2.append(sig3.item())
+        # fig = go.Figure(layout_title_text=f"decode {pidx=}")
+        # fig.add_trace(go.Scatter(y=codes1, mode="lines"))
+        # fig.add_trace(go.Scatter(y=codes2, mode="lines"))
         # fig.show()
-        x_data = np.arange(Config.skip_preambles*4, Config.preamble_len-1)
-        y_data = np.unwrap(np.diff(tocpu(val3)))[x_data]
-        coefficients = np.polyfit(x_data, y_data, 1)
-        # print(coefficients)
-        # return (est_cfo_f, coefficients[0])
-        # if abs(coefficients[0] + 0.025)>0.001:
-        if True:
-            logger.warning(f"Fitted parameters:  {coefficients} {est_cfo_f=}")
-            x_data = np.arange(0, Config.preamble_len)
-            fig=px.scatter(y=tocpu(cp.unwrap(cp.diff(val3))))
-            fig.add_trace(go.Scatter(x=x_data, y=np.polyval(coefficients, x_data), mode="lines", name="Fitted Curve"))
-            fig.show()
-            return None
-        else: return (est_cfo_f, coefficients[0])
-        # coefficients[0] = est_cfo_f/Config.sig_freq * Config.bw/Config.fs/np.pi
-
-        sys.exit(0)
-
-        # logger.warning(f"standard a1={np.pi * beta / Config.fs**2} b1={2*np.pi*(Config.bw*-0.5-df)/Config.fs} c1=0")
-        estc1 = (1 + est_cfo_f/Config.sig_freq * 2) * np.pi * beta / Config.fs**2
-        estc2 = est_cfo_f/Config.sig_freq * Config.bw/Config.fs/np.pi*pidx + (-Config.bw*0.5+est_cfo_f)*2*np.pi/Config.fs
-        print(estc1, estc2)
-        x_val = np.arange(Config.nsamp) + dt * Config.fs #- pidx
-        y_val = tocpu(cp.unwrap(cp.angle(sig1))) - np.polyval((estc1, estc2, 0), x_val)
-        coefficients = np.polyfit(x_val, y_val, 0)
-        # logger.warning(f"ours a={coefficients})")
-        if False:#pidx % 10 == 0:
-            fig = FigureResampler(go.Figure(layout_title_text=f"OL fit {pidx=} {est_cfo_f=:.3f} {est_to_s=:.3f}"))
-            # fig.add_trace(go.Scatter(y=y_val))
-            # fig.add_trace(go.Scatter(y=np.polyval(coefficients, x_val)))
-            fig.add_trace(go.Scatter(y=y_val - np.polyval(coefficients, x_val), mode="markers"))
-            fig.update_layout(yaxis=dict(range=[-0.2, 0.2]))
-            fig.show()
-        dvx.append(coefficients)
-    dvx = np.array(dvx)
-    fig = FigureResampler(go.Figure(layout_title_text=f"OL coeffs1 {est_cfo_f=:.3f} {est_to_s=:.3f}"))
-    fig.add_trace(go.Scatter(y=np.unwrap(dvx[:, 0])))
-    # fig.add_hline(y=estc1)
-    # fig.add_hline(y=2*np.pi*(Config.bw*-0.5-df)/Config.fs)
-    # fig.show()
-    # x_data = np.arange(Config.skip_preambles, Config.preamble_len)
-    x_data = np.arange(0, Config.preamble_len)
-    from scipy.optimize import curve_fit
-
-    # def log_func(x, a, b, c, d):
-    #     return a * np.log(b * x + c) + d
-    # # Fit the curve
-    # initial_guess = [ 8.90091896e-05, 2.28698507e+00 , 4.78538888e-01, -1.53961710e+00] # Initial guess for the parameters [a, b, c, d]
-    # params, covariance = curve_fit(log_func, x_data, y_data, p0=initial_guess)
-    # print("Fitted parameters:", params)
-    # y_fit = log_func(x_data, *params)
-    # fig.add_trace(go.Scatter(x=x_data, y=y_fit, mode="lines", name="Fitted Curve"))
-    # fig.show()
-
-    x_data = np.arange(Config.skip_preambles * 3, Config.preamble_len)
-    y_data = np.unwrap(dvx[:, 0])[x_data]
-    coefficients = np.polyfit(x_data, y_data, 2)
-    print("Fitted parameters:", coefficients,  est_cfo_f/Config.sig_freq * Config.bw/Config.fs/np.pi)
-    x_data = np.arange(0, Config.preamble_len)
-    # coefficients[0] = est_cfo_f/Config.sig_freq * Config.bw/Config.fs/np.pi
-    fig.add_trace(go.Scatter(x=x_data, y=np.polyval(coefficients, x_data), mode="lines", name="Fitted Curve"))
-    fig.show()
-
-
-
-
+        # plt.plot(np.unwrap(np.angle(pktdata_in[start_pos - Config.nsamp: start_pos + Config.nsamp].get())))
+        # plt.show()
+        coderet = np.argmax(np.array(codesv))
+        codes.append(coderet)
+        angdiffs.append(angdv[coderet])
+        # print(pidx, coderet)
     # fig = go.Figure(layout_title_text=f"decode angles")
-    # fig.add_trace(go.Scatter(y=amaxdfs, mode="markers"))
+    # fig.add_trace(go.Scatter(x=codes, y=angdiffs, mode="markers"))
     # fig.show()
     return codes, angdiffs
+
+
 
 def gen_refchirp(est_to_s, estf, length):
     beta = Config.bw / ((2 ** Config.sf) / Config.bw)
