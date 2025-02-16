@@ -63,9 +63,9 @@ if __name__ == "__main__":
             a2vs = remove_phase_diff(estf, estt, data1, coeflist)
             assert max(a2vs) < 1e-4, "residue angles remove failure max>1e-4"
 
-            estt, estf = symbtime(estf, estt, data1, coeflist)
+            symbtime(estf, estt, data1, coeflist)
             # with open('1dfittemp.pkl', "wb") as fl: pickle.dump(coeflist, fl)
-            logger.warning(f"symbtime end: {estt=} {estf=}")
+            logger.warning(f"symbtime end")
             # with open(fname, "wb") as fl: pickle.dump(coeflist, fl)
             sys.exit(0)
 

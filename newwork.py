@@ -218,13 +218,6 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
 
 
     pidx_range = cp.arange(Config.preamble_len)
-    dd = []
-    for pidx in range(240):
-        dd.append(- coeflist[pidx, 1] / 2 / coeflist[pidx, 0] - cp.polyval(coeff_time, pidx))
-    dd = cp.array(dd)
-    avgdd = cp.mean(dd)
-    logger.warning(f"coef2 time for freq=0 {avgdd=} estf={(0.5 - avgdd / coeff_time[0]) * Config.bw}")
-    # pltfig1(None, dd, addhline=((-estf / Config.bw + 0.5) * coeff_time[0], avgdd), title="coef2 time for freq=0").show()
 
     # TODO simplify
     for ixx in range(2):
@@ -251,6 +244,9 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
 
     codephase = []
     powers = []
+
+
+    # preamble codephase and powers
     for pidx in range(Config.preamble_len):
         x1 = math.ceil(cp.polyval(coeff_time, pidx) * Config.fs)
         x2 = math.ceil(cp.polyval(coeff_time, pidx + 1) * Config.fs)
@@ -261,11 +257,11 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
         powers.append(cp.abs(res).item() / cp.sum(cp.abs(pktdata_in[nsymbr])).item())
     # pltfig1(None, cp.unwrap(codephase), title="unwrap phase").show()
 
-    codesd = []
-    codesd2 = []
     coeffitlist = cp.concatenate((coeffitlist, cp.zeros((100, 3))), axis=0)
     fig=None
     for pidx in range(Config.preamble_len, Config.preamble_len + 2):
+
+        # FFT find frequency
         x1 = math.ceil(cp.polyval(coeff_time, pidx) * Config.fs)
         x2 = math.ceil(cp.polyval(coeff_time, pidx + 1) * Config.fs)
         nsymbr = cp.arange(x1, x2)
@@ -277,21 +273,14 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
         beta2 = 2 * cp.pi * (cp.polyval(estfcoef_to_num, pidx) - estbw / 2) - cp.polyval(coeff_time, pidx) * 2 * beta1 # 2ax+b=differential b=differential - 2 * beta1 * time
         coef2d_est = cp.array([beta1.get(), beta2.get(), 0])
 
-        data = cp.exp(-1j * cp.polyval(coef2d_est, tsymbr))
-        sig1 = pktdata_in[nsymbr]
-        refchirp = data
-        sig2 = sig1 * refchirp
+        refchirp = cp.exp(-1j * cp.polyval(coef2d_est, tsymbr))
+        sig2 = pktdata_in[nsymbr] * refchirp
         data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
         freq = cp.fft.fftshift(cp.fft.fftfreq(Config.fft_n, d=1 / Config.fs))[cp.argmax(cp.abs(data0))]
-        logger.warning(f"fft {freq=} maxpow={cp.max(cp.abs(data0))}")
-        # pltfig1(None,cp.abs(data0), title=f"fft {freq=} maxpow={cp.max(cp.abs(data0))}").show()
-        # pltfig1(None, cp.unwrap(cp.angle(sig2)), title=f"sig2 phase {pidx=}").show()
-
-        freq, valnew = optimize_1dfreq(sig2, tsymbr, freq)
-
+        assert cp.max(cp.abs(data0)) > 0.9, f"FFT power <= 0.9, {pidx=} fft {freq=} maxpow={cp.max(cp.abs(data0))}"
+        # freq, valnew = optimize_1dfreq(sig2, tsymbr, freq)
         code = freq / estbw * 2 ** Config.sf
-        logger.warning(f"{pidx=} optimized fft {freq=} maxpow={valnew} {code=:.12f}")
-        codesd.append(code - around(code))
+        # logger.warning(f"{pidx=} optimized fft {freq=} maxpow={valnew} {code=:.12f}")
         code = around(code)
 
         x3 = math.ceil(cp.polyval(coeff_time, pidx + 1 - code / 2 ** Config.sf ) * Config.fs)
@@ -303,26 +292,16 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
         coef2d_est2 = cp.array([beta1.get(), beta2.get(), 0])
         coef2d_est2_2d = cp.polyval(coef2d_est2, cp.polyval(coeff_time, pidx)) - cp.polyval(coeffitlist[pidx - 1], cp.polyval(coeff_time, pidx))
         coef2d_est2[2] -= coef2d_est2_2d
-        codesd2.append(coef2d_est2_2d)
         coeffitlist[pidx] = coef2d_est2
 
-
-        sig21 = pktdata_in[nsymbr1] * cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr1))
-        freq1, valnew1 = optimize_1dfreq(sig21, tsymbr1, 0)
-        res1 = sig21.dot(cp.exp(-1j * 2 * cp.pi * freq1 * (tsymbr1 - tsymbr1[around(len(tsymbr1) / 2)])))
         res2 = pktdata_in[nsymbr1].dot(cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr1)) )
-
 
         codephase.append(cp.angle(res2).item())
         powers.append(cp.abs(res2).item() / cp.sum(cp.abs(pktdata_in[nsymbr1])).item())
-
-
         # pltfig1(tsymbr1, cp.angle(sig21 * cp.exp(-1j * 2 * cp.pi * freq1 * tsymbr1)), title=f"residue {pidx=}").show()
-        logger.warning(f"{pidx=} 1sthalf optimized fft {freq1=} maxpow={valnew1} {cp.angle(res1)=} pow={cp.abs(res1)/cp.sum(cp.abs(sig21))} {cp.angle(res2)=} pow={cp.abs(res2)/cp.sum(cp.abs(sig21))}")
+        logger.warning(f"{pidx=} {code=} {cp.angle(res2)=} pow={cp.abs(res2)/cp.sum(cp.abs(pktdata_in[nsymbr1]))}")
         fig=pltfig1(tsymbr, cp.angle(pktdata_in[nsymbr] * cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr))), title=f"residue {pidx=}", fig=fig)
 
-
-        logger.warning(f"END for {pidx=} \n\n")
     for pidx in range(Config.preamble_len + 2, Config.preamble_len + 4):
         x1 = math.ceil(cp.polyval(coeff_time, pidx) * Config.fs)
         x2 = math.ceil(cp.polyval(coeff_time, pidx + 1) * Config.fs)
@@ -338,7 +317,6 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
         coef2d_est2_2d = cp.polyval(coef2d_est2, cp.polyval(coeff_time, pidx)) - cp.polyval(
             coeffitlist[pidx - 1], cp.polyval(coeff_time, pidx))
         coef2d_est2[2] -= coef2d_est2_2d
-        codesd2.append(coef2d_est2_2d)
         coeffitlist[pidx] = coef2d_est2
         res2 = pktdata_in[nsymbr].dot(cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr)))
         fig = pltfig1(tsymbr, cp.angle(pktdata_in[nsymbr] * cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr))), title=f"residue {pidx=}", fig=fig)
@@ -367,7 +345,6 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
         # coef2d_est2[2] += cd2
         # cd2 = cp.angle(pktdata_in[nsymbr].dot(cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr)) ))#!!!!!!!!!!!! TODO here we align phase for the last symbol
         # assert abs(cd2) < 1e-4
-        codesd2.append(coef2d_est2_2d)
         coeffitlist[pidx] = coef2d_est2
         res2 = pktdata_in[nsymbr].dot(cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr)))
         codephase.append(cp.angle(res2).item())
@@ -417,12 +394,11 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
         # pltfig1(None,cp.abs(data0), title=f"fft {freq=} maxpow={cp.max(cp.abs(data0))}").show()
         # pltfig1(None, cp.unwrap(cp.angle(sig2)), title=f"sig2 phase {pidx=}").show()
 
-        freq, valnew = optimize_1dfreq(sig2, tsymbr, freq)
+        # freq, valnew = optimize_1dfreq(sig2, tsymbr, freq)
         if freq < 0: freq += estbw
 
         code = freq / estbw * 2 ** Config.sf
         # logger.warning(f"{pidx=} optimized fft {freq=} maxpow={valnew} {code=:.12f}")
-        codesd.append(code - around(code))
         code = around(code)
 
 
@@ -443,7 +419,6 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
         # cd2 = cp.angle(pktdata_in[nsymbr1].dot(cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr1))))  # !!!!!!
         # assert abs(cd2) < 1e-4, "error angle not resolved"
         logger.warning(f"2phase: {pidx=} {wrap(cp.polyval(coef2d_est2, cp.polyval(coeff_time, pidx)))}, {wrap(cp.polyval(coef2d_est2, cp.polyval(coeff_time, pidx + 1 - code / 2 ** Config.sf)))} {wrap(cp.polyval(coef2d_est2, cp.polyval(coeff_time, pidx + 1)))}")
-        codesd2.append(coef2d_est2_2d)
         # coeffitlist[pidx] = coef2d_est2
 
         beta2a = (2 * cp.pi * (cp.polyval(estfcoef_to_num, pidx) + estbw * (code / 2 ** Config.sf - 1.5))
@@ -458,13 +433,7 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
         # assert abs(cd2) < 1e-4, "error angle not resolved"
         logger.warning(f"{coef2d_est2=} {coef2d_est2a=} {(coef2d_est2[0] * 2 * cp.polyval(coeff_time, pidx) + coef2d_est2[1])/2/cp.pi=} {(coef2d_est2a[0] * 2 * cp.polyval(coeff_time, pidx) + coef2d_est2a[1])/2/cp.pi=}")
         logger.warning(f"2Aphase: {pidx=} {wrap(cp.polyval(coef2d_est2a, cp.polyval(coeff_time, pidx)))} {wrap(cp.polyval(coef2d_est2a, cp.polyval(coeff_time, pidx + 1 - code / 2 ** Config.sf)))}, {wrap(cp.polyval(coef2d_est2a, cp.polyval(coeff_time, pidx + 1)))}")
-        codesd2.append(coef2d_est2a_2d)
         coeffitlist[pidx] = coef2d_est2a #!!?!
-
-        freqa1, valnewa1 = optimize_1dfreq(pktdata_in[nsymbr1] * cp.exp(-1j * cp.polyval(coef2d_est, tsymbr1)), tsymbr1, freq)
-        freqa2, valnewa2 = optimize_1dfreq(pktdata_in[nsymbr2] * cp.exp(-1j * cp.polyval(coef2d_est, tsymbr2)), tsymbr2, freq - estbw)
-        # logger.warning(f"{pidx=} {freqa1=:.12f} {valnewa1=} {freqa2=:.12f} {valnewa2=}")
-
 
         sig21 = pktdata_in[nsymbr1] * cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr1))
         freq1, valnew1 = optimize_1dfreq(sig21, tsymbr1, 0)
@@ -512,23 +481,7 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
     # pltfig1(None, codesd2, title="codesd2").show()
     # pltfig1(None, cp.unwrap(coeffitlist[230:, 2])).show()
 
-
-
-
-
-
-    if draw:
-        for pidx in [0, 120, 239, 240]:
-            estt = cp.polyval(coeff_time, pidx)
-            nestt = estt * Config.fs
-            nsymbii = cp.arange(around(nestt) - 10, around(nestt) + 10)
-            tsymbii = nsymbii / Config.fs
-            pltfig(((tsymbii, cp.unwrap(cp.angle(pktdata_in[nsymbii]))),),
-                   title=f"symbtime {pidx=} intersect smallview",
-                   modes=('lines+markers',),
-               addvline=(estt, )).show()
-    estf_ret = cp.mean(sqlist(avgdds))
-    return coeff_time[0], estf_ret
+    return
 
 
 
