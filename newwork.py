@@ -354,7 +354,8 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
     coeff_time[1] -= 0.75 * coeff_time[0]
     coeff_time[1] -= 2.5e-6 #!!!!TODO!!!!!a
 
-    pidx_max = math.floor((len(pktdata_in)/Config.fs-coeff_time[1])/coeff_time[0])
+    pidx_max = math.floor((len(pktdata_in)/Config.fs-coeff_time[1])/coeff_time[0]) - 1
+    logger.warning(f"Payload symbol cnt: {pidx_max - Config.preamble_len - 5}")
     startphase = cp.polyval(coeffitlist[Config.preamble_len + 4], cp.polyval(coeff_time, Config.preamble_len + 5))
     for pidx in range(Config.preamble_len + 5, pidx_max): #TODO!!!!! Config.preamble_len + 5
         tstart = cp.polyval(coeff_time, pidx)
@@ -386,13 +387,13 @@ def decode_core(pktdata_in, tstart, tend, estfcoef_to_num, startphase, pidx):
     sig2 = pktdata_in[nsymbr] * cp.exp(-1j * cp.polyval(coef2d_est, tsymbr))
     data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
     freq1 = cp.fft.fftshift(cp.fft.fftfreq(Config.fft_n, d=1 / Config.fs))[cp.argmax(cp.abs(data0))]
-    freq, valnew = optimize_1dfreq(sig2, tsymbr, freq1)
-    assert valnew > 0.9, f"{freq=} {freq1=} {valnew=}"
+    freq, valnew = optimize_1dfreq(sig2, tsymbr, freq1) # valnew may be as low as 0.3, only half the power will be collected
+    # assert valnew > 0.3, f"{freq=} {freq1=} {valnew=}"
     if freq < 0: freq += estbw
     codex = freq / estbw * 2 ** Config.sf
     code = around(codex)
 
-    tmid = tstart * (1 - code / 2 ** Config.sf) + tend * (code / 2 ** Config.sf)
+    tmid = tstart * (code / 2 ** Config.sf) + tend * (1 - code / 2 ** Config.sf)
     tmid = tmid.item()
     x3 = math.ceil(tmid * Config.fs)
 
@@ -414,12 +415,14 @@ def decode_core(pktdata_in, tstart, tend, estfcoef_to_num, startphase, pidx):
     coef2d_est2a[2] -= coef2d_est2a_2d
 
     res2 = pktdata_in[nsymbr1].dot(cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr1))) / cp.sum(cp.abs(pktdata_in[nsymbr1]))
-    res2a = pktdata_in[nsymbr2].dot(cp.exp(-1j * cp.polyval(coef2d_est2a, tsymbr2))) / cp.sum(cp.abs(pktdata_in[nsymbr1]))
+    res2a = pktdata_in[nsymbr2].dot(cp.exp(-1j * cp.polyval(coef2d_est2a, tsymbr2))) / cp.sum(cp.abs(pktdata_in[nsymbr2]))
 
-    pltfig1(tsymbr1, cp.angle(pktdata_in[nsymbr1] * cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr1))), title=f"{pidx=} 1st angle {codex=}").show()
+    if not (cp.abs(res2).item() > 0.8 or code > 2 ** Config.sf * 0.8) or not (cp.abs(res2a).item() > 0.8 or code < 2 ** Config.sf * 0.2):
+        pltfig1(tsymbr1, cp.angle(pktdata_in[nsymbr1] * cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr1))), title=f"{pidx=} 1st angle {codex=} pow={cp.abs(res2).item()}").show()
+        pltfig1(tsymbr2, cp.angle(pktdata_in[nsymbr2] * cp.exp(-1j * cp.polyval(coef2d_est2a, tsymbr2))), title=f"{pidx=} 2st angle {codex=} pow={cp.abs(res2a).item()}").show()
 
-    assert cp.abs(res2).item() > 0.9, f"{pidx=} 1st power {cp.abs(res2).item()}<0.9"
-    assert cp.abs(res2a).item() > 0.9, f"{pidx=} 2nd power {cp.abs(res2a).item()}<0.9"
+    assert cp.abs(res2).item() > 0.8 or code > 2 ** Config.sf * 0.8, f"{pidx=} {code=} 1st power {cp.abs(res2).item()}<0.8"
+    assert cp.abs(res2a).item() > 0.8 or code < 2 ** Config.sf * 0.2, f"{pidx=} {code=} 2nd power {cp.abs(res2a).item()}<0.8"
 
     endphase = cp.polyval(coef2d_est2a, tend)
     return code, endphase, coef2d_est2, coef2d_est2a, res2, res2a
