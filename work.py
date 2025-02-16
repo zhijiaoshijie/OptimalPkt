@@ -77,9 +77,9 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
     #     # fig.add_trace(go.Scatter(y=tocpu(cp.abs(Config.fft_ups_x[i, 348200:348900]))))
     #     fig.add_trace(go.Scatter(y=tocpu(cp.abs(fft_ups_add[i, 348200:348900]))))
     # fig.show()
-    xx = []
-    for i in range(Config.skip_preambles, Config.preamble_len):
-        xx.append(tocpu(cp.argmax(cp.abs(fft_ups_add[i, :]))))
+    # xx = []
+    # for i in range(Config.skip_preambles, Config.preamble_len):
+    #     xx.append(tocpu(cp.argmax(cp.abs(fft_ups_add[i, :]))))
     # plt.plot(xx)
     # plt.show()
     # sys.exit(2)

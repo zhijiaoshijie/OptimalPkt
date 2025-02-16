@@ -23,25 +23,18 @@ if __name__ == "__main__":
             if read_idx == 0: continue
             # if pkt_idx < 1: continue
 
-            estf= -40971.948630148894
-            estt =  0.01015366531
-            coeflist = fitcoef1(estf, estt, data1)
-            symbtime(estf, estt, data1, coeflist)
-            logger.warning(f"symbtime end")
-            sys.exit(0)
+            # estf= -40971.948630148894
+            # estt =  0.01015366531
+            # coeflist = fitcoef1(estf, estt, data1)
+            # symbtime(estf, estt, data1, coeflist)
+            # logger.warning(f"symbtime end")
+            # sys.exit(0)
 
+            f, t, retval = coarse_work_fast(data1, 0, 0,False)  # tryi >= 1)
+            print(f, t)
 
-
-
-
-
-
-
-
-
-
-
-
+            estf = 0
+            estt = 0
             nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
             nwindows = len(data1) / nsymblen
             logger.info(f"Prework {pkt_idx=} {nwindows=} {cp.mean(cp.abs(data1))=} {cp.mean(cp.abs(data2))=}")
@@ -103,7 +96,7 @@ if __name__ == "__main__":
                     yi = gen_refchirp(f, t, 20*Config.nsamp)
                     estf = f
                     nstart = t
-                    
+
                     nsymbr = cp.arange(around(nstart) - 30000, around(nstart) + 10 * Config.nsamp)
                     if True:#pkt_idx==2:
                         fig2 = FigureResampler(go.Figure(layout_title_text=f"mainplt {pkt_idx=} {f=:.3f} {t=:.3f}"))
