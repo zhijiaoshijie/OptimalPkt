@@ -1,6 +1,6 @@
 import numpy as cp
 from pandas.core.computation.expr import intersection
-
+from scipy.optimize import minimize
 from utils import *
 import plotly.express as px
 import plotly.graph_objects as go
@@ -174,6 +174,13 @@ def plot_fit2d_after_refine(coefficients_2d_in, coef2d_refined_in, estf, estt, p
                   title=f"{pidx=} fit 2d no-uw angles after_refine",
                   addvline=(tstart, tend)).show()
 
+# Define a wrapper for the optimization
+
+def optimize_1dfreq_fast(sig2, tsymbr, freq1, margin):
+    def obj1(freq, xdata, ydata):
+        return -cp.abs(ydata.dot(cp.exp(xdata * -1j * 2 * cp.pi * freq.item()))).item()
+    result = minimize(obj1, freq1.item(), args=(tsymbr, sig2), bounds=[(freq1 - margin, freq1 + margin)]) #!!!
+    return result.x[0], - result.fun / cp.sum(cp.abs(sig2))
 
 def optimize_1dfreq(sig2, tsymbr, freq):
     def obj1(xdata, ydata, freq):
@@ -357,7 +364,7 @@ def symbtime(estf, estt, pktdata_in, coeflist, margin=1000):
     startphase = cp.polyval(coeffitlist[Config.preamble_len + 4], cp.polyval(coeff_time, Config.preamble_len + 5))
 
     # for pidx in range(Config.preamble_len + 5, Config.preamble_len + 5 + Config.payload_len):
-    for pidx in range(Config.preamble_len + 5 + 68, math.floor((len(pktdata_in)/Config.fs-coeff_time[1])/coeff_time[0])):
+    for pidx in range(Config.preamble_len + 5, math.floor((len(pktdata_in)/Config.fs-coeff_time[1])/coeff_time[0])):
         tstart = cp.polyval(coeff_time, pidx)
         tend = cp.polyval(coeff_time, pidx + 1)
         x1 = math.ceil(tstart * Config.fs)
@@ -397,7 +404,7 @@ def decode_core(pktdata_in, tstart, tend, estfcoef_to_num, startphase, pidx):
     sig2 = pktdata_in[nsymbr] * cp.exp(-1j * cp.polyval(coef2d_est, tsymbr))
     data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
     freq1 = cp.fft.fftshift(cp.fft.fftfreq(Config.fft_n, d=1 / Config.fs))[cp.argmax(cp.abs(data0))]
-    freq, valnew = optimize_1dfreq(sig2, tsymbr, freq1) # valnew may be as low as 0.3, only half the power will be collected
+    freq, valnew = optimize_1dfreq_Fast(sig2, tsymbr, freq1) # valnew may be as low as 0.3, only half the power will be collected
     # assert valnew > 0.3, f"{freq=} {freq1=} {valnew=}"
     if freq < 0: freq += estbw
     codex = freq / estbw * 2 ** Config.sf
@@ -436,6 +443,35 @@ def decode_core(pktdata_in, tstart, tend, estfcoef_to_num, startphase, pidx):
 
     endphase = cp.polyval(coef2d_est2a, tend)
     return code, endphase, coef2d_est2, coef2d_est2a, res2, res2a
+
+def fitcoef1(estf, estt, pktdata_in):
+    betai = Config.bw / ((2 ** Config.sf) / Config.bw) * cp.pi
+    beta1 = betai * (1 + 2 * estf / Config.sig_freq)
+    estbw = Config.bw * (1 + estf / Config.sig_freq)
+    tsymblen = 2 ** Config.sf / Config.bw * (1 - estf / Config.sig_freq)
+
+    coeflist = []
+    for pidx in range(0, Config.preamble_len):
+        tstart = estt + tsymblen * pidx
+        tend = estt + tsymblen * (pidx + 1)
+        beta2 = 2 * cp.pi * (- estbw * 0.5 + estf) - tstart * 2 * beta1
+        coef2d_est2 = cp.array([beta1, beta2, 0])
+        nsymbr = cp.arange(math.ceil(tstart * Config.fs), math.ceil(tend * Config.fs))
+        tsymbr = nsymbr / Config.fs
+        sig1 = pktdata_in[nsymbr] * cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr))
+        data0 = myfft(sig1, n=Config.fft_n, plan=Config.plan)
+        freq1 = cp.fft.fftshift(cp.fft.fftfreq(Config.fft_n, d=1 / Config.fs))[cp.argmax(cp.abs(data0))]
+        freq, valnew = optimize_1dfreq_fast(sig1, tsymbr, freq1, Config.fs / Config.fft_n * 5)
+        # logger.warning(f"{freq1=} {freq-freq1=} {valnew=}")
+        coef2d_est2[1] = 2 * cp.pi * (- estbw * 0.5 + estf + freq) - tstart * 2 * beta1
+        # sig2 = pktdata_in[nsymbr] * cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr))
+        # freq, valnew = optimize_1dfreq_Fast(sig2, tsymbr, freq1)
+        # logger.warning(f"{freq=} should be zero {valnew=}")
+        coef2d_est2[2] += cp.angle(pktdata_in[nsymbr].dot(cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr))))
+        coeflist.append(coef2d_est2)
+    return cp.array(coeflist)
+
+
 
 
 def fitcoef(estf, estt, pktdata_in, margin, fitmethod = "2dfit", searchquad = True):
