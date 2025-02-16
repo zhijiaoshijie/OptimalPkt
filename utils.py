@@ -93,11 +93,11 @@ class Config:
         # file_paths_zip = (("/data/djl/OptimalPkt/fin/data0_test_200", 0),)  # !!! TODO FOR DEBUG
     if True:
         preamble_len = 512
-        total_len = 90.25-16+512
+        # payload_len = 90-16-5
         file_paths_zip = (("/data/djl/OptimalPkt/test_1218_3", 0),) # !!! TODO FOR DEBUG
     if True:
         preamble_len = 240
-        payload_len = 70
+        # payload_len = 70
         file_paths_zip = (("/data/djl/OptimalPkt/test_1226", 0),) # !!! TODO FOR DEBUG
 
 
