@@ -354,10 +354,10 @@ def symbtime(estf, estt, pktdata_in, coeflist, draw=False, margin=1000):
     coeff_time[1] -= 0.75 * coeff_time[0]
     coeff_time[1] -= 2.5e-6 #!!!!TODO!!!!!a
 
-    pidx_max = math.floor((len(pktdata_in)/Config.fs-coeff_time[1])/coeff_time[0]) - 1
-    logger.warning(f"Payload symbol cnt: {pidx_max - Config.preamble_len - 5}")
+    # pidx_max = math.floor((len(pktdata_in)/Config.fs-coeff_time[1])/coeff_time[0]) - 1
+    # logger.warning(f"Payload symbol cnt: {pidx_max - Config.preamble_len - 5}")
     startphase = cp.polyval(coeffitlist[Config.preamble_len + 4], cp.polyval(coeff_time, Config.preamble_len + 5))
-    for pidx in range(Config.preamble_len + 5, pidx_max): #TODO!!!!! Config.preamble_len + 5
+    for pidx in range(Config.preamble_len + 5, Config.preamble_len + 5 + Config.payload_len): #TODO!!!!! Config.preamble_len + 5
         tstart = cp.polyval(coeff_time, pidx)
         tend = cp.polyval(coeff_time, pidx + 1)
         code, endphase, coef2d_est2, coef2d_est2a, res2, res2a = decode_core(pktdata_in, tstart, tend, estfcoef_to_num, startphase, pidx)
@@ -377,6 +377,10 @@ def decode_core(pktdata_in, tstart, tend, estfcoef_to_num, startphase, pidx):
     x2 = math.ceil(tend * Config.fs)
     nsymbr = cp.arange(x1, x2)
     tsymbr = nsymbr / Config.fs
+
+    # pltfig1(tsymbr, cp.unwrap(cp.angle(pktdata_in[nsymbr])), title=f"{pidx=}").show()
+    # pltfig1(tsymbr, cp.abs(pktdata_in[nsymbr]), title=f"{pidx=}").show()
+    assert cp.mean(cp.abs(pktdata_in[nsymbr])) > 0.1, f"{pidx=} {cp.mean(cp.abs(pktdata_in[nsymbr]))=} too small. is symbol ending?"
     estcoef_this = cp.polyval(estfcoef_to_num, pidx)
 
     beta1 = Config.bw / ((2 ** Config.sf) / Config.bw) * cp.pi * (1 + 2 * estcoef_this / Config.sig_freq)
