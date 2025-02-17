@@ -60,11 +60,11 @@ if __name__ == "__main__":
                         break
 
             codes1 = objective_decode(f, t, data1)
-            logger.warning(f"old  {codes1=}")
+            # logger.warning(f"old  {codes1=}")
             codes2 = objective_decode_baseline(f, t, data1)
-            logger.warning(f"base {codes2=}")
-            logger.warning(f"{codes1==codes2=}")
-            reps = 1
+            # logger.warning(f"base {codes2=}")
+            logger.warning(f"codes1 and codes2 acc: {sum(1 for a, b in zip(codes1, codes2) if a == b)/len(codes1)}")
+            reps = 100
 
             snrrange = np.arange(-40, -10, 1)
             accs = cp.zeros((2, len(snrrange), reps), dtype=float)
@@ -84,7 +84,7 @@ if __name__ == "__main__":
             accs = cp.mean(accs, axis=2)
 
             for snridx, snr in enumerate(snrrange):
-                logger.warning(f"{pkt_idx=}, {snr=}, {accs[0, snridx]=}, {accs[1, snridx]=}")
+                if pkt_idx == 1: logger.warning(f"{pkt_idx=}, {snr=}, {accs[0, snridx]=}, {accs[1, snridx]=}")
                 fulldata.append([pkt_idx, snr, accs[0, snridx], accs[1, snridx]])
             pbar.close()
 
