@@ -109,6 +109,29 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     # fig.show()
     return codes, angdiffs
 
+def objective_decode_baseline(est_cfo_f, est_to_s, pktdata_in):
+    nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
+    codes = []
+    angdiffs = []
+    tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
+    refchirp = mychirp(tstandard, f0=Config.bw * 0.5 - est_cfo_f, f1=Config.bw * -0.5 - est_cfo_f, t1=2 ** Config.sf / Config.bw)
+    for pidx in range(Config.sfdpos + 2, Config.total_len):
+        start_pos_all_new = nsamp_small * (pidx + 0.25) + est_to_s
+        start_pos = round(start_pos_all_new)
+
+        sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
+        sig2 = sig1 * refchirp
+        data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
+        freq = cp.fft.fftshift(cp.fft.fftfreq(Config.fft_n, d=1 / Config.fs))[cp.argmax(cp.abs(data0))]
+        # fig = go.Figure()
+        # fig.add_trace(go.Scatter(x=cp.fft.fftshift(cp.fft.fftfreq(Config.fft_n, d=1 / Config.fs)), y=cp.abs(data0)))
+        # fig.show()
+        if freq < 0: freq += Config.bw
+        codex = freq / Config.bw * 2 ** Config.sf
+        code = round(codex)
+        code %= 2 ** Config.sf
+        codes.append(code)
+    return codes
 
 
 def gen_refchirp(est_to_s, estf, length):

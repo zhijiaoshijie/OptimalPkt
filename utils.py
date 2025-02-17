@@ -34,7 +34,7 @@ def mychirp(t, f0, f1, t1):
 
 class Config:
 
-    sf = 7
+    sf = 6
     bw = 406250#*(1-20*1e-6)
     fs = 1e6
     sig_freq = 2.4e9
