@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+from sklearn.cluster import KMeans
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
@@ -75,7 +76,6 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     codes = []
     betai = Config.bw / ((2 ** Config.sf) / Config.bw) * (1 + 2 * est_cfo_f / Config.sig_freq)
     for pidx in range(Config.sfdpos + 2, Config.total_len):
-        codesv = cp.zeros(Config.n_classes, dtype=float)
         start_pos_all_new = 2 ** Config.sf / Config.bw * Config.fs * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
         start_pos = around(start_pos_all_new)
         tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
@@ -87,12 +87,86 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         coderet = cp.argmax(vals).item()
         codes.append(coderet)
     return codes
+def find_power(est_cfo_f, est_to_s, pktdata_in):
+    nsamp_small = 2 ** Config.sf / Config.bw * Config.fs * (1 - est_cfo_f / Config.sig_freq)
+    powers = []
+    px = []
+    for pidx in range(- math.floor(est_to_s / nsamp_small), Config.sfdpos + 2):
+        start_pos_all_new = nsamp_small * (pidx + 0) + est_to_s
+        start_pos = around(start_pos_all_new)
+        sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
+        powers.append(cp.mean(cp.abs(sig1)))
+        px.append(pidx)
+
+    for pidx in range(Config.sfdpos + 2, math.floor((len(pktdata_in) - est_to_s)/nsamp_small - 0.25) - 1):
+        start_pos_all_new = nsamp_small * (pidx + 0.25) + est_to_s
+        start_pos = around(start_pos_all_new)
+        sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
+        powers.append(cp.mean(cp.abs(sig1)))
+        px.append(pidx)
+    data_reshaped = np.array(sqlist(powers)).reshape(-1, 1)
+
+    # Apply KMeans with 2 clusters
+    kmeans = KMeans(n_clusters=2,  n_init=10, random_state=42)
+    kmeans.fit(data_reshaped)
+
+    # Get the cluster labels
+    labels = kmeans.labels_
+
+    # Get the cluster centers
+    centers = kmeans.cluster_centers_
+
+    # Plot the data and the cluster centers
+    # plt.scatter(powers, np.zeros_like(powers), c=labels, cmap='viridis')
+    # plt.scatter(centers, np.zeros_like(centers), color='red', marker='x', s=100, label="Cluster Centers")
+    # plt.title('K-means Clustering of the Data')
+    # plt.xlabel('Data Points')
+    # plt.legend()
+    # plt.show()
+
+    # Printing the clusters
+    cluster_big = np.array(px)[labels == (centers[0] < centers[1])]
+    cluster_small = np.array(px)[labels == (centers[0] > centers[1])]
+
+    new_est_to_s = min(cluster_big) * nsamp_small + est_to_s
+    totlen = len(cluster_big)
+    if min(cluster_big) != 0 or totlen != Config.total_len:
+        if min(cluster_big) != 0:
+            logger.error(f"ERR find_power: {est_to_s=} misalign by {min(cluster_big)} {new_est_to_s=}")
+        else:
+            logger.error(f"ERR find_power: {Config.total_len=} != {totlen=}")
+        str1 = ''.join([f'{x:6d}' for x in px])
+        str2 = ''.join([f'{x:6.3f}' for x in powers])
+        str3 = ''.join([f'{int(x in cluster_big):6d}' for x in px])
+        logger.warning(f"ERR find_power:\n {str1} \n {str2} \n {str3}")
+        showpower(est_cfo_f, est_to_s, pktdata_in, 'old')
+        showpower(est_cfo_f, new_est_to_s, pktdata_in, 'new')
+    assert totlen == Config.total_len, f"find_power {Config.total_len=} != {totlen=}"
+    return new_est_to_s
+
+# <<< PURE LOG PRINTING, SHOW POWER OF EACH SYMBOL TO DETERMINE IF ALIGNED WITH SFD >>>
+def showpower(est_cfo_f, est_to_s, pktdata_in, name):
+    betai = Config.bw / ((2 ** Config.sf) / Config.bw) * (1 + 2 * est_cfo_f / Config.sig_freq)
+    for pidx in range(Config.sfdpos - 2, Config.sfdpos + 2):
+        start_pos_all_new = 2 ** Config.sf / Config.bw * Config.fs * pidx * (1 - est_cfo_f / Config.sig_freq) + est_to_s
+        start_pos = around(start_pos_all_new)
+        tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1] + (start_pos - start_pos_all_new) / Config.fs
+        if pidx < Config.sfdpos:
+            refchirp = cp.exp(-1j * 2 * cp.pi * ((Config.bw * -0.5 * (1 + est_cfo_f / Config.sig_freq) + est_cfo_f) * tstandard + 0.5 * betai * tstandard * tstandard))
+        else:
+            refchirp = cp.exp(-1j * 2 * cp.pi * ((Config.bw * 0.5 * (1 + est_cfo_f / Config.sig_freq) + est_cfo_f) * tstandard - 0.5 * betai * tstandard * tstandard))
+        sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
+        pow = cp.abs(sig1.dot(refchirp)) / cp.sum(cp.abs(sig1))
+        px.line(y=tocpu(cp.unwrap(cp.angle(sig1))), title=f"{name} {pidx - Config.sfdpos=} {pow=}").show()
+        logger.warning(f"{name} {pidx - Config.sfdpos=} {pow=}")
+
 def objective_decode_baseline(est_cfo_f, est_to_s, pktdata_in):
     nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
     codes = []
     tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
     refchirp = mychirp(tstandard, f0=Config.bw * 0.5 - est_cfo_f, f1=Config.bw * -0.5 - est_cfo_f, t1=2 ** Config.sf / Config.bw)
-    # for pidx in range(Config.total_len - 2, Config.total_len + 2):
+    # # <<< PRINT POWER OF EACH SYMBOL >>> #
+    # for pidx in range(math.floor((len(pktdata_in) - est_to_s)/nsamp_small - 0.25) - 10, math.floor((len(pktdata_in) - est_to_s)/nsamp_small - 0.25)):
     #     start_pos_all_new = nsamp_small * (pidx + 0.25) + est_to_s
     #     start_pos = around(start_pos_all_new)
     #     sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]

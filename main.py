@@ -35,7 +35,7 @@ if __name__ == "__main__":
             nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
             logger.info(f"Prework {pkt_idx=} {len(data1)/nsamp_small=} {cp.mean(cp.abs(data1))=}")
 
-            # <<< PLOT WHOLE DATA1 TO SEE LENGTH OF PREAMBLE AND PAYLOAD >>>
+            # # <<< PLOT WHOLE DATA1 TO SEE LENGTH OF PREAMBLE AND PAYLOAD >>>
             # fig = go.Figure()
             # fig.add_trace(go.Scatter(x=np.arange(len(data1))/nsamp_small, y=tocpu(cp.unwrap(cp.angle(data1)))))
             # for i in range(math.ceil(len(data1)/nsamp_small)): fig.add_vline(x=i)
@@ -58,7 +58,9 @@ if __name__ == "__main__":
                     if t < 0:
                         logger.error(f"ERROR in {est_cfo_f=} {est_to_s=} out {f=} {t=} {file_path=} {pkt_idx=}")
                         break
-
+            t = find_power(f, t, data1)
+            t = find_power(f, t, data1)
+            continue
             codes1 = objective_decode(f, t, data1)
             # logger.warning(f"old  {codes1=}")
             codes2 = objective_decode_baseline(f, t, data1)
@@ -66,7 +68,7 @@ if __name__ == "__main__":
             logger.warning(f"codes1 and codes2 acc: {sum(1 for a, b in zip(codes1, codes2) if a == b)/len(codes1)}")
             reps = 100
 
-            snrrange = np.arange(-40, -10, 1)
+            snrrange = np.arange(-40, 10, 1)
             accs = cp.zeros((2, len(snrrange), reps), dtype=float)
             pbar = tqdm(total=len(snrrange) * reps)
             for snridx, snr in enumerate(snrrange):

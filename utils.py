@@ -53,11 +53,11 @@ sf_value = args.sf
 
 class Config:
 
-    sf = 7
+    sf = 8
     bw = 406250#*(1-20*1e-6)
     sig_freq = 2.4e9
     preamble_len=15
-    total_len = 119
+    total_len = [119, 107][sf - 7]
     file_paths_zip = ((f"/data/djl/OptimalPkt/data0217/sf_{sf}_0116", 0),)  # !!! TODO FOR DEBUG
 
 
