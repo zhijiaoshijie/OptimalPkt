@@ -78,32 +78,26 @@ def read_large_file(file_path_in):
 
 
 
-def read_pkt(file_path_in1, file_path_in2, threshold, min_length=20):
+def read_pkt(file_path_in1, threshold, min_length=10):
     current_sequence1 = []
-    current_sequence2 = []
 
     read_idx = -1
-    for rawdata1, rawdata2 in itertools.zip_longest(read_large_file(file_path_in1), read_large_file(file_path_in2)):
-        if rawdata1 is None or rawdata2 is None:
-            break  # Both files are done
+    for rawdata1 in read_large_file(file_path_in1):
         read_idx += 1
 
-        number1 = cp.max(cp.abs(rawdata1)) if rawdata1 is not None else 0
+        number1 = cp.max(cp.abs(rawdata1))
 
         # Check for threshold in both files
         if number1 > threshold:
             current_sequence1.append(rawdata1)
-            current_sequence2.append(rawdata2)
         else:
             if len(current_sequence1) > min_length:
                 current_sequence1.append(rawdata1) # end +1 window
-                current_sequence2.append(rawdata2)
-                yield read_idx + 1 - len(current_sequence1), cp.concatenate(current_sequence1), cp.concatenate(current_sequence2)
+                yield read_idx + 1 - len(current_sequence1), cp.concatenate(current_sequence1)
             current_sequence1 = [rawdata1,] # previous +1 window
-            current_sequence2 = [rawdata2,]
 
     # Yield any remaining sequences after the loop
     if len(current_sequence1) > min_length:
-        yield read_idx, cp.concatenate(current_sequence1), cp.concatenate(current_sequence2)
+        yield read_idx, cp.concatenate(current_sequence1)
 
 
