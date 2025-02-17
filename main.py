@@ -79,12 +79,12 @@ if __name__ == "__main__":
                         logger.error(f"ERROR in {est_cfo_f=} {est_to_s=} out {f=} {t=} {file_path=} {pkt_idx=}")
                         break
 
-            # codes1 = objective_decode_old(f, t, data1)
-            # logger.warning(f"old  {codes1=}")
-            # codes1 = objective_decode(f, t, data1)
-            # logger.warning(f"ours {codes1=}")
-            codes1 = objective_decode_baseline(f, t, data1)
-            logger.warning(f"base {codes1=}")
+            codes1 = objective_decode_old(f, t, data1)
+            logger.warning(f"old  {codes1=}")
+            codes3 = objective_decode(f, t, data1)
+            logger.warning(f"ours {codes3=}")
+            codes2 = objective_decode_baseline(f, t, data1)
+            logger.warning(f"base {codes2=}")
             reps = 100
             accs = cp.zeros((2, 41, reps), dtype=float)
             snrrange = np.arange(-40, -10, 1)
@@ -108,14 +108,14 @@ if __name__ == "__main__":
                 fulldata.append([pkt_idx, snr, accs[0, -snr], accs[1, -snr]])
             pbar.close()
 
-        with open(f"{Config.sf}data.pkl", "wb") as fi: pickle.dump(accs, fi)
-        header = ["pktID", "SNR", "ACCours", "ACCbaseline"]
-        csv_file_path = f'data_out{Config.sf}.csv'
-        with open(csv_file_path, 'w', newline='') as csvfile:
-            csvwriter = csv.writer(csvfile)
-            csvwriter.writerow(header)  # Write the header
-            for row in fulldata:
-                csvwriter.writerow(row)
+            with open(f"{Config.sf}data.pkl", "wb") as fi: pickle.dump(accs, fi)
+            header = ["pktID", "SNR", "ACCours", "ACCbaseline"]
+            csv_file_path = f'data_out{Config.sf}.csv'
+            with open(csv_file_path, 'w', newline='') as csvfile:
+                csvwriter = csv.writer(csvfile)
+                csvwriter.writerow(header)  # Write the header
+                for row in fulldata:
+                    csvwriter.writerow(row)
 
         if False:
             bytes_per_complex = 8
