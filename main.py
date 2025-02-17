@@ -25,42 +25,21 @@ if __name__ == "__main__":
         # loop for demodulating all decoded packets: iterate over pkts with energy>thresh and length>min_length
         codescl = []
         canglescl = []
-        # fig = go.Figure(layout_title_text=f"Angle {file_path_id=}")
-        # fig.add_vline(x=Config.preamble_len)
-        # fig.add_vline(x=Config.sfdpos + 2)
         for pkt_idx, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=Config.total_len)):
 
             # read data: read_idx is the index of packet end window in the file
             read_idx, data1 = pkt_data
             # (Optional) skip the first pkt because it may be half a pkt. read_idx == len(data1) means this pkt start from start of file
             if read_idx == 0: continue
-            # plt.plot(tocpu(cp.unwrap(cp.angle(data1[:200000]))))
-            # plt.show()
-            # if pkt_idx < 1: continue
-            # if pkt_idx > 2: break
 
-            # normalization
             nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
             logger.info(f"Prework {pkt_idx=} {len(data1)/nsamp_small=} {cp.mean(cp.abs(data1))=}")
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=np.arange(len(data1))/nsamp_small, y=tocpu(cp.unwrap(cp.angle(data1)))))
-            for i in range(math.ceil(len(data1)/nsamp_small)): fig.add_vline(x=i)
-            fig.show()
-            # data1 /= cp.mean(cp.abs(data1))
-            # objective_decode(-41890.277+25, 12802.113, data1)
-            # continue#sys.exit(0)
 
-            # xval = np.arange(-200, 200, 1) -41890.277+25
-            # xval2 = []
-            # yval2 = []
-            # for x in xval:
-            #     ret = objective_decode(x, 12802.113, data1)
-            #     if ret:
-            #         xval2.append(ret[0])
-            #         yval2.append(ret[1])
-            # fig = px.scatter(x=xval2, y=yval2)
+            # <<< PLOT WHOLE DATA1 TO SEE LENGTH OF PREAMBLE AND PAYLOAD >>>
+            # fig = go.Figure()
+            # fig.add_trace(go.Scatter(x=np.arange(len(data1))/nsamp_small, y=tocpu(cp.unwrap(cp.angle(data1)))))
+            # for i in range(math.ceil(len(data1)/nsamp_small)): fig.add_vline(x=i)
             # fig.show()
-            # sys.exit(0)
 
             est_cfo_f = -44000
             est_to_s = 0
@@ -82,12 +61,13 @@ if __name__ == "__main__":
 
             codes1 = objective_decode_old(f, t, data1)
             logger.warning(f"old  {codes1=}")
-            codes3 = objective_decode(f, t, data1)
-            logger.warning(f"ours {codes3=}")
+            # codes3 = objective_decode(f, t, data1)
+            # logger.warning(f"ours {codes3=}")
             codes2 = objective_decode_baseline(f, t, data1)
             logger.warning(f"base {codes2=}")
+            logger.warning(f"{codes1==codes2=}")
             reps = 100
-            continue
+            continue ## TODO!!!
 
             accs = cp.zeros((2, 41, reps), dtype=float)
             snrrange = np.arange(-40, -10, 1)

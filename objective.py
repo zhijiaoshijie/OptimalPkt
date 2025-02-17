@@ -104,7 +104,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     return codes
 def objective_decode_old(est_cfo_f, est_to_s, pktdata_in):
     codes = []
-    betai = Config.bw / ((2 ** Config.sf) / Config.bw) * (1 + 2 * est_cfo_f / Config.sig_freq)
+    betai = Config.bw / ((2 ** Config.sf) / Config.bw)
     for pidx in range(Config.sfdpos + 2, Config.total_len):
         codesv = cp.zeros(Config.n_classes, dtype=float)
         start_pos_all_new = 2 ** Config.sf / Config.bw * Config.fs * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
@@ -126,8 +126,6 @@ def objective_decode_old(est_cfo_f, est_to_s, pktdata_in):
             #     fig.add_trace(go.Scatter(y=tocpu(cp.unwrap(cp.angle(pktdata_in[start_pos: Config.nsamp + start_pos]))), mode="lines"))
             #     fig.add_trace(go.Scatter(y=tocpu(cp.unwrap(cp.angle(refchirpc1))), mode="lines"))
             #     fig.show()
-            # codes1.append(sig2.item())
-            # codes2.append(sig3.item())
         # fig = go.Figure(layout_title_text=f"decode {pidx=}")
         # fig.add_trace(go.Scatter(y=codesv, mode="lines"))
         # fig.show()
@@ -135,10 +133,6 @@ def objective_decode_old(est_cfo_f, est_to_s, pktdata_in):
         # plt.show()
         coderet = cp.argmax(codesv).item()
         codes.append(coderet)
-        # print(pidx, coderet)
-    # fig = go.Figure(layout_title_text=f"decode angles")
-    # fig.add_trace(go.Scatter(x=codes, y=angdiffs, mode="markers"))
-    # fig.show()
     return codes
 def objective_decode_baseline(est_cfo_f, est_to_s, pktdata_in):
     nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
