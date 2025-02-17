@@ -1,5 +1,8 @@
 import time
 import csv
+import pickle
+from tqdm import tqdm
+
 
 from work import *
 from reader import *
@@ -78,12 +81,14 @@ if __name__ == "__main__":
 
             codes1, _ = objective_decode(f, t, data1)
             codes2 = objective_decode_baseline(f, t, data1)
-            if not (codes1==codes2):
-                print(codes1)
-                print(codes2)
-            reps = 2
+            # if not (codes1==codes2):
+            #     print(codes1)
+            #     print(codes2)
+            reps = 1
             accs = cp.zeros((2, 41, reps), dtype=float)
-            for snr in range(-40, 0, 10):
+            snrrange = np.arange(-30, -10, 3)
+            pbar = tqdm(total=len(snrrange) * reps)
+            for snr in snrrange:
                 for rep in range(reps):
                     num_samples = len(data1)
                     amp = math.pow(0.1, snr / 20) * cp.mean(cp.abs(data1[round(len(data1)/4):round(len(data1)*0.75)]))
@@ -93,12 +98,20 @@ if __name__ == "__main__":
                     codesx2 = objective_decode_baseline(f, t, dataX)
                     accs[0, -snr, rep] = sum(1 for a, b in zip(codesx1, codes1) if a == b) / len(codes1)
                     accs[1, -snr, rep] = sum(1 for a, b in zip(codesx2, codes1) if a == b) / len(codes1)
-                print(snr, cp.mean(accs[0, -snr, :]), cp.mean(accs[1, -snr, :]))
+                    pbar.update(1)
             accs = cp.mean(accs, axis=2)
-            print(accs)
             for snr in range(-40, 0, 10):
-                print(snr, accs[0, -snr], accs[1, -snr])
-            with open(f"{Config.sf}data.pkl", "wb") as f: pickle.dump(accs, f)
+                fulldata.append([pkt_idx, snr, accs[0, -snr], accs[1, -snr]])
+            pbar.close()
+
+        with open(f"{Config.sf}data.pkl", "wb") as fi: pickle.dump(accs, fi)
+        header = ["pktID", "SNR", "ACCours", "ACCbaseline"]
+        csv_file_path = f'data_out{Config.sf}.csv'
+        with open(csv_file_path, 'w', newline='') as csvfile:
+            csvwriter = csv.writer(csvfile)
+            csvwriter.writerow(header)  # Write the header
+            for row in fulldata:
+                csvwriter.writerow(row)
 
         if False:
             bytes_per_complex = 8
