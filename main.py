@@ -25,37 +25,28 @@ if __name__ == "__main__":
 
             # estf= -40971.948630148894
             # estt =  0.01015366531
-            # coeflist = fitcoef1(estf, estt, data1)
-            # symbtime(estf, estt, data1, coeflist)
-            # logger.warning(f"symbtime end")
-            # sys.exit(0)
 
-            f, t, retval = coarse_work_fast(data1, 0, 0,False)  # tryi >= 1)
-            print(f, t)
 
-            estf = 0
-            estt = 0
+            estf, estt, retval = coarse_work_fast(data1, 0, 0,False)  # tryi >= 1)
+            logger.warning(f"coarse work fast complete {estf=} {estt=} {retval=}")
+            coeflist = fitcoef1(estf, estt, data1)
+            symbtime(estf, estt, data1, coeflist)
+            logger.warning(f"symbtime end")
+            sys.exit(0)
+
             nsymblen = 2 ** Config.sf / Config.bw * Config.fs * (1 - estf / Config.sig_freq)
             nwindows = len(data1) / nsymblen
             logger.info(f"Prework {pkt_idx=} {nwindows=} {cp.mean(cp.abs(data1))=} {cp.mean(cp.abs(data2))=}")
             data1 /= cp.mean(cp.abs(data1))
             data2 /= cp.mean(cp.abs(data2)) # TODO remove normalization for production
 
-            estt = coarse_est_f_t(data1, estf, 10)
-            assert estt >= 0
-            logger.warning(f"Coarse estimate time from {estf=} at window_idx=10: {estt=}")
 
-            start_pidx = start_pidx_pow_detect(data1, estf, estt)
-            logger.warning(f"Coarse estimate start pkt from {estf=} {estt=}: {start_pidx=}")
-            estt += start_pidx * nsymblen / Config.fs
-
-            logger.warning(f"fixed {estt=} from {start_pidx=}")
             fit1d = True
             if fit1d: fname = f"coeftpkt_{pkt_idx}_f1.pkl"
             else: fname = f"coeftpkt_{pkt_idx}_nf.pkl"
             # fname = f"coefout2.pkl"
             if not os.path.exists(fname):
-                if fit1d: coeflist = fitcoef(estf, estt, data1, margin=1000,fitmethod='1dfit', searchquad=False)
+                if fit1d: coeflist = fitcoef1(estf, estt, data1, margin=1000,fitmethod='1dfit', searchquad=False)
                 else: coeflist = fitcoef(estf, estt, data1, margin=1000, fitmethod='2dfit', searchquad=True)
                 with open(fname, "wb") as fl: pickle.dump(coeflist, fl)
             else:

@@ -149,10 +149,10 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
                 f1 = f0 * Config.bw
                 t1 = t0 * Config.tsig + tstart + detect_pkt * nsymblen
 
-                retval= 0#objective_core_new(f1 , t1, pktdata_in)
+                retval= objective_core_new(f1 , t1, pktdata_in)
                 logger.warning(f"linear optimization {retval=:8.5f} {f1=:11.3f} {t1=:11.3f}") # TODO debug
 
-                values[i][j] = [f1, t1, retval]
+                values[i][j] = [f1, t1, retval.get()]
 
         best_idx = np.argmax(values[:, :, 2])
         est_cfo_f = values[:, :, 0].flat[best_idx]
@@ -250,4 +250,4 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
         # print(f"sigd preobj {objective_core_phased(est_cfo_f + fit_dfreq, est_to_s - fit_dfreq / betai, pktdata_in)=}")
         # print(f"sigd preobj {objective_core_phased(est_cfo_f - fit_dfreq, est_to_s + fit_dfreq / betai, pktdata_in)=}")
 
-    return est_cfo_f, est_to_s, retval# None# (codes, codeangles)
+    return est_cfo_f, est_to_s / Config.fs, retval# None# (codes, codeangles)

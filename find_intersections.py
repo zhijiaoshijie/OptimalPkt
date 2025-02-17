@@ -50,8 +50,8 @@ def find_crossings(coef_in, x_min, x_max):
         # Filter real roots within [x_min, x_max]
         real_roots = roots[cp.isreal(roots)].real
         valid_roots = real_roots[(real_roots >= x_min) & (real_roots <= x_max)]
-        assert len(valid_roots) == 1
-        assert - np.pi <= np.polyval(shifted_poly, valid_roots[0]) <= np.pi
+        assert len(valid_roots) == 1 or len(valid_roots) == 2, f"valid roots {shifted_poly=} {roots=} {x_min=} {x_max=} {y_lower=} {y_upper=} {n_min=} {n_max=}"
+        assert - np.pi <= np.polyval(shifted_poly, valid_roots[0]) <= np.pi, f"valid roots {shifted_poly=} {roots=}"
         crossings.extend(valid_roots.tolist())
     # slope: is strictly increasing or decreasing
     for i in range(len(crossings) - 1):

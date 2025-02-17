@@ -570,7 +570,7 @@ def objective_core_new(est_cfo_f, nestt, pktdata_in):
         # logger.warning(f"objcorenew {est_cfo_f=:11.3f} {nestt=:11.3f} {i=} {cp.abs(pktdata_in[nsymbr].dot(cp.conj(yi[nsymbr]))) / len(nsymbr)}")
     # logger.warning(f"objcorenew {est_cfo_f=:11.3f} {nestt=:11.3f} {retvals=}")
 
-    return retvals
+    return retvals / (Config.preamble_len + 2.25)
 
 
 

@@ -210,7 +210,7 @@ def symbtime(estf, estt, pktdata_in, coeflist, margin=1000):
     dy = []
     for pidx in cp.arange(10, Config.preamble_len):
         tstart2 = estt + tsymblen * pidx
-        selected = find_intersections(coeflist[pidx - 1], coeflist[pidx], tstart2, pktdata_in, 1e-5, margin=margin, draw=False, remove_range=True)#draw= (pidx == 120))
+        selected = find_intersections(coeflist[pidx - 1], coeflist[pidx], tstart2, pktdata_in, 1e-4, margin=margin, draw=True, remove_range=False) #!!! TODO remove range
         if selected != None:
             dx.append(pidx)
             dy.append(selected)
