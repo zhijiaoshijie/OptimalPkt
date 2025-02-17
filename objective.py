@@ -152,9 +152,14 @@ def objective_decode_old(est_cfo_f, est_to_s, pktdata_in):
 def objective_decode_baseline(est_cfo_f, est_to_s, pktdata_in):
     nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
     codes = []
-    angdiffs = []
     tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
     refchirp = mychirp(tstandard, f0=Config.bw * 0.5 - est_cfo_f, f1=Config.bw * -0.5 - est_cfo_f, t1=2 ** Config.sf / Config.bw)
+    for pidx in range(Config.total_len - 2, Config.total_len + 2):
+        start_pos_all_new = nsamp_small * (pidx + 0.25) + est_to_s
+        start_pos = round(start_pos_all_new)
+        sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
+        logger.warning(f"{Config.total_len=} {pidx=} {cp.mean(cp.abs(sig1))=}")
+
     for pidx in range(Config.sfdpos + 2, Config.total_len):
         start_pos_all_new = nsamp_small * (pidx + 0.25) + est_to_s
         start_pos = round(start_pos_all_new)

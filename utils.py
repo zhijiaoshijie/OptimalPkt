@@ -48,61 +48,26 @@ sf_value = args.sf
 
 class Config:
 
-    sf = args.sf
+    sf = 7
     bw = 406250#*(1-20*1e-6)
-    bw = 125000#*(1-20*1e-6)
+    sig_freq = 2.4e9
+    preamble_len=15
+    total_len = 123
+    file_paths_zip = ((f"/data/djl/OptimalPkt/data0217/sf_{sf}_0116", 0),)  # !!! TODO FOR DEBUG
+
+
+
     fs = 1e6
-    # sig_freq = 2.4e9
-    sig_freq = 470e6
-    # sig_freq = 2400000030.517578#-52e6/(2**18)
-    preamble_len = 10#64  # TODO!!!!
     skip_preambles = 8  # skip first 8 preambles ## TODO
-    total_len = 90.25-2#-16+64
     thresh = None# 0.03
-    # file_paths = ['/data/djl/temp/OptimalPkt/fingerprint_data/data0_test_3',]
     cfo_range = bw // 8
+    code_len = 2
     outfolder = "fout"
-
-    wired = False
-    if not wired:
-        # base_path = '/data/djl/temp/OptimalPkt/fingerprint_data/'
-        base_path = '/data/djl/OptimalPkt/fin'
-        temp_list = []
-        for filename in os.listdir(base_path):
-            if 'data0' in filename:
-                filename = os.path.join(base_path, filename)
-                fileidx = filename.split('_')[-1]
-                if fileidx.isnumeric():
-                    if 'wavelen' in filename:
-                        file_tuple = (filename, -int(fileidx)-1)
-                    else:
-                        file_tuple = (filename, int(fileidx))
-                else:
-                    file_tuple = (filename, -10)
-                temp_list.append(file_tuple)
-
-        file_paths_zip = sorted(temp_list, key=lambda pair: pair[1])
-
-    else:
-        # file_paths_zip = (("/data/djl/temp/OptimalPkt/hou2", 0),) # !!! TODO FOR DEBUG
-        # file_paths_zip = (("/data/djl/OptimalPkt/test_1218_4", 0),) # !!! TODO FOR DEBUG
-        file_paths_zip = (("/data/djl/OptimalPkt/fin/data0_test_200", 0),)  # !!! TODO FOR DEBUG
-    if True:
-        preamble_len = 10
-        total_len = 13 + preamble_len + 4
-        file_paths_zip = ((f"/data/djl/OptimalPkt/data0217/sf_{sf}_0116", 0),) # !!! TODO FOR DEBUG
-        file_paths_zip = ((f"/data/djl/OptimalPkt/sf{sf}test.sigdat", 0),) # !!! TODO FOR DEBUG
 
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples
     nsamp = round(n_classes * fs / bw)
     nsampf = (n_classes * fs / bw)
-    # f_lower, f_upper = -50000, -30000
-    f_lower, f_upper = -38000, -34000
-    t_lower, t_upper = 0, nsamp
-    fguess = (f_lower + f_upper) / 2
-    tguess = nsamp / 2
-    code_len = 2
 
     # cfo_change_rate = 46/(60* n_classes * fs / bw) # Hz/sps
 
