@@ -69,90 +69,17 @@ if __name__ == "__main__":
                     f, t, retval = coarse_work_fast(data1, est_cfo_f, est_to_s, False)# tryi >= 1)
                     pktlen = int((len(data1) - t) / Config.nsampf - 0.25)
                     est_cfo_f, est_to_s = f, t
-                    # est_to_s_full = est_to_s + (read_idx * Config.nsamp)
-                    # logger.warning(f"est f{file_path_id:3d} {est_cfo_f=:.6f} {est_to_s=:.6f} {pkt_idx=:3d} {read_idx=:5d} tot {est_to_s_full:15.2f} {retval=:.6f}")
+                    est_to_s_full = est_to_s + (read_idx * Config.nsamp)
+                    logger.warning(f"est f{file_path_id:3d} {est_cfo_f=:.6f} {est_to_s=:.6f} {pkt_idx=:3d} {read_idx=:5d} tot {est_to_s_full:15.2f} {retval=:.6f}")
 
                     if t < 0:
                         logger.error(f"ERROR in {est_cfo_f=} {est_to_s=} out {f=} {t=} {file_path=} {pkt_idx=}")
                         break
-            estf = f
-            start_pos_all_new = t
-            start_pos = round(start_pos_all_new)
-
-            pktdata_in = data1
-            yi = gen_refchirp(f, t, len(pktdata_in))
-            xv = cp.arange(start_pos - 30000, start_pos + Config.preamble_len * Config.nsamp + 60000)
-            if False:#pkt_idx==2:
-                fig2 = FigureResampler(go.Figure(layout_title_text=f"mainplt {pkt_idx=} {f=:.3f} {t=:.3f}"))
-                fig2.add_trace(go.Scatter(x=xv, y=tocpu(cp.unwrap(cp.angle(pktdata_in)[xv]))))
-                fig2.add_trace(go.Scatter(x=xv, y=tocpu(cp.unwrap(cp.angle(data2)[xv]))))
-                # fig.add_trace(go.Scatter(x=xv, y=tocpu(cp.unwrap(cp.angle(yi)[xv]))))
-                fig2.add_vline(x=t)
-                fig2.add_vline(x=t + Config.nsampf)
-                fig2.add_vline(x=t + Config.nsampf * 2)
-                fig2.add_vline(x=t + Config.nsampf * (Config.preamble_len + 2))
-                fig2.add_vline(x=t + Config.nsampf * (Config.preamble_len + 4.25))
-                fig2.show()
-            pktlen2 = min(pktlen, int(Config.total_len))
-            data_angles=cp.zeros(pktlen2, dtype=cp.complex64)
-
-            for pidx in range(pktlen2):
-                pidx2 = pidx
-                if pidx > Config.sfdpos: pidx2 += 0.25
-                xrange = cp.arange(round(Config.nsampf * pidx2 + t), round(Config.nsampf * (pidx2 + 1) + t))
-                sig1 = data1[xrange]
-                sig2 = data2[xrange]
-                data_angles[pidx] = (sig1.dot(sig2.conj()))/len(sig1)
-                if False:# pidx > 85:
-                    plt.plot(tocpu(cp.unwrap(cp.angle(sig1))))
-                    plt.plot(tocpu(cp.unwrap(cp.angle(sig2))))
-                    plt.title(f"{pidx=}")
-                    plt.show()
-            # if True:
-            #     fig.add_trace(go.Scatter(y=tocpu(cp.angle(data_angles))))
-            # plt.plot(tocpu(cp.abs(data_angles)))
-            # plt.title("abs")
-            # plt.show()
-
 
             codes, angdiffs = objective_decode(f, t, data1)
             print(codes)
 
-            # save data for output line
-            if t > 0 and abs(f + 38000) < 10000:
-                est_cfo_f, est_to_s = f, t
-                est_to_s_full = est_to_s + (read_idx * Config.nsamp)
-                # logger.warning(f"est f{file_path_id:3d} {est_cfo_f=:.6f} {est_to_s=:.6f} {pkt_idx=:3d} {read_idx=:5d} tot {est_to_s_full:15.2f} {retval=:.6f}")
 
-                fulldata.append([file_path_id, pkt_idx, est_cfo_f, est_to_s_full , retval,  *(np.angle(np.array(data_angles))), *(np.abs(np.array(data_angles)))])
-                if True:
-                    sig1 = data1[round(est_to_s): Config.nsamp * math.ceil(Config.total_len) + round(est_to_s)]
-                    sig2 = data2[round(est_to_s): Config.nsamp * math.ceil(Config.total_len) + round(est_to_s)]
-                    sig1.tofile(os.path.join(Config.outfolder, f"{os.path.basename(file_path)}_pkt_{pkt_idx}"))
-                    sig2.tofile(os.path.join(Config.outfolder, f"{os.path.basename(file_path)}_pkt_{pkt_idx}"))
-            else:
-                est_cfo_f, est_to_s = f, t
-                # logger.error(f"ERR f{file_path_id} {est_cfo_f=} {est_to_s=} {pkt_idx=} {read_idx=} tot {est_to_s + read_idx * Config.nsamp} {retval=}")
-            # save data for plotting
-            # ps.extend(data_angles)
-            # psa1.append(len(ps))
-            # ps2.append(est_cfo_f)
-            # ps3.append(est_to_s)
-            # print("only compute 1 pkt, ending")
-            # sys.exit(0)
-        # the length of each pkt (for plotting)
-                # save info of all the file to csv (done once each packet, overwrite old)
-            if True:  # !!!!!!
-                header = ["fileID", "pktID", "CFO", "Time offset", "Power"]
-                header.extend([f"Angle{x}" for x in range(int(Config.total_len))])
-                header.extend([f"Abs{x}" for x in range(int(Config.total_len))])
-                csv_file_path = 'data_out.csv'
-                with open(csv_file_path, 'w', newline='') as csvfile:
-                    csvwriter = csv.writer(csvfile)
-                    csvwriter.writerow(header)  # Write the header
-                    for row in fulldata:
-                        csvwriter.writerow(row)
-        # fig.show()
         if False:
             bytes_per_complex = 8
             byte_offset = round(est_to_s_full) * bytes_per_complex
