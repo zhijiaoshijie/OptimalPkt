@@ -31,10 +31,24 @@ def mychirp(t, f0, f1, t1):
     phase = 2 * cp.pi * (f0 * t + 0.5 * beta * t * t)
     sig = cp.exp(1j * togpu(phase))
     return sig
+import argparse
+
+# Create the parser
+parser = argparse.ArgumentParser(description="Sample argparse script")
+
+# Add the integer argument with a default value of 7
+parser.add_argument('--sf', type=int, default=7, help="Set the value of sf (default is 7)")
+
+# Parse the arguments
+args = parser.parse_args()
+
+# Access the value of the argument
+sf_value = args.sf
+
 
 class Config:
 
-    sf = 6
+    sf = args.sf
     bw = 406250#*(1-20*1e-6)
     fs = 1e6
     sig_freq = 2.4e9
