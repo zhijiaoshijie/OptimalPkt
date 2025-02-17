@@ -1,3 +1,4 @@
+
 from objective import *
 
 
@@ -96,8 +97,8 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
         # for direct add # x[d] + roll(x[d+1], -bw). peak at (-bw, 0), considering CFO, peak at (-3bw/2, bw/2). # argmax = yvalue.
         # if yvalue > -bw/2, consider possibility of yvalue - bw; else consider yvalue + bw.
         buff_freqs = round(Config.cfo_range * Config.fft_n / Config.fs)
-        lower = - Config.bw - buff_freqs + Config.fft_n // 2
-        higher = buff_freqs + Config.fft_n // 2
+        lower = round(- Config.bw - buff_freqs + Config.fft_n // 2)
+        higher = round(buff_freqs + Config.fft_n // 2)
         y_value = tocpu(cp.argmax(cp.sum(
             cp.abs(fft_ups_add[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt, lower:higher]),
             axis=0))) + lower
@@ -133,7 +134,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
 
         # try all possible variations (unwrap f0, t0 if their real value exceed [-0.5, 0.5))
         deltaf, deltat = np.meshgrid(np.array((0, y_value_secondary)), np.array((0, fdown2)))
-        values = np.zeros((2, 2, 3)).astype(float)
+        values = cp.zeros((2, 2, 3)).astype(float)
         nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
         for i in range(deltaf.shape[0]):
             for j in range(deltaf.shape[1]):
