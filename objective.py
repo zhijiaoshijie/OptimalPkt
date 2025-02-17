@@ -61,7 +61,7 @@ def gen_matrix2(dt, est_cfo_f):
     decode_matrix_b = cp.zeros((Config.n_classes, Config.nsamp), dtype=cp.complex64)
     tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1] * (1 - est_cfo_f / Config.sig_freq)
     for code in range(Config.n_classes):
-        nsamples = round(Config.nsamp / Config.n_classes * (Config.n_classes - code))
+        nsamples = around(Config.nsamp / Config.n_classes * (Config.n_classes - code))
         refchirp = mychirp(tstandard, f0=Config.bw * (-0.5 + code / Config.n_classes) * (1 + est_cfo_f / Config.sig_freq), f1=Config.bw * (0.5 + code / Config.n_classes) * (1 + est_cfo_f / Config.sig_freq),
                            t1=2 ** Config.sf / Config.bw * (1 - est_cfo_f / Config.sig_freq) )
         decode_matrix_a[code, :nsamples] = cp.conj(refchirp[:nsamples]) * cfosymb[:nsamples]
@@ -77,7 +77,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     for pidx in range(Config.sfdpos + 2, Config.total_len):
         codesv = cp.zeros(Config.n_classes, dtype=float)
         start_pos_all_new = 2 ** Config.sf / Config.bw * Config.fs * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
-        start_pos = round(start_pos_all_new)
+        start_pos = around(start_pos_all_new)
         tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
         dt = (start_pos - start_pos_all_new) / Config.fs
         dataX = pktdata_in[start_pos: Config.nsamp + start_pos] * cp.exp(-1j * 2 * cp.pi * (est_cfo_f + betai * dt) * tstandard)
@@ -94,13 +94,13 @@ def objective_decode_baseline(est_cfo_f, est_to_s, pktdata_in):
     refchirp = mychirp(tstandard, f0=Config.bw * 0.5 - est_cfo_f, f1=Config.bw * -0.5 - est_cfo_f, t1=2 ** Config.sf / Config.bw)
     # for pidx in range(Config.total_len - 2, Config.total_len + 2):
     #     start_pos_all_new = nsamp_small * (pidx + 0.25) + est_to_s
-    #     start_pos = round(start_pos_all_new)
+    #     start_pos = around(start_pos_all_new)
     #     sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
     #     logger.warning(f"{Config.total_len=} {pidx=} {cp.mean(cp.abs(sig1))=}")
 
     for pidx in range(Config.sfdpos + 2, Config.total_len):
         start_pos_all_new = nsamp_small * (pidx + 0.25) + est_to_s
-        start_pos = round(start_pos_all_new)
+        start_pos = around(start_pos_all_new)
 
         sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
         sig2 = sig1 * refchirp
@@ -111,7 +111,7 @@ def objective_decode_baseline(est_cfo_f, est_to_s, pktdata_in):
         # fig.show()
         if freq < 0: freq += Config.bw
         codex = freq / Config.bw * 2 ** Config.sf
-        code = round(codex)
+        code = around(codex)
         code %= 2 ** Config.sf
         codes.append(code)
     return codes
@@ -140,20 +140,20 @@ def objective_core_new(est_cfo_f, est_to_s, pktdata_in):
     deltaf = 0
     estf = est_cfo_f + deltaf
     start_pos_all_new = est_to_s
-    start_pos = round(start_pos_all_new)
+    start_pos = around(start_pos_all_new)
 
     yi = gen_refchirp(est_to_s, estf, len(pktdata_in))
 
     retvals = 0
     for i in range(Config.preamble_len):
-        xv = cp.arange(round(est_to_s + i * Config.nsamp), round(est_to_s + (i+1) * Config.nsamp))
+        xv = cp.arange(around(est_to_s + i * Config.nsamp), around(est_to_s + (i+1) * Config.nsamp))
         retvals += cp.abs(pktdata_in[xv].dot(cp.conj(yi[xv]))) / len(xv)
         # if i>=Config.preamble_len - 2:
         #     logger.warning(f"objcorenew {est_cfo_f=:11.3f} {est_to_s=:11.3f} {i=} {cp.abs(pktdata_in[xv].dot(cp.conj(yi[xv]))) / len(xv)}")
     for i in range(Config.sfdpos, Config.sfdpos + 3):
-        xv = cp.arange(round(est_to_s + i * Config.nsamp), round(est_to_s + (i+1) * Config.nsamp))
+        xv = cp.arange(around(est_to_s + i * Config.nsamp), around(est_to_s + (i+1) * Config.nsamp))
         if i == Config.sfdpos + 2:
-            xv = cp.arange(round(est_to_s + i * Config.nsamp), round(est_to_s + (i + 0.25) * Config.nsamp))
+            xv = cp.arange(around(est_to_s + i * Config.nsamp), around(est_to_s + (i + 0.25) * Config.nsamp))
         retvals += cp.abs(pktdata_in[xv].dot(cp.conj(yi[xv]))) / len(xv)
         # logger.warning(f"objcorenew {est_cfo_f=:11.3f} {est_to_s=:11.3f} {i=} {cp.abs(pktdata_in[xv].dot(cp.conj(yi[xv]))) / len(xv)}")
     # logger.warning(f"objcorenew {est_cfo_f=:11.3f} {est_to_s=:11.3f} {retvals=}")

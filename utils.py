@@ -4,7 +4,7 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 
-use_gpu = False
+use_gpu = True
 if use_gpu:
     import cupy as cp
     import cupyx.scipy.fft as fft
@@ -12,6 +12,11 @@ else:
     import numpy as cp
     import scipy.fft as fft
 
+def sqlist(lst):
+    return [item if isinstance(item, (int, float)) else item.item() for item in lst]
+
+def around(x):
+    return round(float(x))
 
 def togpu(x):
     if use_gpu and not isinstance(x, cp.ndarray):
@@ -66,7 +71,7 @@ class Config:
 
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples
-    nsamp = round(n_classes * fs / bw)
+    nsamp = around(n_classes * fs / bw)
     nsampf = (n_classes * fs / bw)
 
     # cfo_change_rate = 46/(60* n_classes * fs / bw) # Hz/sps
@@ -77,7 +82,7 @@ class Config:
 
     betai = bw / ((2 ** sf) / bw)
     for code in range(n_classes):
-        nsamples = round(nsamp / n_classes * (n_classes - code))
+        nsamples = around(nsamp / n_classes * (n_classes - code))
         f01 = bw * (-0.5 + code / n_classes)
         refchirpc1 = cp.exp(-1j * 2 * cp.pi * (f01 * tstandard + 0.5 * betai * tstandard * tstandard))
         f02 = bw * (-1.5 + code / n_classes)
@@ -205,7 +210,7 @@ def myfft(chirp_data, n, plan):
 def dechirp_fft(tstart, fstart, pktdata_in, refchirp, pidx, ispreamble):
     nsamp_small = 2 ** Config.sf / Config.bw * Config.fs# * (1 + fstart / Config.sig_freq)
     start_pos_all = nsamp_small * pidx + tstart
-    start_pos = round(start_pos_all)
+    start_pos = around(start_pos_all)
     start_pos_d = start_pos_all - start_pos
     sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
     # plt.plot(tocpu(cp.unwrap(cp.angle(refchirp))))

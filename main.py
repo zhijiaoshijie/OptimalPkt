@@ -64,29 +64,28 @@ if __name__ == "__main__":
             codes2 = objective_decode_baseline(f, t, data1)
             logger.warning(f"base {codes2=}")
             logger.warning(f"{codes1==codes2=}")
-            reps = 100
-            continue ## TODO!!!
+            reps = 1
 
-            accs = cp.zeros((2, 41, reps), dtype=float)
             snrrange = np.arange(-40, -10, 1)
+            accs = cp.zeros((2, len(snrrange), reps), dtype=float)
             pbar = tqdm(total=len(snrrange) * reps)
-            for snr in snrrange:
+            for snridx, snr in enumerate(snrrange):
                 for rep in range(reps):
-                    num_samples = len(data1)
-                    amp = math.pow(0.1, snr / 20) * cp.mean(cp.abs(data1[round(len(data1)/4):round(len(data1)*0.75)]))
-                    noise = (amp / math.sqrt(2) * cp.random.randn(num_samples) + 1j * amp / math.sqrt(2) * cp.random.randn(num_samples))
+                    amp = math.pow(0.1, snr / 20) * cp.mean(cp.abs(data1[around(len(data1)/4):around(len(data1)*0.75)]))
+                    noise = (amp / math.sqrt(2) * cp.random.randn(len(data1)) + 1j * amp / math.sqrt(2) * cp.random.randn(len(data1)))
                     dataX = data1 + noise  # dataX: data with noise
                     codesx1 = objective_decode(f, t, dataX)
                     codesx2 = objective_decode_baseline(f, t, dataX)
-                    accs[0, -snr, rep] = sum(1 for a, b in zip(codesx1, codes1) if a == b) / len(codes1)
+                    accs[0, snridx, rep] = sum(1 for a, b in zip(codesx1, codes1) if a == b) / len(codes1)
                     # logger.warning(f"{accs[0, -snr, rep]}")
-                    accs[1, -snr, rep] = sum(1 for a, b in zip(codesx2, codes1) if a == b) / len(codes1)
+                    accs[1, snridx, rep] = sum(1 for a, b in zip(codesx2, codes1) if a == b) / len(codes1)
                     # logger.warning(f"{accs[1, -snr, rep]}")
                     pbar.update(1)
             accs = cp.mean(accs, axis=2)
-            for snr in snrrange:
-                logger.warning(f"{pkt_idx=}, {snr=}, {accs[0, -snr]=}, {accs[1, -snr]=}")
-                fulldata.append([pkt_idx, snr, accs[0, -snr], accs[1, -snr]])
+
+            for snridx, snr in enumerate(snrrange):
+                logger.warning(f"{pkt_idx=}, {snr=}, {accs[0, snridx]=}, {accs[1, snridx]=}")
+                fulldata.append([pkt_idx, snr, accs[0, snridx], accs[1, snridx]])
             pbar.close()
 
             with open(f"{Config.sf}data.pkl", "wb") as fi: pickle.dump(accs, fi)
@@ -100,7 +99,7 @@ if __name__ == "__main__":
 
         if False:
             bytes_per_complex = 8
-            byte_offset = round(est_to_s_full) * bytes_per_complex
+            byte_offset = around(est_to_s_full) * bytes_per_complex
             L = Config.nsamp * Config.total_len
 
             with open(file_path, 'rb') as f:
