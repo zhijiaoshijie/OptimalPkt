@@ -111,10 +111,6 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
         else:
             y_value_secondary = 1
 
-        k = fstart / Config.sig_freq * Config.bw
-        k = 0
-        coefficients = (k, y_value - (Config.skip_preambles + detect_pkt) * k)
-        polynomial = cp.poly1d(coefficients)
         # logger.warning(f"Wpoly {coefficients} {-41774.000/Config.sig_freq * Config.bw}")
 
         # up-down algorithm
@@ -129,8 +125,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
         else:
             fdown2 = 1
 
-        fft_val_up = (polynomial(fdown_pos) - (
-                    Config.fft_n // 2)) / fft_sig_n  # rate, [-0.5, 0.5) if no cfo and to it should be zero  #!!! because previous +0.5
+        fft_val_up = (y_value - (Config.fft_n // 2)) / fft_sig_n  # rate, [-0.5, 0.5) if no cfo and to it should be zero  #!!! because previous +0.5
         fft_val_down = (fdown - (Config.fft_n // 2)) / fft_sig_n
 
         # try all possible variations (unwrap f0, t0 if their real value exceed [-0.5, 0.5))

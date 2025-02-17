@@ -53,7 +53,7 @@ if __name__ == "__main__":
                     pktlen = int((len(data1) - t) / Config.nsampf - 0.25)
                     est_cfo_f, est_to_s = f, t
                     est_to_s_full = est_to_s + (read_idx * Config.nsamp)
-                    logger.warning(f"est f{file_path_id:3d} {est_cfo_f=:.6f} {est_to_s=:.6f} {pkt_idx=:3d} {read_idx=:5d} tot {est_to_s_full:15.2f} {retval=:.6f}")
+                    logger.warning(f"coarse_work_fast() end: {pkt_idx=:3d} inputf={file_path_id:3d} {est_cfo_f=:.6f} {est_to_s=:.6f} {read_idx=:5d} tot {est_to_s_full:15.2f} {retval=:.6f}")
 
                     if t < 0:
                         logger.error(f"ERROR in {est_cfo_f=} {est_to_s=} out {f=} {t=} {file_path=} {pkt_idx=}")

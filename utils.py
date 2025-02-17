@@ -14,6 +14,8 @@ else:
 
 def sqlist(lst):
     return [item if isinstance(item, (int, float)) else item.item() for item in lst]
+def tos(item):
+    return item if isinstance(item, (int, float)) else item.item()
 
 def around(x):
     return round(float(x))
@@ -109,21 +111,21 @@ class Config:
     fft_downs_x = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.complex64)
 
 
+logging.basicConfig(
+    # format='%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(funcName)s - %(message)s',
+    format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s',
+    level=logging.WARNING
+)
 
-logger = logging.getLogger('my_logger')
-level = logging.WARNING
-logger.setLevel(level)
-console_handler = logging.StreamHandler()
-console_handler.setLevel(level)  # Set the console handler level
-file_handler = logging.FileHandler('run_241115_2.log')
-file_handler.setLevel(level)  # Set the file handler level
+logger = logging.getLogger(__name__)
+file_handler = logging.FileHandler('run_241219.log')
+file_handler.setLevel(level=logging.DEBUG)  # Set the file handler level
 # formatter = logging.Formatter('%(message)s')
 # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+# formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 # formatter = logging.Formatter('%(levelname)s - %(message)s')
-console_handler.setFormatter(formatter)
-file_handler.setFormatter(formatter)
-logger.addHandler(console_handler)
+# console_handler.setFormatter(formatter)
+# file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 
 if use_gpu:

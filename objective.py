@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 from sklearn.cluster import KMeans
+from scipy.optimize import minimize
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
@@ -144,10 +145,23 @@ def find_power(est_cfo_f, est_to_s, pktdata_in):
     assert totlen == Config.total_len, f"find_power {Config.total_len=} != {totlen=}"
     return new_est_to_s
 
+def optimize_1dfreq_fast(sig2, tsymbr, freq1, margin):
+    def obj1(freq, xdata, ydata):
+        return -cp.abs(ydata.dot(cp.exp(xdata * -1j * 2 * cp.pi * freq.item()))).item()
+    result = minimize(obj1, tos(freq1), args=(tsymbr, sig2), bounds=[(freq1 - margin, freq1 + margin)]) #!!!
+    return result.x[0], - result.fun / cp.sum(cp.abs(sig2))
+
 # <<< PURE LOG PRINTING, SHOW POWER OF EACH SYMBOL TO DETERMINE IF ALIGNED WITH SFD >>>
 def showpower(est_cfo_f, est_to_s, pktdata_in, name):
     betai = Config.bw / ((2 ** Config.sf) / Config.bw) * (1 + 2 * est_cfo_f / Config.sig_freq)
-    for pidx in range(Config.sfdpos - 2, Config.sfdpos + 2):
+    fs = []
+    start_pos_all_new = 2 ** Config.sf / Config.bw * Config.fs * (Config.sfdpos - 3) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
+    start_pos = around(start_pos_all_new)
+    tstandard = cp.arange(start_pos,start_pos + Config.nsamp * 7)
+    fig = go.Figure(layout_title_text=f"{name} all")
+    fig.add_trace(go.Scatter(x=tocpu(tstandard / Config.fs), y=tocpu(cp.unwrap(cp.angle(pktdata_in[tstandard])))))
+    fig.show()
+    for pidx in range(Config.sfdpos - 3, Config.sfdpos + 3):
         start_pos_all_new = 2 ** Config.sf / Config.bw * Config.fs * pidx * (1 - est_cfo_f / Config.sig_freq) + est_to_s
         start_pos = around(start_pos_all_new)
         tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1] + (start_pos - start_pos_all_new) / Config.fs
@@ -156,9 +170,24 @@ def showpower(est_cfo_f, est_to_s, pktdata_in, name):
         else:
             refchirp = cp.exp(-1j * 2 * cp.pi * ((Config.bw * 0.5 * (1 + est_cfo_f / Config.sig_freq) + est_cfo_f) * tstandard - 0.5 * betai * tstandard * tstandard))
         sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
-        pow = cp.abs(sig1.dot(refchirp)) / cp.sum(cp.abs(sig1))
-        px.line(y=tocpu(cp.unwrap(cp.angle(sig1))), title=f"{name} {pidx - Config.sfdpos=} {pow=}").show()
-        logger.warning(f"{name} {pidx - Config.sfdpos=} {pow=}")
+        sig2 = sig1 * refchirp
+        data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
+        freq1 = cp.fft.fftshift(cp.fft.fftfreq(Config.fft_n, d=1 / Config.fs))[cp.argmax(cp.abs(data0))]
+        freq, pow = optimize_1dfreq_fast(sig2, tstandard, freq1, Config.fs / Config.fft_n * 5)
+        fig = go.Figure(layout_title_text=f"{name} {pidx - Config.sfdpos=} {pow=} {freq=}")
+        fig.add_trace(go.Scatter(x = tocpu(tstandard), y=tocpu(cp.unwrap(cp.angle(sig1)))))
+        fig.add_trace(go.Scatter(x = tocpu(tstandard), y=tocpu(cp.unwrap(cp.angle(cp.conj(refchirp) * cp.exp(1j * 2 * cp.pi * tstandard * freq))))))
+        fig.show()
+        if pidx == Config.sfdpos - 1 or pidx == Config.sfdpos: fs.append(freq)
+        logger.warning(f"showpower() {name} {pidx - Config.sfdpos=} {pow=} {freq1=} {freq=}")
+    if name == "new":
+        delta_cfo_f = (fs[0] + fs[1]) / 2
+        delta_to_s = (-fs[0] + fs[1]) / 2 / betai * Config.fs
+        logger.warning(f"showpower() {fs[0]=} {fs[1]=} {delta_cfo_f=} {delta_to_s=}")
+        showpower(est_cfo_f + delta_cfo_f, est_to_s + delta_to_s, pktdata_in, 'chk')
+        sys.exit(2)
+
+
 
 def objective_decode_baseline(est_cfo_f, est_to_s, pktdata_in):
     nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
