@@ -109,7 +109,8 @@ def objective_decode_old(est_cfo_f, est_to_s, pktdata_in):
         codesv = cp.zeros(Config.n_classes, dtype=float)
         start_pos_all_new = 2 ** Config.sf / Config.bw * Config.fs * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
         start_pos = round(start_pos_all_new)
-        tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1] + (start_pos - start_pos_all_new) / Config.fs
+        tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
+        dt = (start_pos - start_pos_all_new) / Config.fs
         for code in range(Config.n_classes):
             nsamples = round(Config.nsamp / Config.n_classes * (Config.n_classes - code))
             f01 = Config.bw * (-0.5 + code / Config.n_classes) * (1 + est_cfo_f / Config.sig_freq) + est_cfo_f
@@ -117,8 +118,9 @@ def objective_decode_old(est_cfo_f, est_to_s, pktdata_in):
             f02 = Config.bw * (-1.5 + code / Config.n_classes) * (1 + est_cfo_f / Config.sig_freq) + est_cfo_f
             refchirpc2 = cp.exp(-1j * 2 * cp.pi * (f02 * tstandard + 0.5 * betai * tstandard * tstandard))
 
-            sig2 = cp.abs(pktdata_in[start_pos: nsamples + start_pos].dot(refchirpc1[:nsamples]))
-            if code > 0: sig3 = pktdata_in[start_pos + nsamples: start_pos + Config.nsamp].dot(refchirpc2[nsamples:])
+            sig1 = pktdata_in[start_pos: Config.nsamp + start_pos] * cp.exp(1j * 2 * cp.pi * betai * dt)
+            sig2 = sig1[:nsamples].dot(refchirpc1[:nsamples])
+            if code > 0: sig3 = sig1[nsamples:].dot(refchirpc2[nsamples:])
             else: sig3 = cp.array(0)
             codesv[code] = cp.abs(sig2).item() ** 2 + cp.abs(sig3).item() ** 2
             # if code==42:
