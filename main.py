@@ -36,20 +36,17 @@ if __name__ == "__main__":
             if read_idx == 0: continue
             # plt.plot(tocpu(cp.unwrap(cp.angle(data1[:200000]))))
             # plt.show()
-            # plt.plot(tocpu(cp.unwrap(cp.angle(data2[:200000]))))
-            # plt.show()
             # if pkt_idx < 1: continue
             # if pkt_idx > 2: break
 
             # normalization
             nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
-            logger.info(f"Prework {pkt_idx=} {len(data1)/nsamp_small=} {cp.mean(cp.abs(data1))=} {cp.mean(cp.abs(data2))=}")
+            logger.info(f"Prework {pkt_idx=} {len(data1)/nsamp_small=} {cp.mean(cp.abs(data1))=}")
             fig = go.Figure()
             fig.add_trace(go.Scatter(x=np.arange(len(data1))/nsamp_small, y=tocpu(cp.unwrap(cp.angle(data1)))))
             for i in range(math.ceil(len(data1)/nsamp_small)): fig.add_vline(x=i)
             fig.show()
             # data1 /= cp.mean(cp.abs(data1))
-            # data2 /= cp.mean(cp.abs(data2))
             # objective_decode(-41890.277+25, 12802.113, data1)
             # continue#sys.exit(0)
 

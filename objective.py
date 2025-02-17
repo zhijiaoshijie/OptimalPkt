@@ -103,47 +103,38 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     # fig.show()
     return codes
 def objective_decode_old(est_cfo_f, est_to_s, pktdata_in):
-    vals = np.zeros(Config.sfdpos + 2, dtype=np.complex64)
-    yvals2 = np.zeros(Config.sfdpos + 2, dtype=int)
-    vallen = Config.preamble_len - Config.skip_preambles + 2
-
-    nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
     codes = []
-    angdiffs = []
+    betai = Config.bw / ((2 ** Config.sf) / Config.bw) * (1 + 2 * est_cfo_f / Config.sig_freq)
     for pidx in range(Config.sfdpos + 2, Config.total_len):
-        # codes1 = []
-        # codes2 = []
-        codesv = []
-        angdv = []
-        start_pos_all_new = nsamp_small * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
+        codesv = cp.zeros(Config.n_classes, dtype=float)
+        start_pos_all_new = 2 ** Config.sf / Config.bw * Config.fs * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
         start_pos = round(start_pos_all_new)
-        cfoppm1 = (1 + est_cfo_f / Config.sig_freq)  # TODO!!!
         tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1] + (start_pos - start_pos_all_new) / Config.fs
         for code in range(Config.n_classes):
             nsamples = round(Config.nsamp / Config.n_classes * (Config.n_classes - code))
-            refchirp = mychirp(tstandard, f0=Config.bw * (-0.5 + code / Config.n_classes) * cfoppm1 + est_cfo_f, f1=Config.bw * (0.5 + code / Config.n_classes) * cfoppm1 + est_cfo_f,
-                                t1=2 ** Config.sf / Config.bw * cfoppm1)[:nsamples]
-            sig1 = pktdata_in[start_pos: nsamples + start_pos]
-            if len(sig1) > 0: sig2 = cp.abs(sig1.dot(cp.conj(refchirp))) #/ cp.sum(cp.abs(sig1))
-            else: sig2 = cp.array(0)
+            f01 = Config.bw * (-0.5 + code / Config.n_classes) * (1 + est_cfo_f / Config.sig_freq) + est_cfo_f
+            refchirpc1 = cp.exp(-1j * 2 * cp.pi * (f01 * tstandard + 0.5 * betai * tstandard * tstandard))
+            f02 = Config.bw * (-1.5 + code / Config.n_classes) * (1 + est_cfo_f / Config.sig_freq) + est_cfo_f
+            refchirpc2 = cp.exp(-1j * 2 * cp.pi * (f02 * tstandard + 0.5 * betai * tstandard * tstandard))
 
-            refchirp = mychirp(tstandard, f0=Config.bw * (-1.5 + code / Config.n_classes) * cfoppm1 + est_cfo_f, f1=Config.bw * (-0.5 + code / Config.n_classes) * cfoppm1 + est_cfo_f,
-                               t1=2 ** Config.sf / Config.bw * cfoppm1)[nsamples:]
-            sig1 = pktdata_in[start_pos + nsamples: start_pos + Config.nsamp]
-            if len(sig1) > 0: sig3 = sig1.dot(cp.conj(refchirp)) #/ cp.sum(cp.abs(sig1))
+            sig2 = cp.abs(pktdata_in[start_pos: nsamples + start_pos].dot(refchirpc1[:nsamples]))
+            if code > 0: sig3 = pktdata_in[start_pos + nsamples: start_pos + Config.nsamp].dot(refchirpc2[nsamples:])
             else: sig3 = cp.array(0)
-            codesv.append(cp.abs(sig2).item() ** 2 + cp.abs(sig3).item() ** 2)
-            angdv.append(cp.angle(sig3).item() - cp.angle(sig2).item())
+            codesv[code] = cp.abs(sig2).item() ** 2 + cp.abs(sig3).item() ** 2
+            # if code==42:
+            #     fig = go.Figure(layout_title_text=f"decode {pidx=} {code=}")
+            #     fig.add_trace(go.Scatter(y=tocpu(cp.unwrap(cp.angle(pktdata_in[start_pos: Config.nsamp + start_pos]))), mode="lines"))
+            #     fig.add_trace(go.Scatter(y=tocpu(cp.unwrap(cp.angle(refchirpc1))), mode="lines"))
+            #     fig.show()
             # codes1.append(sig2.item())
             # codes2.append(sig3.item())
         # fig = go.Figure(layout_title_text=f"decode {pidx=}")
         # fig.add_trace(go.Scatter(y=codesv, mode="lines"))
         # fig.show()
-        # plt.plot(np.unwrap(np.angle(pktdata_in[start_pos - Config.nsamp: start_pos + Config.nsamp].get())))
+        # plt.plot(np.unwrap(np.angle(pktdata_in[start_pos - Config.nsamp: start_pos + Config.nsamp])))
         # plt.show()
-        coderet = np.argmax(np.array(codesv))
+        coderet = cp.argmax(codesv).item()
         codes.append(coderet)
-        angdiffs.append(angdv[coderet])
         # print(pidx, coderet)
     # fig = go.Figure(layout_title_text=f"decode angles")
     # fig.add_trace(go.Scatter(x=codes, y=angdiffs, mode="markers"))
@@ -154,11 +145,11 @@ def objective_decode_baseline(est_cfo_f, est_to_s, pktdata_in):
     codes = []
     tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
     refchirp = mychirp(tstandard, f0=Config.bw * 0.5 - est_cfo_f, f1=Config.bw * -0.5 - est_cfo_f, t1=2 ** Config.sf / Config.bw)
-    for pidx in range(Config.total_len - 2, Config.total_len + 2):
-        start_pos_all_new = nsamp_small * (pidx + 0.25) + est_to_s
-        start_pos = round(start_pos_all_new)
-        sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
-        logger.warning(f"{Config.total_len=} {pidx=} {cp.mean(cp.abs(sig1))=}")
+    # for pidx in range(Config.total_len - 2, Config.total_len + 2):
+    #     start_pos_all_new = nsamp_small * (pidx + 0.25) + est_to_s
+    #     start_pos = round(start_pos_all_new)
+    #     sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
+    #     logger.warning(f"{Config.total_len=} {pidx=} {cp.mean(cp.abs(sig1))=}")
 
     for pidx in range(Config.sfdpos + 2, Config.total_len):
         start_pos_all_new = nsamp_small * (pidx + 0.25) + est_to_s

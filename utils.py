@@ -52,7 +52,7 @@ class Config:
     bw = 406250#*(1-20*1e-6)
     sig_freq = 2.4e9
     preamble_len=15
-    total_len = 123
+    total_len = 119
     file_paths_zip = ((f"/data/djl/OptimalPkt/data0217/sf_{sf}_0116", 0),)  # !!! TODO FOR DEBUG
 
 
