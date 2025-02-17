@@ -74,22 +74,16 @@ class Config:
     tstandard = cp.linspace(0, nsamp / fs, nsamp + 1)[:-1]
     decode_matrix_a = cp.zeros((n_classes, nsamp), dtype=cp.complex64)
     decode_matrix_b = cp.zeros((n_classes, nsamp), dtype=cp.complex64)
-    # for code in range(n_classes):
-    #     nsamples = round(nsamp / n_classes * (n_classes - code))
-    #     f01 = bw * (-0.5 + code / n_classes) * (1 + est_cfo_f / sig_freq) + est_cfo_f
-    #     refchirpc1 = cp.exp(-1j * 2 * cp.pi * (f01 * tstandard + 0.5 * betai * tstandard * tstandard))
-    #     f02 = bw * (-1.5 + code / n_classes) * (1 + est_cfo_f / sig_freq) + est_cfo_f
-    #     refchirpc2 = cp.exp(-1j * 2 * cp.pi * (f02 * tstandard + 0.5 * betai * tstandard * tstandard))
+
+    betai = bw / ((2 ** sf) / bw)
     for code in range(n_classes):
         nsamples = round(nsamp / n_classes * (n_classes - code))
-        refchirp = mychirp(tstandard, f0=bw * (-0.5 + code / n_classes), f1=bw * (0.5 + code / n_classes),
-                           t1=2 ** sf / bw )
-        decode_matrix_a[code, :nsamples] = cp.conj(refchirp[:nsamples])
-
-        refchirp = mychirp(tstandard, f0=bw * (-1.5 + code / n_classes), f1=bw * (-0.5 + code / n_classes),
-                           t1=2 ** sf / bw )
-        decode_matrix_b[code, nsamples:] = cp.conj(refchirp[nsamples:])
-
+        f01 = bw * (-0.5 + code / n_classes)
+        refchirpc1 = cp.exp(-1j * 2 * cp.pi * (f01 * tstandard + 0.5 * betai * tstandard * tstandard))
+        f02 = bw * (-1.5 + code / n_classes)
+        refchirpc2 = cp.exp(-1j * 2 * cp.pi * (f02 * tstandard + 0.5 * betai * tstandard * tstandard))
+        decode_matrix_a[code, :nsamples] = refchirpc1[:nsamples]
+        if code > 0: decode_matrix_b[code, nsamples:] = refchirpc2[nsamples:]
 
     gen_refchirp_deadzone = 0
     sfdpos = preamble_len + code_len
