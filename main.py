@@ -59,12 +59,12 @@ if __name__ == "__main__":
                         logger.error(f"ERROR in {est_cfo_f=} {est_to_s=} out {f=} {t=} {file_path=} {pkt_idx=}")
                         break
             t = find_power(f, t, data1)
-            t = find_power(f, t, data1)
-            continue
+            f, t = refine_ft(f, t, data1)
+            # showpower(f, t, data1, "PLT")
             codes1 = objective_decode(f, t, data1)
-            # logger.warning(f"old  {codes1=}")
+            logger.warning(f"old  {codes1=}")
             codes2 = objective_decode_baseline(f, t, data1)
-            # logger.warning(f"base {codes2=}")
+            logger.warning(f"base {codes2=}")
             logger.warning(f"codes1 and codes2 acc: {sum(1 for a, b in zip(codes1, codes2) if a == b)/len(codes1)}")
             reps = 100
 

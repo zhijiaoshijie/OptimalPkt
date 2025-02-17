@@ -12,6 +12,11 @@ else:
     import numpy as cp
     import scipy.fft as fft
 
+def mget(x):
+    if isinstance(x, cp.ndarray) or isinstance(x, np.ndarray):
+        assert x.shape == ()
+        return x.item()
+    else: return x
 def sqlist(lst):
     return [item if isinstance(item, (int, float)) else item.item() for item in lst]
 def tos(item):
