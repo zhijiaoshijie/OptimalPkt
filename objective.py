@@ -109,6 +109,19 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         # freqs.append(freq)
 
     return codes
+def objective_decode_baseline(est_cfo_f, est_to_s, pktdata_in):
+    codes = []
+    for pidx in range(Config.sfdpos + 2, Config.total_len):
+        start_pos_all_new = 2 ** Config.sf / Config.bw * Config.fs * (pidx + 0.25) + est_to_s
+        start_pos = around(start_pos_all_new)
+        tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
+        dataX = pktdata_in[start_pos: Config.nsamp + start_pos] * cp.exp(-1j * 2 * cp.pi * est_cfo_f * tstandard)
+        data1 = cp.matmul(Config.decode_matrix_a, dataX)
+        data2 = cp.matmul(Config.decode_matrix_b, dataX)
+        vals = cp.abs(data1) ** 2 + cp.abs(data2) ** 2
+        coderet = cp.argmax(vals).item()
+        codes.append(coderet)
+    return codes
 def find_power(est_cfo_f, est_to_s, pktdata_in):
     nsamp_small = 2 ** Config.sf / Config.bw * Config.fs * (1 - est_cfo_f / Config.sig_freq)
     powers = []
@@ -157,10 +170,10 @@ def find_power(est_cfo_f, est_to_s, pktdata_in):
             logger.error(f"ERR find_power: {est_to_s=} misalign by {min(cluster_big)} {new_est_to_s=}")
         else:
             logger.error(f"ERR find_power: {Config.total_len=} != {totlen=}")
-        str1 = ''.join([f'{x:6d}' for x in px])
-        str2 = ''.join([f'{x:6.3f}' for x in powers])
-        str3 = ''.join([f'{int(x in cluster_big):6d}' for x in px])
-        logger.warning(f"ERR find_power:\n {str1} \n {str2} \n {str3}")
+        # str1 = ''.join([f'{x:6d}' for x in px])
+        # str2 = ''.join([f'{x:6.3f}' for x in powers])
+        # str3 = ''.join([f'{int(x in cluster_big):6d}' for x in px])
+        # logger.warning(f"ERR find_power:\n {str1} \n {str2} \n {str3}")
         # showpower(est_cfo_f, est_to_s, pktdata_in, 'old')
         # showpower(est_cfo_f, new_est_to_s, pktdata_in, 'new')
     assert totlen == Config.total_len, f"find_power {Config.total_len=} != {totlen=}"
@@ -213,11 +226,11 @@ def refine_ft(est_cfo_f, est_to_s, pktdata_in):
         freq, pow = optimize_1dfreq(sig2, tstandard, freq1, Config.bw / 4)
         if pidx < Config.sfdpos: fs1.append(freq)
         else: fs2.append(freq)
-    logger.warning(f"{fs1=} {fs2=}")
+    logger.info(f"{fs1=} {fs2=}")
     fs = (np.mean(sqlist(fs1)), np.mean(sqlist(fs2)))
     delta_cfo_f = (fs[0] + fs[1]) / 2
     delta_to_s = (-fs[0] + fs[1]) / 2 / betai * Config.fs
-    logger.warning(f"{delta_cfo_f=} {delta_to_s=}")
+    logger.info(f"{delta_cfo_f=} {delta_to_s=}")
     return est_cfo_f + delta_cfo_f, est_to_s + delta_to_s
 
 
@@ -261,7 +274,7 @@ def showpower(est_cfo_f, est_to_s, pktdata_in, name):
 
 
 
-def objective_decode_baseline(est_cfo_f, est_to_s, pktdata_in):
+def objective_decode_baseline_fft(est_cfo_f, est_to_s, pktdata_in):
     nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
     codes = []
     tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]

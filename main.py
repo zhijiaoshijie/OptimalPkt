@@ -53,7 +53,7 @@ if __name__ == "__main__":
                     pktlen = int((len(data1) - t) / Config.nsampf - 0.25)
                     est_cfo_f, est_to_s = f, t
                     est_to_s_full = est_to_s + (read_idx * Config.nsamp)
-                    logger.warning(f"coarse_work_fast() end: {pkt_idx=:3d} inputf={file_path_id:3d} {est_cfo_f=:.6f} {est_to_s=:.6f} {read_idx=:5d} tot {est_to_s_full:15.2f} {retval=:.6f}")
+                    logger.warning(f"coarse_work_fast() end: {Config.sf=} {pkt_idx=:3d} inputf={file_path_id:3d} {est_cfo_f=:.6f} {est_to_s=:.6f} {read_idx=:5d} tot {est_to_s_full:15.2f} {retval=:.6f}")
 
                     if t < 0:
                         logger.error(f"ERROR in {est_cfo_f=} {est_to_s=} out {f=} {t=} {file_path=} {pkt_idx=}")
@@ -62,10 +62,12 @@ if __name__ == "__main__":
             f, t = refine_ft(f, t, data1)
             # showpower(f, t, data1, "PLT")
             codes1 = objective_decode(f, t, data1)
-            logger.warning(f"old  {codes1=}")
+            logger.info(f"old  {codes1=}")
             codes2 = objective_decode_baseline(f, t, data1)
-            logger.warning(f"base {codes2=}")
+            logger.info(f"base {codes2=}")
             logger.warning(f"codes1 and codes2 acc: {sum(1 for a, b in zip(codes1, codes2) if a == b)/len(codes1)}")
+            # continue <<< FIRST CONTINUE HERE TO MAKE SURE PAYLOAD LEN IS CORRECT AND CAN DECODE >>>
+
             reps = 100
 
             snrrange = np.arange(-40, 10, 1)
