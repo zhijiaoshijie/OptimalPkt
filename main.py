@@ -59,10 +59,8 @@ if __name__ == "__main__":
                         logger.error(f"ERROR in {est_cfo_f=} {est_to_s=} out {f=} {t=} {file_path=} {pkt_idx=}")
                         break
 
-            codes1 = objective_decode_old(f, t, data1)
+            codes1 = objective_decode(f, t, data1)
             logger.warning(f"old  {codes1=}")
-            # codes3 = objective_decode(f, t, data1)
-            # logger.warning(f"ours {codes3=}")
             codes2 = objective_decode_baseline(f, t, data1)
             logger.warning(f"base {codes2=}")
             logger.warning(f"{codes1==codes2=}")
@@ -78,7 +76,7 @@ if __name__ == "__main__":
                     amp = math.pow(0.1, snr / 20) * cp.mean(cp.abs(data1[round(len(data1)/4):round(len(data1)*0.75)]))
                     noise = (amp / math.sqrt(2) * cp.random.randn(num_samples) + 1j * amp / math.sqrt(2) * cp.random.randn(num_samples))
                     dataX = data1 + noise  # dataX: data with noise
-                    codesx1 = objective_decode_old(f, t, dataX)
+                    codesx1 = objective_decode(f, t, dataX)
                     codesx2 = objective_decode_baseline(f, t, dataX)
                     accs[0, -snr, rep] = sum(1 for a, b in zip(codesx1, codes1) if a == b) / len(codes1)
                     # logger.warning(f"{accs[0, -snr, rep]}")

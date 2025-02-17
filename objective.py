@@ -70,39 +70,8 @@ def gen_matrix2(dt, est_cfo_f):
                            t1=2 ** Config.sf / Config.bw * (1 - est_cfo_f / Config.sig_freq) )
         decode_matrix_b[code, nsamples:] = cp.conj(refchirp[nsamples:])* cfosymb[nsamples:]
     return decode_matrix_a, decode_matrix_b
+
 def objective_decode(est_cfo_f, est_to_s, pktdata_in):
-    nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
-    codes = []
-    betai = Config.bw / ((2 ** Config.sf) / Config.bw) * Config.fs * (1 + 2 * est_cfo_f / Config.sig_freq)
-
-    for pidx in range(Config.sfdpos + 2, Config.total_len):
-        start_pos_all_new = nsamp_small * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
-        start_pos = round(start_pos_all_new)
-        dt =  (start_pos - start_pos_all_new) / Config.fs
-        decode_matrix_a, decode_matrix_b = gen_matrix2(dt, est_cfo_f)
-        # dataX = add_freq(pktdata_in[start_pos: start_pos + Config.nsamp], dt * betai + est_cfo_f)
-        # dataX = add_freq(pktdata_in[start_pos: start_pos + Config.nsamp], dt * betai)
-        dataX = pktdata_in[start_pos: start_pos + Config.nsamp]
-
-        dataX = np.array(dataX).T
-        data1 = np.matmul(decode_matrix_a, dataX)
-        data2 = np.matmul(decode_matrix_b, dataX)
-        vals = np.abs(data1) ** 2 + np.abs(data2) ** 2
-        # fig = go.Figure(layout_title_text=f"decode")
-        # fig.add_trace(go.Scatter(y=vals))
-        # fig.show()
-        # fig = go.Figure(layout_title_text=f"symb")
-        # fig.add_trace(go.Scatter(y=tocpu(cp.unwrap(cp.angle(pktdata_in[start_pos: start_pos + Config.nsamp])))))
-        # fig.show()
-        est = np.argmax(vals).item()
-
-        codes.append(est)
-        # print(pidx, coderet)
-    # fig = go.Figure(layout_title_text=f"decode angles")
-    # fig.add_trace(go.Scatter(x=codes, y=angdiffs, mode="markers"))
-    # fig.show()
-    return codes
-def objective_decode_old(est_cfo_f, est_to_s, pktdata_in):
     codes = []
     betai = Config.bw / ((2 ** Config.sf) / Config.bw) * (1 + 2 * est_cfo_f / Config.sig_freq)
     for pidx in range(Config.sfdpos + 2, Config.total_len):
@@ -111,23 +80,11 @@ def objective_decode_old(est_cfo_f, est_to_s, pktdata_in):
         start_pos = round(start_pos_all_new)
         tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
         dt = (start_pos - start_pos_all_new) / Config.fs
-        for code in range(Config.n_classes):
-            sig1 = pktdata_in[start_pos: Config.nsamp + start_pos] * cp.exp(-1j * 2 * cp.pi * (est_cfo_f + betai * dt) * tstandard)
-            sig2 = sig1.dot(Config.decode_matrix_a[code])
-            if code > 0: sig3 = sig1.dot(Config.decode_matrix_b[code])
-            else: sig3 = cp.array(0)
-            codesv[code] = cp.abs(sig2).item() ** 2 + cp.abs(sig3).item() ** 2
-            # if code==42:
-            #     fig = go.Figure(layout_title_text=f"decode {pidx=} {code=}")
-            #     fig.add_trace(go.Scatter(y=tocpu(cp.unwrap(cp.angle(pktdata_in[start_pos: Config.nsamp + start_pos]))), mode="lines"))
-            #     fig.add_trace(go.Scatter(y=tocpu(cp.unwrap(cp.angle(refchirpc1))), mode="lines"))
-            #     fig.show()
-        # fig = go.Figure(layout_title_text=f"decode {pidx=}")
-        # fig.add_trace(go.Scatter(y=codesv, mode="lines"))
-        # fig.show()
-        # plt.plot(np.unwrap(np.angle(pktdata_in[start_pos - Config.nsamp: start_pos + Config.nsamp])))
-        # plt.show()
-        coderet = cp.argmax(codesv).item()
+        dataX = pktdata_in[start_pos: Config.nsamp + start_pos] * cp.exp(-1j * 2 * cp.pi * (est_cfo_f + betai * dt) * tstandard)
+        data1 = cp.matmul(Config.decode_matrix_a, dataX)
+        data2 = cp.matmul(Config.decode_matrix_b, dataX)
+        vals = cp.abs(data1) ** 2 + cp.abs(data2) ** 2
+        coderet = cp.argmax(vals).item()
         codes.append(coderet)
     return codes
 def objective_decode_baseline(est_cfo_f, est_to_s, pktdata_in):
