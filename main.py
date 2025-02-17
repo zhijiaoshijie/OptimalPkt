@@ -62,9 +62,9 @@ if __name__ == "__main__":
             f, t = refine_ft(f, t, data1)
             # showpower(f, t, data1, "PLT")
             codes1 = objective_decode(f, t, data1)
-            logger.info(f"old  {codes1=}")
+            logger.warning(f"old  {codes1=}")
             codes2 = objective_decode_baseline(f, t, data1)
-            logger.info(f"base {codes2=}")
+            logger.warning(f"base {codes2=}")
             logger.warning(f"codes1 and codes2 acc: {sum(1 for a, b in zip(codes1, codes2) if a == b)/len(codes1)}")
             # continue <<< FIRST CONTINUE HERE TO MAKE SURE PAYLOAD LEN IS CORRECT AND CAN DECODE >>>
 

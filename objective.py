@@ -112,7 +112,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
 def objective_decode_baseline(est_cfo_f, est_to_s, pktdata_in):
     codes = []
     for pidx in range(Config.sfdpos + 2, Config.total_len):
-        start_pos_all_new = 2 ** Config.sf / Config.bw * Config.fs * (pidx + 0.25) + est_to_s
+        start_pos_all_new = 2 ** Config.sf / Config.bw * Config.fs * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
         start_pos = around(start_pos_all_new)
         tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
         dataX = pktdata_in[start_pos: Config.nsamp + start_pos] * cp.exp(-1j * 2 * cp.pi * est_cfo_f * tstandard)
