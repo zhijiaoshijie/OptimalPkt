@@ -50,22 +50,27 @@ parser = argparse.ArgumentParser(description="Sample argparse script")
 
 # Add the integer argument with a default value of 7
 parser.add_argument('--sf', type=int, default=7, help="Set the value of sf (default is 7)")
-
-# Parse the arguments
 args = parser.parse_args()
 
-# Access the value of the argument
-sf_value = args.sf
-
-
 class Config:
-
-    sf = args.sf
-    bw = 406250#*(1-20*1e-6)
-    sig_freq = 2.4e9
-    preamble_len=15
-    total_len = [136, 119, 107, 97, 90, 96, 89][sf - 6]
-    file_paths_zip = ((f"/data/djl/OptimalPkt/data0217/sf_{sf}_0116", 0),)  # !!! TODO FOR DEBUG
+    # sf = args.sf # parse hbq's 6~12 data
+    # bw = 406250#*(1-20*1e-6)
+    # sig_freq = 2.4e9
+    # preamble_len=15
+    # total_len = [136, 119, 107, 97, 90, 96, 89][sf - 6]
+    # file_paths_zip = ((f"/data/djl/OptimalPkt/data0217/sf_{sf}_0116", 0),)  # !!! TODO FOR DEBUG
+    # guess_f = -40000
+    sf = 12#args.sf # parse outdoordata0217
+    bw = 125000
+    sig_freq = 470000000
+    preamble_len= 10
+    total_len = 42
+    a = sf - 7
+    file_paths_zip = []
+    for x in range(1, [5, 2, 2, 3, 3, 4][sf - 7]):
+        file_paths_zip.append(f"/data/djl/datasets/outdoordata0217/sf{sf}{x}.sigdat")
+    outpath = f"/data/djl/datasets/outdoordata0217_cut/sf{sf}"
+    guess_f = 0
 
 
 

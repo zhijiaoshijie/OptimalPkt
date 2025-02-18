@@ -1,4 +1,5 @@
 from sklearn.mixture import GaussianMixture
+import matplotlib.pyplot as plt
 import itertools
 from sklearn.cluster import KMeans
 import plotly.express as px
@@ -15,7 +16,7 @@ def preprocess_file(file_path):
     fsize = int(os.stat(file_path).st_size / (Config.nsamp * 4 * 2))
     logger.debug(f'reading file: {file_path} SF: {Config.sf} pkts in file: {fsize}')
     # read max power of first 5000 windows, for envelope detection
-    power_eval_len = 5000
+    power_eval_len = 1000
     nmaxs = []
     for idx, rawdata in enumerate(read_large_file(file_path)):
         nmaxs.append(cp.max(cp.abs(rawdata)))
@@ -39,17 +40,25 @@ def preprocess_file(file_path):
         thresh_manual = 0.02
     if thresh < 0.01:
         logger.error(f"ERR too small thresh check {thresh=} {mean1=} {mean2=} {file_path=}")
-        if False:
-            counts, bins = cp.histogram(nmaxs, bins=100)
-            # logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
-            threshpos = np.searchsorted(tocpu(bins), thresh).item()
-            logger.debug(f"lower: {cp_str(counts[:threshpos])}")
-            logger.debug(f"higher: {cp_str(counts[threshpos:])}")
-            fig = px.line(nmaxs)
-            fig.add_hline(y=thresh, line_color='Black')
-            if thresh_manual is not None: fig.add_hline(y=thresh_manual, line_color='Red')
-            fig.update_layout(title=f"powermap of {file_path} length {len(nmaxs)}")
-            fig.show()
+        # # <<< PLOTFIG FOR POWER ENVELOPE DETECTION >>>
+    if True:
+        counts, bins = cp.histogram(togpu(nmaxs), bins=100)
+        # logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
+        threshpos = np.searchsorted(tocpu(bins), thresh).item()
+        logger.debug(f"lower: {cp_str(counts[:threshpos])}")
+        logger.debug(f"higher: {cp_str(counts[threshpos:])}")
+        # fig = px.line(nmaxs)
+        # fig.add_hline(y=thresh, line_color='Black')
+        # if thresh_manual is not None: fig.add_hline(y=thresh_manual, line_color='Red')
+        # fig.update_layout(title=f"powermap of {file_path} length {len(nmaxs)}")
+        # fig.show()
+        plt.plot(nmaxs)
+        plt.axhline(y=thresh, color='black', linestyle='-', label=f'Threshold (Auto): {thresh}')
+        if thresh_manual is not None:
+            plt.axhline(y=thresh_manual, color='red', linestyle='-', label=f'Threshold (Manual): {thresh_manual}')
+        plt.title(f"Powermap of {file_path} length {len(nmaxs)} {thresh=} {thresh_manual=}")
+        plt.show()
+
     # thresh = max(thresh, 0.01)
     # if threshold may not work set this to True
     # plot the power map
@@ -78,7 +87,7 @@ def read_large_file(file_path_in):
 
 
 
-def read_pkt(file_path_in1, threshold, min_length=10):
+def read_pkt(file_path_in1, threshold, min_length=15):
     current_sequence1 = []
 
     read_idx = -1

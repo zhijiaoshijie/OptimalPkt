@@ -73,6 +73,22 @@ def gen_matrix2(dt, est_cfo_f):
                            t1=2 ** Config.sf / Config.bw * (1 - est_cfo_f / Config.sig_freq) )
         decode_matrix_b[code, nsamples:] = cp.conj(refchirp[nsamples:])* cfosymb[nsamples:]
     return decode_matrix_a, decode_matrix_b
+def objective_cut(est_cfo_f, est_to_s, pktdata_in, pkt_idx):
+    betai = Config.bw / ((2 ** Config.sf) / Config.bw) * (1 + 2 * est_cfo_f / Config.sig_freq)
+    outpath = os.path.join(Config.outpath, str(pkt_idx))
+    if not os.path.exists(outpath): os.makedirs(outpath)
+    for pidx in range(Config.sfdpos + 2, Config.total_len):
+        start_pos_all_new = 2 ** Config.sf / Config.bw * Config.fs * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
+        start_pos = around(start_pos_all_new)
+        tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
+        dt = (start_pos - start_pos_all_new) / Config.fs
+        dataX = pktdata_in[start_pos: Config.nsamp + start_pos] * cp.exp(-1j * 2 * cp.pi * (est_cfo_f + betai * dt) * tstandard)
+        dataX = dataX.astype(cp.complex64)
+        data1 = cp.matmul(Config.decode_matrix_a, dataX)
+        data2 = cp.matmul(Config.decode_matrix_b, dataX)
+        vals = cp.abs(data1) ** 2 + cp.abs(data2) ** 2
+        coderet = cp.argmax(vals).item()
+        dataX.tofile(os.path.join(outpath, f"{pidx - Config.sfdpos - 2}_{coderet}_{pkt_idx}_{Config.sf}"))
 
 def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     codes = []
@@ -176,8 +192,8 @@ def find_power(est_cfo_f, est_to_s, pktdata_in):
         # logger.warning(f"ERR find_power:\n {str1} \n {str2} \n {str3}")
         # showpower(est_cfo_f, est_to_s, pktdata_in, 'old')
         # showpower(est_cfo_f, new_est_to_s, pktdata_in, 'new')
-    assert totlen == Config.total_len, f"find_power {Config.total_len=} != {totlen=}"
-    return new_est_to_s
+    # assert totlen == Config.total_len, f"find_power {Config.total_len=} != {totlen=}"
+    return new_est_to_s, totlen == Config.total_len
 
 def optimize_1dfreq_fast(sig2, tsymbr, freq1, margin):
     def obj1(freq, xdata, ydata):
