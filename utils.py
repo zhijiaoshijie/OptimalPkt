@@ -4,7 +4,7 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 
-use_gpu = True
+use_gpu = False
 if use_gpu:
     import cupy as cp
     import cupyx.scipy.fft as fft
@@ -60,17 +60,30 @@ class Config:
     # total_len = [136, 119, 107, 97, 90, 96, 89][sf - 6]
     # file_paths_zip = ((f"/data/djl/OptimalPkt/data0217/sf_{sf}_0116", 0),)  # !!! TODO FOR DEBUG
     # guess_f = -40000
-    sf = 12#args.sf # parse outdoordata0217
+
+    # sf = args.sf # parse outdoordata0217
+    # bw = 125000
+    # sig_freq = 470000000
+    # preamble_len= 10
+    # total_len = 42
+    # file_paths_zip = []
+    # for x in range(1, [5, 2, 2, 3, 3, 4][sf - 7]):
+    #     file_paths_zip.append(f"/data/djl/datasets/outdoordata0217/sf{sf}{x}.sigdat")
+    # outpath = f"/data/djl/datasets/outdoordata0217_cut/sf{sf}"
+    # guess_f = 0
+
+    sf = args.sf # parse /data/djl/250125-unsplit
     bw = 125000
     sig_freq = 470000000
     preamble_len= 10
-    total_len = 42
-    a = sf - 7
-    file_paths_zip = []
-    for x in range(1, [5, 2, 2, 3, 3, 4][sf - 7]):
-        file_paths_zip.append(f"/data/djl/datasets/outdoordata0217/sf{sf}{x}.sigdat")
+    total_len = 77
+    file_paths_zip = ['/data/djl/250125-unsplit/sf12_bw125k.sigdat', '/data/djl/250125-unsplit/sf12_bw125k_2.sigdat', '/data/djl/250125-unsplit/sf12_bw125k_3.sigdat','/data/djl/250125-unsplit/sf12_bw125k_4.sigdat']
+    # file_paths_zip = []
+    # for x in range(1, [5, 2, 2, 3, 3, 4][sf - 7]):
+    #     file_paths_zip.append(f"/data/djl/datasets/outdoordata0217/sf{sf}{x}.sigdat")
     outpath = f"/data/djl/datasets/outdoordata0217_cut/sf{sf}"
     guess_f = 0
+
 
 
 

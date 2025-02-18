@@ -184,7 +184,7 @@ def find_power(est_cfo_f, est_to_s, pktdata_in):
     if min(cluster_big) != 0 or totlen != Config.total_len:
         if min(cluster_big) != 0:
             logger.error(f"ERR find_power: {est_to_s=} misalign by {min(cluster_big)} {new_est_to_s=}")
-        else:
+        if totlen != Config.total_len:
             logger.error(f"ERR find_power: {Config.total_len=} != {totlen=}")
         # str1 = ''.join([f'{x:6d}' for x in px])
         # str2 = ''.join([f'{x:6.3f}' for x in powers])

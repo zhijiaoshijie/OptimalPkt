@@ -2,6 +2,7 @@ import time
 import csv
 import pickle
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 
 from work import *
@@ -33,11 +34,18 @@ if __name__ == "__main__":
             nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
             logger.info(f"Prework {pkt_idx=} {len(data1)/nsamp_small=} {cp.mean(cp.abs(data1))=}")
 
-            # # <<< PLOT WHOLE DATA1 TO SEE LENGTH OF PREAMBLE AND PAYLOAD >>>
+            # <<< PLOT WHOLE DATA1 TO SEE LENGTH OF PREAMBLE AND PAYLOAD >>>
             # fig = go.Figure()
-            # fig.add_trace(go.Scatter(x=np.arange(len(data1))/nsamp_small, y=tocpu(cp.unwrap(cp.angle(data1)))))
-            # for i in range(math.ceil(len(data1)/nsamp_small)): fig.add_vline(x=i)
+            # fig.add_trace(go.Scatter(x=np.arange(len(data1)) / nsamp_small, y=tocpu(cp.unwrap(cp.angle(data1)))))
+            # for i in range(math.ceil(len(data1) / nsamp_small)): fig.add_vline(x=i)
             # fig.show()
+            # y_values = cp.asnumpy(cp.unwrap(cp.angle(data1)))
+            # x_values = np.arange(len(data1)) / nsamp_small
+            # plt.plot(x_values, y_values)
+            # for i in range(math.ceil(len(data1) / nsamp_small)):
+            #     plt.axvline(x=i, color='r', linestyle='--', linewidth=1)
+            # plt.title('Plot with Vertical Lines')
+            # plt.show()
 
             est_cfo_f = Config.guess_f
             est_to_s = 0

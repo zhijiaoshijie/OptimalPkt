@@ -40,8 +40,8 @@ def preprocess_file(file_path):
         thresh_manual = 0.02
     if thresh < 0.01:
         logger.error(f"ERR too small thresh check {thresh=} {mean1=} {mean2=} {file_path=}")
-        # # <<< PLOTFIG FOR POWER ENVELOPE DETECTION >>>
-    if True:
+    # # <<< PLOTFIG FOR POWER ENVELOPE DETECTION >>>
+    if False:
         counts, bins = cp.histogram(togpu(nmaxs), bins=100)
         # logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
         threshpos = np.searchsorted(tocpu(bins), thresh).item()
