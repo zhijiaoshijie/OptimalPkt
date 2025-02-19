@@ -68,11 +68,47 @@ if __name__ == "__main__":
             if not flag: continue
             f, t = refine_ft(f, t, data1)
             # showpower(f, t, data1, "PLT")
-            # codes1 = objective_decode(f, t, data1)
-            # logger.warning(f"old  {codes1=}")
-            # codes2 = objective_decode_baseline(f, t, data1)
-            # logger.warning(f"base {codes2=}")
-            # logger.warning(f"codes1 and codes2 acc: {sum(1 for a, b in zip(codes1, codes2) if a == b)/len(codes1)}")
-            # continue <<< FIRST CONTINUE HERE TO MAKE SURE PAYLOAD LEN IS CORRECT AND CAN DECODE >>>
-            objective_cut(f, t, data1, pkt_idx_cnt)
-            pkt_idx_cnt += 1
+            codes1 = objective_decode(f, t, data1)
+            logger.warning(f"ours {codes1=}")
+            codes2 = objective_decode_baseline(f, t, data1)
+            logger.warning(f"base {codes2=}")
+            logger.warning(f"codes1 and codes2 acc: {sum(1 for a, b in zip(codes1, codes2) if a == b)/len(codes1)}")
+            # continue # <<< FIRST CONTINUE HERE TO MAKE SURE PAYLOAD LEN IS CORRECT AND CAN DECODE >>>
+            # objective_cut(f, t, data1, pkt_idx_cnt)
+            # pkt_idx_cnt += 1
+
+            reps = 100
+
+            snrrange = np.arange(-40, 10, 1)
+            accs = cp.zeros((2, len(snrrange), reps), dtype=float)
+            pbar = tqdm(total=len(snrrange) * reps)
+            for snridx, snr in enumerate(snrrange):
+                for rep in range(reps):
+                    amp = math.pow(0.1, snr / 20) * cp.mean(
+                        cp.abs(data1[around(len(data1) / 4):around(len(data1) * 0.75)]))
+                    noise = (amp / math.sqrt(2) * cp.random.randn(len(data1)) + 1j * amp / math.sqrt(
+                        2) * cp.random.randn(len(data1)))
+                    dataX = data1 + noise  # dataX: data with noise
+                    codesx1 = objective_decode(f, t, dataX)
+                    codesx2 = objective_decode_baseline(f, t, dataX)
+                    accs[0, snridx, rep] = sum(1 for a, b in zip(codesx1, codes1) if a == b) / len(codes1)
+                    # logger.warning(f"{accs[0, -snr, rep]}")
+                    accs[1, snridx, rep] = sum(1 for a, b in zip(codesx2, codes1) if a == b) / len(codes1)
+                    # logger.warning(f"{accs[1, -snr, rep]}")
+                    pbar.update(1)
+            accs = cp.mean(accs, axis=2)
+
+            for snridx, snr in enumerate(snrrange):
+                if pkt_idx == 1: logger.warning(f"{pkt_idx=}, {snr=}, {accs[0, snridx]=}, {accs[1, snridx]=}")
+                fulldata.append([pkt_idx, snr, accs[0, snridx], accs[1, snridx]])
+            pbar.close()
+
+            with open(f"{Config.sf}data_no_dt.pkl", "wb") as fi:
+                pickle.dump(accs, fi)
+            header = ["pktID", "SNR", "ACCours", "ACCbaseline"]
+            csv_file_path = f'data_out_no_dt_{Config.sf}.csv'
+            with open(csv_file_path, 'w', newline='') as csvfile:
+                csvwriter = csv.writer(csvfile)
+                csvwriter.writerow(header)  # Write the header
+                for row in fulldata:
+                    csvwriter.writerow(row)
