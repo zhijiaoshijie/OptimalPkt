@@ -68,9 +68,9 @@ if __name__ == "__main__":
             if not flag: continue
             f, t = refine_ft(f, t, data1)
             # showpower(f, t, data1, "PLT")
-            codes1 = objective_decode(f, t, data1)
+            codes1,freqs,phases = objective_decode(f, t, data1)
             logger.warning(f"ours {codes1=}")
-            codes2 = objective_decode_baseline(f, t, data1)
+            codes2,_,_ = objective_decode_baseline(f, t, data1)
             logger.warning(f"base {codes2=}")
             logger.warning(f"codes1 and codes2 acc: {sum(1 for a, b in zip(codes1, codes2) if a == b)/len(codes1)}")
             # continue # <<< FIRST CONTINUE HERE TO MAKE SURE PAYLOAD LEN IS CORRECT AND CAN DECODE >>>
@@ -81,6 +81,9 @@ if __name__ == "__main__":
 
             snrrange = np.arange(-40, 10, 1)
             accs = cp.zeros((2, len(snrrange), reps), dtype=float)
+            fccs = cp.zeros((2, len(snrrange), reps), dtype=float)
+            pccs = cp.zeros((2, len(snrrange), reps), dtype=float)
+
             pbar = tqdm(total=len(snrrange) * reps)
             for snridx, snr in enumerate(snrrange):
                 for rep in range(reps):
@@ -89,13 +92,17 @@ if __name__ == "__main__":
                     noise = (amp / math.sqrt(2) * cp.random.randn(len(data1)) + 1j * amp / math.sqrt(
                         2) * cp.random.randn(len(data1)))
                     dataX = data1 + noise  # dataX: data with noise
-                    codesx1 = objective_decode(f, t, dataX)
-                    codesx2 = objective_decode_baseline(f, t, dataX)
+                    codesx1,freqs1,phases1 = objective_decode(f, t, dataX)
+                    codesx2,freqs2,phases2 = objective_decode_baseline(f, t, dataX)
                     accs[0, snridx, rep] = sum(1 for a, b in zip(codesx1, codes1) if a == b) / len(codes1)
-                    # logger.warning(f"{accs[0, -snr, rep]}")
                     accs[1, snridx, rep] = sum(1 for a, b in zip(codesx2, codes1) if a == b) / len(codes1)
-                    # logger.warning(f"{accs[1, -snr, rep]}")
+                    fccs[0, snridx, rep] = cp.mean(freqs1).item()
+                    fccs[1, snridx, rep] = cp.mean(freqs2).item()
+                    pccs[0, snridx, rep] = cp.mean(cp.abs(wrap(phases1-phases))).item()
+                    pccs[1, snridx, rep] = cp.mean(cp.abs(wrap(phases2-phases))).item()
+
                     pbar.update(1)
+                    #logger.warning(f"{snr=} {accs[0, snridx, rep]} {accs[1, snridx, rep]} {fccs[0, snridx, rep]} {fccs[1, snridx, rep]} {pccs[0, snridx, rep]} {pccs[1, snridx, rep]}")
             accs = cp.mean(accs, axis=2)
 
             for snridx, snr in enumerate(snrrange):
@@ -105,7 +112,7 @@ if __name__ == "__main__":
 
             with open(f"{Config.sf}data_no_dt.pkl", "wb") as fi:
                 pickle.dump(accs, fi)
-            header = ["pktID", "SNR", "ACCours", "ACCbaseline"]
+            header = ["pktID", "SNR", "ACCOurs", "ACCBaseline", "FreqErrOurs", "FreqErrBaseline", "PhaseErrOurs", "PhaseErrBaseline"]
             csv_file_path = f'data_out_no_dt_{Config.sf}.csv'
             with open(csv_file_path, 'w', newline='') as csvfile:
                 csvwriter = csv.writer(csvfile)

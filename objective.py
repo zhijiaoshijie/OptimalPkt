@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+from scipy.optimize import differential_evolution
 from sklearn.cluster import KMeans
 from scipy.optimize import minimize
 import numpy as np
@@ -92,6 +93,8 @@ def objective_cut(est_cfo_f, est_to_s, pktdata_in, pkt_idx):
 
 def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     codes = []
+    freqs = []
+    phases = []
     betai = Config.bw / ((2 ** Config.sf) / Config.bw) * (1 + 2 * est_cfo_f / Config.sig_freq)
     for pidx in range(Config.sfdpos + 2, Config.total_len):
         start_pos_all_new = 2 ** Config.sf / Config.bw * Config.fs * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
@@ -104,6 +107,14 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         vals = cp.abs(data1) ** 2 + cp.abs(data2) ** 2
         coderet = cp.argmax(vals).item()
         codes.append(coderet)
+        if coderet < 2 ** Config.sf / 2:
+            sig2 = Config.decode_matrix_a[coderet] * dataX
+            phases.append(cp.angle(data1[coderet]).item())
+        else:
+            sig2 = Config.decode_matrix_b[coderet] * dataX
+            phases.append(cp.angle(data2[coderet]).item())
+        freq,x = optimize_1dfreq_fast(sig2, tstandard, 0, Config.bw / 2 ** Config.sf * 4)
+        freqs.append(freq)
 
         # <<< DEBUG >>>
         # code = coderet
@@ -124,11 +135,14 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         # freq = freq1 * nsamples/Config.nsamp + freq2 * (1 - nsamples/Config.nsamp)
         # freqs.append(freq)
 
-    return codes
+    return codes,cp.array(sqlist(freqs)),cp.array(sqlist(phases))
 def objective_decode_baseline(est_cfo_f, est_to_s, pktdata_in):
     codes = []
+    phases = []
+    freqs = []
     for pidx in range(Config.sfdpos + 2, Config.total_len):
-        start_pos_all_new = 2 ** Config.sf / Config.bw * Config.fs * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
+        #start_pos_all_new = 2 ** Config.sf / Config.bw * Config.fs * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s # decode considering STO
+        start_pos_all_new = 2 ** Config.sf / Config.bw * Config.fs * (pidx + 0.25) + est_to_s
         start_pos = around(start_pos_all_new)
         tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
         dataX = pktdata_in[start_pos: Config.nsamp + start_pos] * cp.exp(-1j * 2 * cp.pi * est_cfo_f * tstandard)
@@ -137,7 +151,15 @@ def objective_decode_baseline(est_cfo_f, est_to_s, pktdata_in):
         vals = cp.abs(data1) ** 2 + cp.abs(data2) ** 2
         coderet = cp.argmax(vals).item()
         codes.append(coderet)
-    return codes
+        if coderet < 2 ** Config.sf / 2:
+            sig2 = Config.decode_matrix_a[coderet] * dataX
+            phases.append(cp.angle(data1[coderet]).item())
+        else:
+            sig2 = Config.decode_matrix_b[coderet] * dataX
+            phases.append(cp.angle(data2[coderet]).item())
+        freq,_ = optimize_1dfreq_fast(sig2, tstandard, 0, Config.bw / 2 ** Config.sf * 4)
+        freqs.append(freq)
+    return codes,cp.array(sqlist(freqs)),cp.array(sqlist(phases))
 def find_power(est_cfo_f, est_to_s, pktdata_in):
     nsamp_small = 2 ** Config.sf / Config.bw * Config.fs * (1 - est_cfo_f / Config.sig_freq)
     powers = []
@@ -195,11 +217,16 @@ def find_power(est_cfo_f, est_to_s, pktdata_in):
     # assert totlen == Config.total_len, f"find_power {Config.total_len=} != {totlen=}"
     return new_est_to_s, totlen == Config.total_len
 
+
 def optimize_1dfreq_fast(sig2, tsymbr, freq1, margin):
     def obj1(freq, xdata, ydata):
         return -cp.abs(ydata.dot(cp.exp(xdata * -1j * 2 * cp.pi * freq.item()))).item()
-    result = minimize(obj1, tos(freq1), args=(tsymbr, sig2), bounds=[(freq1 - margin, freq1 + margin)]) #!!!
-    return result.x[0], - result.fun / cp.sum(cp.abs(sig2))
+
+    bounds = [(freq1 - margin, freq1 + margin)]  # your frequency bounds
+    result = differential_evolution(obj1, bounds, args=(tsymbr, sig2), updating='deferred')
+
+    return result.x[0], -result.fun / cp.sum(cp.abs(sig2))
+
 def optimize_1dfreq(sig2, tsymbr, freq, margin):
     def obj1(xdata, ydata, freq):
         return cp.abs(ydata.dot(cp.exp(-1j * 2 * cp.pi * freq * xdata)))
