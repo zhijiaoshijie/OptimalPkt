@@ -77,7 +77,7 @@ if __name__ == "__main__":
             # objective_cut(f, t, data1, pkt_idx_cnt)
             # pkt_idx_cnt += 1
 
-            reps = 100
+            reps = 1
 
             snrrange = np.arange(-40, 10, 1)
             accs = cp.zeros((2, len(snrrange), reps), dtype=float)
@@ -107,7 +107,7 @@ if __name__ == "__main__":
 
             for snridx, snr in enumerate(snrrange):
                 if pkt_idx == 1: logger.warning(f"{pkt_idx=}, {snr=}, {accs[0, snridx]=}, {accs[1, snridx]=}")
-                fulldata.append([pkt_idx, snr, accs[0, snridx], accs[1, snridx]])
+                fulldata.append([pkt_idx, snr, accs[0, snridx], accs[1, snridx], fccs[0, snridx], fccs[1, snridx], pccs[0, snridx], pccs[1, snridx]])
             pbar.close()
 
             with open(f"{Config.sf}data_no_dt.pkl", "wb") as fi:
