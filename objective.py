@@ -229,7 +229,7 @@ def optimize_1dfreq_fast(sig2, tsymbr, freq1, margin):
     bounds = [(freq1 - margin, freq1 + margin)]  # your frequency bounds
     result = differential_evolution(obj1, bounds, args=(tsymbr, sig2), updating='deferred')
 
-    return result.x[0], -result.fun # / cp.sum(cp.abs(sig2))
+    return result.x[0], -result.fun / cp.sum(cp.abs(sig2))
 
 def optimize_1dfreq(sig2, tsymbr, freq, margin):
     def obj1(xdata, ydata, freq):

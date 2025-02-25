@@ -20,10 +20,10 @@ def preprocess_file(file_path):
     power_skip_len = power_eval_len // 10
     nmaxs = []
     for idx, rawdata in enumerate(read_large_file(file_path)):
+        if idx < power_skip_len: continue
         nmaxs.append(cp.max(cp.abs(rawdata)))
         if idx == power_eval_len - 1: break
     nmaxs = tocpu(cp.array(nmaxs))
-    nmaxs[:power_skip_len] = 0
     # clustering
     data = nmaxs.reshape(-1, 1)
     gmm = GaussianMixture(n_components=2)
@@ -43,7 +43,7 @@ def preprocess_file(file_path):
     if thresh < 0.01:
         logger.error(f"ERR too small thresh check {thresh=} {mean1=} {mean2=} {file_path=}")
     # # <<< PLOTFIG FOR POWER ENVELOPE DETECTION >>>
-    if False:
+    if True:
         counts, bins = cp.histogram(togpu(nmaxs), bins=100)
         # logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
         threshpos = np.searchsorted(tocpu(bins), thresh).item()

@@ -28,7 +28,7 @@ if __name__ == "__main__":
 
             # read data: read_idx is the index of packet end window in the file
             read_idx, data1 = pkt_data
-            data1 /= cp.mean(data1)
+
             # (Optional) skip the first pkt because it may be half a pkt. read_idx == len(data1) means this pkt start from start of file
             if read_idx == 0: continue
 
@@ -60,7 +60,7 @@ if __name__ == "__main__":
                     pktlen = int((len(data1) - t) / Config.nsampf - 0.25)
                     est_cfo_f, est_to_s = f, t
                     est_to_s_full = est_to_s + (read_idx * Config.nsamp)
-                    logger.warning(f"coarse_work_fast() end: {Config.sf=} {pkt_idx=:3d} inputf={est_cfo_f=:.6f} {est_to_s=:.6f} {read_idx=:5d} tot {est_to_s_full:15.2f} {retval=:.6f}")
+                    logger.warning(f"coarse_work_fast() end: {Config.sf=} {pkt_idx=} inputf={est_cfo_f=} {est_to_s=} {read_idx=} tot {est_to_s_full} {retval=}")
 
                     if t < 0:
                         logger.error(f"ERROR in {est_cfo_f=} {est_to_s=} out {f=} {t=} {file_path=} {pkt_idx=}")
@@ -70,9 +70,9 @@ if __name__ == "__main__":
             f, t = refine_ft(f, t, data1)
             # showpower(f, t, data1, "PLT")
             codes1,freqs,phases,_ = objective_decode(f, t, data1)
-            logger.warning(f"ours {codes1=}")
+            # logger.warning(f"ours {codes1=}")
             codes2,_,_,_ = objective_decode_baseline(f, t, data1)
-            logger.warning(f"base {codes2=}")
+            # logger.warning(f"base {codes2=}")
             logger.warning(f"codes1 and codes2 acc: {sum(1 for a, b in zip(codes1, codes2) if a == b)/len(codes1)}")
             # continue # <<< FIRST CONTINUE HERE TO MAKE SURE PAYLOAD LEN IS CORRECT AND CAN DECODE >>>
             # objective_cut(f, t, data1, pkt_idx_cnt)
@@ -98,8 +98,8 @@ if __name__ == "__main__":
                     codesx2,freqs2,phases2,h2 = objective_decode_baseline(f, t, dataX)
                     accs[0, snridx, rep] = sum(1 for a, b in zip(codesx1, codes1) if a == b) / len(codes1)
                     accs[1, snridx, rep] = sum(1 for a, b in zip(codesx2, codes1) if a == b) / len(codes1)
-                    fccs[0, snridx, rep] = cp.mean(freqs1).item()
-                    fccs[1, snridx, rep] = cp.mean(freqs2).item()
+                    fccs[0, snridx, rep] = cp.mean(cp.abs(freqs1)).item()
+                    fccs[1, snridx, rep] = cp.mean(cp.abs(freqs2)).item()
                     pccs[0, snridx, rep] = cp.mean(cp.abs(wrap(phases1-phases))).item()
                     pccs[1, snridx, rep] = cp.mean(cp.abs(wrap(phases2-phases))).item()
                     hccs[0, snridx, rep] = cp.mean(cp.abs(h1 - 1)).item()
