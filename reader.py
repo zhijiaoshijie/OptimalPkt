@@ -16,12 +16,14 @@ def preprocess_file(file_path):
     fsize = int(os.stat(file_path).st_size / (Config.nsamp * 4 * 2))
     logger.debug(f'reading file: {file_path} SF: {Config.sf} pkts in file: {fsize}')
     # read max power of first 5000 windows, for envelope detection
-    power_eval_len = 1000
+    power_eval_len = 5000
+    power_skip_len = power_eval_len // 10
     nmaxs = []
     for idx, rawdata in enumerate(read_large_file(file_path)):
         nmaxs.append(cp.max(cp.abs(rawdata)))
         if idx == power_eval_len - 1: break
     nmaxs = tocpu(cp.array(nmaxs))
+    nmaxs[:power_skip_len] = 0
     # clustering
     data = nmaxs.reshape(-1, 1)
     gmm = GaussianMixture(n_components=2)

@@ -95,6 +95,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     codes = []
     freqs = []
     phases = []
+    heights = []
     betai = Config.bw / ((2 ** Config.sf) / Config.bw) * (1 + 2 * est_cfo_f / Config.sig_freq)
     for pidx in range(Config.sfdpos + 2, Config.total_len):
         start_pos_all_new = 2 ** Config.sf / Config.bw * Config.fs * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
@@ -115,6 +116,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
             phases.append(cp.angle(data2[coderet]).item())
         freq,x = optimize_1dfreq_fast(sig2, tstandard, 0, Config.bw / 2 ** Config.sf * 4)
         freqs.append(freq)
+        heights.append(x)
 
         # <<< DEBUG >>>
         # code = coderet
@@ -135,11 +137,12 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         # freq = freq1 * nsamples/Config.nsamp + freq2 * (1 - nsamples/Config.nsamp)
         # freqs.append(freq)
 
-    return codes,cp.array(sqlist(freqs)),cp.array(sqlist(phases))
+    return codes,cp.array(sqlist(freqs)),cp.array(sqlist(phases)),cp.array(sqlist(heights))
 def objective_decode_baseline(est_cfo_f, est_to_s, pktdata_in):
     codes = []
     phases = []
     freqs = []
+    heights = []
     for pidx in range(Config.sfdpos + 2, Config.total_len):
         #start_pos_all_new = 2 ** Config.sf / Config.bw * Config.fs * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s # decode considering STO
         start_pos_all_new = 2 ** Config.sf / Config.bw * Config.fs * (pidx + 0.25) + est_to_s
@@ -157,9 +160,10 @@ def objective_decode_baseline(est_cfo_f, est_to_s, pktdata_in):
         else:
             sig2 = Config.decode_matrix_b[coderet] * dataX
             phases.append(cp.angle(data2[coderet]).item())
-        freq,_ = optimize_1dfreq_fast(sig2, tstandard, 0, Config.bw / 2 ** Config.sf * 4)
+        freq,h = optimize_1dfreq_fast(sig2, tstandard, 0, Config.bw / 2 ** Config.sf * 4)
         freqs.append(freq)
-    return codes,cp.array(sqlist(freqs)),cp.array(sqlist(phases))
+        heights.append(h)
+    return codes,cp.array(sqlist(freqs)),cp.array(sqlist(phases)),cp.array(sqlist(heights))
 def find_power(est_cfo_f, est_to_s, pktdata_in):
     nsamp_small = 2 ** Config.sf / Config.bw * Config.fs * (1 - est_cfo_f / Config.sig_freq)
     powers = []
@@ -214,7 +218,7 @@ def find_power(est_cfo_f, est_to_s, pktdata_in):
         # logger.warning(f"ERR find_power:\n {str1} \n {str2} \n {str3}")
         # showpower(est_cfo_f, est_to_s, pktdata_in, 'old')
         # showpower(est_cfo_f, new_est_to_s, pktdata_in, 'new')
-    # assert totlen == Config.total_len, f"find_power {Config.total_len=} != {totlen=}"
+    assert totlen == Config.total_len, f"find_power {Config.total_len=} != {totlen=}"
     return new_est_to_s, totlen == Config.total_len
 
 
@@ -225,7 +229,7 @@ def optimize_1dfreq_fast(sig2, tsymbr, freq1, margin):
     bounds = [(freq1 - margin, freq1 + margin)]  # your frequency bounds
     result = differential_evolution(obj1, bounds, args=(tsymbr, sig2), updating='deferred')
 
-    return result.x[0], -result.fun / cp.sum(cp.abs(sig2))
+    return result.x[0], -result.fun # / cp.sum(cp.abs(sig2))
 
 def optimize_1dfreq(sig2, tsymbr, freq, margin):
     def obj1(xdata, ydata, freq):
