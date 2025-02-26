@@ -61,6 +61,8 @@ class Config:
     sig_freq = 2.4e9
     preamble_len=15
     total_len = [157, 136, 119, 107, 97, 90, 96, 89][sf - 5]
+    total_len_fixed = False
+    if total_len_fixed: total_len = 20
     file_paths_zip = (f"/data/djl/OptimalPkt/data0217/sf_{sf}_0116",)  # !!! TODO FOR DEBUG
     guess_f = -40000
 
@@ -163,7 +165,7 @@ else:
 Config = Config()
 
 if Config.sf>=11: logger.error(f"WARNING: ENABLING LDRO")
-
+if Config.total_len_fixed: logger.error(f"WARNING: Total len fixed {Config.total_len}")
 
 def add_freq(pktdata_in, est_cfo_freq):
     cfosymb = cp.exp(2j * cp.pi * est_cfo_freq * cp.linspace(0, (len(pktdata_in) - 1) / Config.fs, num=len(pktdata_in)))

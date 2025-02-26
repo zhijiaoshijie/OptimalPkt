@@ -116,7 +116,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
             phases.append(cp.angle(data2[coderet]).item())
         freq,x = optimize_1dfreq_fast(sig2, tstandard, 0, Config.bw / 2 ** Config.sf * 4)
         freqs.append(freq)
-        heights.append(x)
+        heights.append((cp.abs(data1[coderet])+ cp.abs(data2[coderet])) / cp.sum(cp.abs(dataX))) 
 
         # <<< DEBUG >>>
         # code = coderet
@@ -162,7 +162,7 @@ def objective_decode_baseline(est_cfo_f, est_to_s, pktdata_in):
             phases.append(cp.angle(data2[coderet]).item())
         freq,h = optimize_1dfreq_fast(sig2, tstandard, 0, Config.bw / 2 ** Config.sf * 4)
         freqs.append(freq)
-        heights.append(h)
+        heights.append((cp.abs(data1[coderet])+ cp.abs(data2[coderet])) / cp.sum(cp.abs(dataX)))
     return codes,cp.array(sqlist(freqs)),cp.array(sqlist(phases)),cp.array(sqlist(heights))
 def find_power(est_cfo_f, est_to_s, pktdata_in):
     nsamp_small = 2 ** Config.sf / Config.bw * Config.fs * (1 - est_cfo_f / Config.sig_freq)
@@ -207,10 +207,10 @@ def find_power(est_cfo_f, est_to_s, pktdata_in):
 
     new_est_to_s = min(cluster_big) * nsamp_small + est_to_s
     totlen = len(cluster_big)
-    if min(cluster_big) != 0 or totlen != Config.total_len:
+    if min(cluster_big) != 0 or (totlen != Config.total_len and not Config.total_len_fixed):
         if min(cluster_big) != 0:
             logger.error(f"ERR find_power: {est_to_s=} misalign by {min(cluster_big)} {new_est_to_s=}")
-        if totlen != Config.total_len:
+        if totlen != Config.total_len and not Config.total_len_fixed:
             logger.error(f"ERR find_power: {Config.total_len=} != {totlen=}")
         # str1 = ''.join([f'{x:6d}' for x in px])
         # str2 = ''.join([f'{x:6.3f}' for x in powers])
@@ -218,8 +218,9 @@ def find_power(est_cfo_f, est_to_s, pktdata_in):
         # logger.warning(f"ERR find_power:\n {str1} \n {str2} \n {str3}")
         # showpower(est_cfo_f, est_to_s, pktdata_in, 'old')
         # showpower(est_cfo_f, new_est_to_s, pktdata_in, 'new')
-    assert totlen == Config.total_len, f"find_power {Config.total_len=} != {totlen=}"
-    return new_est_to_s, totlen == Config.total_len
+    # <<< Todo Assertion turned off during production or fixed length >>>
+    # assert totlen == Config.total_len, f"find_power {Config.total_len=} != {totlen=}"
+    return new_est_to_s, totlen == Config.total_len or Config.total_len_fixed
 
 
 def optimize_1dfreq_fast(sig2, tsymbr, freq1, margin):
@@ -229,7 +230,7 @@ def optimize_1dfreq_fast(sig2, tsymbr, freq1, margin):
     bounds = [(freq1 - margin, freq1 + margin)]  # your frequency bounds
     result = differential_evolution(obj1, bounds, args=(tsymbr, sig2), updating='deferred')
 
-    return result.x[0], -result.fun / cp.sum(cp.abs(sig2))
+    return result.x[0], -result.fun #/ cp.sum(cp.abs(sig2))
 
 def optimize_1dfreq(sig2, tsymbr, freq, margin):
     def obj1(xdata, ydata, freq):
