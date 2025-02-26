@@ -168,6 +168,30 @@ def objective_decode_baseline(est_cfo_f, est_to_s, pktdata_in):
         freqs.append(freq)
         heights.append((cp.abs(data1[coderet])+ cp.abs(data2[coderet])) / cp.sum(cp.abs(dataX)))
     return codes,cp.array(sqlist(freqs)),cp.array(sqlist(phases)),cp.array(sqlist(heights))
+
+def find_power_new(est_cfo_f, est_to_s, pktdata_in, minrange = -2, maxrange = 2):
+    nsamp_small = 2 ** Config.sf / Config.bw * Config.fs * (1 - est_cfo_f / Config.sig_freq)
+    powers = []
+    px = []
+    pidx_range = range(Config.sfdpos + minrange, Config.sfdpos + 2 + maxrange)
+    betai = Config.bw / ((2 ** Config.sf) / Config.bw) * Config.fs * (1 + 2 * est_cfo_f / Config.sig_freq)
+    for pidx in pidx_range:
+        start_pos_all_new = nsamp_small * (pidx + 0) + est_to_s
+        start_pos = around(start_pos_all_new)
+        sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
+        tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1] + (start_pos - start_pos_all_new) / Config.fs
+        refchirp = cp.exp(-1j * 2 * cp.pi * ((Config.bw * -0.5 * (1 + est_cfo_f / Config.sig_freq) + est_cfo_f) * tstandard + 0.5 * betai * tstandard * tstandard))
+
+        sig2 = sig1 * refchirp
+        data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
+        freq1 = cp.fft.fftshift(cp.fft.fftfreq(Config.fft_n, d=1 / Config.fs))[cp.argmax(cp.abs(data0))]
+        # # <<< PLOT FFT RESULT >>>
+        pltfig1(cp.fft.fftshift(cp.fft.fftfreq(Config.fft_n, d=1 / Config.fs)), cp.abs(data0), title=f"findpower fft {pidx=}").show()
+        freq, pow = optimize_1dfreq(sig2, tstandard, freq1, Config.bw / 4)
+        px.append(pow)
+    pltfig1(pidx_range,sqlist(px), addvline=(Config.sfdpos, Config.sfdpos + 1), title="findpower new").show()
+
+
 def find_power(est_cfo_f, est_to_s, pktdata_in):
     nsamp_small = 2 ** Config.sf / Config.bw * Config.fs * (1 - est_cfo_f / Config.sig_freq)
     powers = []

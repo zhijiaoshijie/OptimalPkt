@@ -71,6 +71,7 @@ if __name__ == "__main__":
                         break
             pbar.set_description(f"{os.path.basename(file_path)} sf={Config.sf} {pkt_idx_cnt} f={est_cfo_f:.2f} t={est_to_s:.2f} Fw")
             est_to_s, flag = find_power(est_cfo_f, est_to_s, data1)
+            find_power_new(est_cfo_f, est_to_s, data1)
             # if not flag: continue ## !!!TODO debug
             pbar.set_description(f"{os.path.basename(file_path)} sf={Config.sf} {pkt_idx_cnt} f={est_cfo_f:.2f} t={est_to_s:.2f} Rw")
             est_cfo_f, est_to_s = refine_ft(est_cfo_f, est_to_s, data1)
