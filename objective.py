@@ -57,9 +57,9 @@ def objective_linear(cfofreq, time_error, pktdata2a):
 
 
 def gen_matrix2(dt, est_cfo_f):
-    betai = Config.bw / ((2 ** Config.sf) / Config.bw) * Config.fs * (1 + 2 * est_cfo_f / Config.sig_freq)
+    betaix = Config.bw / ((2 ** Config.sf) / Config.bw) * Config.fs * (1 + 2 * est_cfo_f / Config.sig_freq)
 
-    df = (est_cfo_f + dt * betai)
+    df = (est_cfo_f + dt * betaix)
     cfosymb = cp.exp(2j * cp.pi * df * cp.linspace(0, Config.nsamp / Config.fs, num=Config.nsamp, endpoint=False)).astype(cp.complex64)
     decode_matrix_a = cp.zeros((Config.n_classes, Config.nsamp), dtype=cp.complex64)
     decode_matrix_b = cp.zeros((Config.n_classes, Config.nsamp), dtype=cp.complex64)
@@ -174,21 +174,26 @@ def find_power_new(est_cfo_f, est_to_s, pktdata_in, minrange = -2, maxrange = 2)
     powers = []
     px = []
     pidx_range = range(Config.sfdpos + minrange, Config.sfdpos + 2 + maxrange)
-    betai = Config.bw / ((2 ** Config.sf) / Config.bw) * Config.fs * (1 + 2 * est_cfo_f / Config.sig_freq)
+    betai = Config.bw / ((2 ** Config.sf) / Config.bw) * (1 + 2 * est_cfo_f / Config.sig_freq)
     for pidx in pidx_range:
         start_pos_all_new = nsamp_small * (pidx + 0) + est_to_s
         start_pos = around(start_pos_all_new)
         sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
-        tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1] + (start_pos - start_pos_all_new) / Config.fs
+        tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]* (1 - est_cfo_f / Config.sig_freq) + (start_pos - start_pos_all_new) / Config.fs
         refchirp = cp.exp(-1j * 2 * cp.pi * ((Config.bw * -0.5 * (1 + est_cfo_f / Config.sig_freq) + est_cfo_f) * tstandard + 0.5 * betai * tstandard * tstandard))
 
         sig2 = sig1 * refchirp
         data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
         freq1 = cp.fft.fftshift(cp.fft.fftfreq(Config.fft_n, d=1 / Config.fs))[cp.argmax(cp.abs(data0))]
         # # <<< PLOT FFT RESULT >>>
-        pltfig1(cp.fft.fftshift(cp.fft.fftfreq(Config.fft_n, d=1 / Config.fs)), cp.abs(data0), title=f"findpower fft {pidx=}").show()
+        # pltfig1(cp.fft.fftshift(cp.fft.fftfreq(Config.fft_n, d=1 / Config.fs)), cp.abs(data0), title=f"findpower fft {pidx=}").show()
         freq, pow = optimize_1dfreq(sig2, tstandard, freq1, Config.bw / 4)
         px.append(pow)
+        ## todo debug
+        plt.plot(tocpu(cp.unwrap(cp.angle(sig1))))
+        plt.plot(tocpu(cp.unwrap(cp.angle(refchirp))))
+        plt.show()
+        logger.warning(f"{pow=}")
     pltfig1(pidx_range,sqlist(px), addvline=(Config.sfdpos, Config.sfdpos + 1), title="findpower new").show()
 
 
@@ -282,7 +287,7 @@ def refine_ft(est_cfo_f, est_to_s, pktdata_in):
         if pidx == Config.sfdpos - 2 or pidx == Config.sfdpos - 1: continue
         start_pos_all_new = 2 ** Config.sf / Config.bw * Config.fs * pidx * (1 - est_cfo_f / Config.sig_freq) + est_to_s
         start_pos = around(start_pos_all_new)
-        tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1] + (start_pos - start_pos_all_new) / Config.fs
+        tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]* (1 - est_cfo_f / Config.sig_freq) + (start_pos - start_pos_all_new) / Config.fs
         if pidx < Config.sfdpos:
             refchirp = cp.exp(-1j * 2 * cp.pi * ((Config.bw * -0.5 * (1 + est_cfo_f / Config.sig_freq) + est_cfo_f) * tstandard + 0.5 * betai * tstandard * tstandard))
         else:
