@@ -89,7 +89,11 @@ def objective_cut(est_cfo_f, est_to_s, pktdata_in, pkt_idx):
         data2 = cp.matmul(Config.decode_matrix_b, dataX)
         vals = cp.abs(data1) ** 2 + cp.abs(data2) ** 2
         coderet = cp.argmax(vals).item()
-        dataX.tofile(os.path.join(outpath, f"{pidx - Config.sfdpos - 2}_{coderet}_{pkt_idx}_{Config.sf}"))
+        outfpath = os.path.join(outpath, f"{pidx - Config.sfdpos - 2}_{coderet}_{pkt_idx}_{Config.sf}")
+        # logger.warning(outfpath)
+        dataX.tofile(outfpath)
+        # pltfig1(None, cp.unwrap(cp.angle(dataX))).show()
+        # sys.exit(0)
 
 def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     codes = []
@@ -175,12 +179,13 @@ def find_power(est_cfo_f, est_to_s, pktdata_in):
         powers.append(cp.mean(cp.abs(sig1)))
         px.append(pidx)
 
-    for pidx in range(Config.sfdpos + 2, math.floor((len(pktdata_in) - est_to_s)/nsamp_small - 0.25) - 1):
+    for pidx in range(Config.sfdpos + 2, math.floor((len(pktdata_in) - est_to_s - Config.nsamp)/nsamp_small - 0.25) + 1): # sfdpos + 2.25 = startpoint of first symbol
         start_pos_all_new = nsamp_small * (pidx + 0.25) + est_to_s
         start_pos = around(start_pos_all_new)
         sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
         powers.append(cp.mean(cp.abs(sig1)))
         px.append(pidx)
+        # if pidx == Config.sfdpos + 1: pltfig1(None, cp.unwrap(cp.angle(sig1)), title="find_power 1st code").show()
     data_reshaped = np.array(sqlist(powers)).reshape(-1, 1)
 
     # Apply KMeans with 2 clusters
@@ -194,12 +199,7 @@ def find_power(est_cfo_f, est_to_s, pktdata_in):
     centers = kmeans.cluster_centers_
 
     # Plot the data and the cluster centers
-    # plt.scatter(powers, np.zeros_like(powers), c=labels, cmap='viridis')
-    # plt.scatter(centers, np.zeros_like(centers), color='red', marker='x', s=100, label="Cluster Centers")
-    # plt.title('K-means Clustering of the Data')
-    # plt.xlabel('Data Points')
-    # plt.legend()
-    # plt.show()
+    # pltfig1(None, powers, addvline=(Config.preamble_len, Config.sfdpos+2), title="find_power powers").show()
 
     # Printing the clusters
     cluster_big = np.array(px)[labels == (centers[0] < centers[1])]
@@ -207,11 +207,11 @@ def find_power(est_cfo_f, est_to_s, pktdata_in):
 
     new_est_to_s = min(cluster_big) * nsamp_small + est_to_s
     totlen = len(cluster_big)
-    if min(cluster_big) != 0 or (totlen != Config.total_len and not Config.total_len_fixed):
+    if min(cluster_big) != 0 or totlen != Config.total_len:
         if min(cluster_big) != 0:
             logger.error(f"ERR find_power: {est_to_s=} misalign by {min(cluster_big)} {new_est_to_s=}")
-        if totlen != Config.total_len and not Config.total_len_fixed:
-            logger.error(f"ERR find_power: {Config.total_len=} != {totlen=}")
+        if totlen != Config.total_len:
+            logger.error(f"ERR find_power: {Config.total_len=} != {totlen=} {est_cfo_f=} {est_to_s=} {new_est_to_s=}")
         # str1 = ''.join([f'{x:6d}' for x in px])
         # str2 = ''.join([f'{x:6.3f}' for x in powers])
         # str3 = ''.join([f'{int(x in cluster_big):6d}' for x in px])
@@ -220,7 +220,7 @@ def find_power(est_cfo_f, est_to_s, pktdata_in):
         # showpower(est_cfo_f, new_est_to_s, pktdata_in, 'new')
     # <<< Todo Assertion turned off during production or fixed length >>>
     # assert totlen == Config.total_len, f"find_power {Config.total_len=} != {totlen=}"
-    return new_est_to_s, totlen == Config.total_len or Config.total_len_fixed
+    return new_est_to_s, totlen == Config.total_len
 
 
 def optimize_1dfreq_fast(sig2, tsymbr, freq1, margin):
@@ -282,6 +282,28 @@ def refine_ft(est_cfo_f, est_to_s, pktdata_in):
     return est_cfo_f + delta_cfo_f, est_to_s + delta_to_s
 
 
+def showfit(est_cfo_f, est_to_s, pktdata_in, pidx):
+    pidxr = pidx
+    if pidx >= Config.sfdpos + 2:
+        pidxr -= 0.75
+    betai = Config.bw / ((2 ** Config.sf) / Config.bw) * (1 + 2 * est_cfo_f / Config.sig_freq)
+    start_pos_all_new = 2 ** Config.sf / Config.bw * Config.fs * pidxr * (1 - est_cfo_f / Config.sig_freq) + est_to_s
+    start_pos = around(start_pos_all_new)
+    tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1] + (start_pos - start_pos_all_new) / Config.fs
+    if not (pidx >= Config.sfdpos and pidx < Config.sfdpos + 2):
+        refchirp = cp.exp(-1j * 2 * cp.pi * ((Config.bw * -0.5 * (
+                    1 + est_cfo_f / Config.sig_freq) + est_cfo_f) * tstandard + 0.5 * betai * tstandard * tstandard))
+    else:
+        refchirp = cp.exp(-1j * 2 * cp.pi * ((Config.bw * 0.5 * (
+                    1 + est_cfo_f / Config.sig_freq) + est_cfo_f) * tstandard - 0.5 * betai * tstandard * tstandard))
+
+    sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
+    fig = go.Figure(layout_title_text=f"showfit {pidx=}")
+    fig.add_trace(go.Scatter(x=tocpu(tstandard), y=tocpu(cp.unwrap(cp.angle(sig1)))))
+    fig.add_trace(go.Scatter(x=tocpu(tstandard), y=tocpu(cp.unwrap(cp.angle(cp.conj(refchirp))))))
+    fig.show()
+
+
 
 # <<< PURE LOG PRINTING, SHOW POWER OF EACH SYMBOL TO DETERMINE IF ALIGNED WITH SFD >>>
 def showpower(est_cfo_f, est_to_s, pktdata_in, name):
@@ -307,7 +329,7 @@ def showpower(est_cfo_f, est_to_s, pktdata_in, name):
         data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
         freq1 = cp.fft.fftshift(cp.fft.fftfreq(Config.fft_n, d=1 / Config.fs))[cp.argmax(cp.abs(data0))]
         freq, pow = optimize_1dfreq(sig2, tstandard, freq1, Config.bw / 4)
-        fig = go.Figure(layout_title_text=f"{name} {pidx - Config.sfdpos=} {pow=} {freq=}")
+        fig = go.Figure(layout_title_text=f"showpower {name} {pidx - Config.sfdpos=} {pow=} {freq=}")
         fig.add_trace(go.Scatter(x = tocpu(tstandard), y=tocpu(cp.unwrap(cp.angle(sig1)))))
         fig.add_trace(go.Scatter(x = tocpu(tstandard), y=tocpu(cp.unwrap(cp.angle(cp.conj(refchirp) * cp.exp(1j * 2 * cp.pi * tstandard * freq))))))
         fig.show()

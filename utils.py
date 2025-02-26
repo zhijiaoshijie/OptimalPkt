@@ -56,15 +56,26 @@ parser.add_argument('--sf', type=int, default=7, help="Set the value of sf (defa
 args = parser.parse_args()
 
 class Config:
-    sf = args.sf # parse hbq's 6~12 data
-    bw = 406250#*(1-20*1e-6)
-    sig_freq = 2.4e9
-    preamble_len=15
-    total_len = [157, 136, 119, 107, 97, 90, 96, 89][sf - 5]
-    total_len_fixed = False
-    if total_len_fixed: total_len = 20
-    file_paths_zip = (f"/data/djl/OptimalPkt/data0217/sf_{sf}_0116",)  # !!! TODO FOR DEBUG
-    guess_f = -40000
+
+    # parse linjingkai farm clean sf7 20250226
+    sf = args.sf
+    bw = 125000
+    sig_freq = 927.9e6
+    preamble_len = 8
+    total_len = [97, 0, 0, 90][sf - 7]
+    file_paths_zip = [f"/data/djl/datasets/msudata_ljk/farm/clean_data/farm-7-{x}" for x in range(1, 4)]
+    guess_f = 0
+    outpath = f"/data/djl/datasets/msudata_ljk_cut/farm/clean_data/sf{sf}"
+
+    # sf = args.sf # parse hbq's 6~12 data
+    # bw = 406250#*(1-20*1e-6)
+    # sig_freq = 2.4e9
+    # preamble_len=15
+    # total_len = [157, 136, 119, 107, 97, 90, 96, 89][sf - 5]
+    # total_len_fixed = False
+    # if total_len_fixed: total_len = 20
+    # file_paths_zip = (f"/data/djl/OptimalPkt/data0217/sf_{sf}_0116",)
+    # guess_f = -40000
 
     # sf = args.sf # parse outdoordata0217
     # bw = 125000
@@ -165,7 +176,6 @@ else:
 Config = Config()
 
 if Config.sf>=11: logger.error(f"WARNING: ENABLING LDRO")
-if Config.total_len_fixed: logger.error(f"WARNING: Total len fixed {Config.total_len}")
 
 def add_freq(pktdata_in, est_cfo_freq):
     cfosymb = cp.exp(2j * cp.pi * est_cfo_freq * cp.linspace(0, (len(pktdata_in) - 1) / Config.fs, num=len(pktdata_in)))

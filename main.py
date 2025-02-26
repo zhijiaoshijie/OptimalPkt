@@ -31,9 +31,11 @@ if __name__ == "__main__":
 
             # (Optional) skip the first pkt because it may be half a pkt. read_idx == len(data1) means this pkt start from start of file
             if read_idx == 0: continue
+            # if read_idx!=12764: continue
+            # data1.tofile(os.path.join(Config.outpath, "data1.sigdat"))
 
             nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
-            logger.info(f"Prework {pkt_idx=} {len(data1)/nsamp_small=} {cp.mean(cp.abs(data1))=}")
+            logger.warning(f"Prework {pkt_idx=} {len(data1)/nsamp_small=} {cp.mean(cp.abs(data1))=}")
 
             # <<< PLOT WHOLE DATA1 TO SEE LENGTH OF PREAMBLE AND PAYLOAD >>>
             # fig = go.Figure()
@@ -59,23 +61,30 @@ if __name__ == "__main__":
                     est_cfo_f, est_to_s, retval = coarse_work_fast(data1, est_cfo_f, est_to_s, False)# tryi >= 1)
                     pktlen = int((len(data1) - est_to_s) / Config.nsampf - 0.25)
                     est_to_s_full = est_to_s + (read_idx * Config.nsamp)
-                    logger.warning(f"coarse_work_fast() end: {Config.sf=} {pkt_idx=} inputf={est_cfo_f=} {est_to_s=} {read_idx=} tot {est_to_s_full} {retval=}")
+                    logger.warning(f"coarse_work_fast() end: {Config.sf=} {pkt_idx=} inputf={est_cfo_f=} {est_to_s=} {read_idx=}")
 
                     if est_to_s < 0:
                         logger.error(f"ERROR in {est_cfo_f=} {est_to_s=} out {est_cfo_f=} {est_to_s=} {file_path=} {pkt_idx=}")
                         est_to_s = 0
                         break
             est_to_s, flag = find_power(est_cfo_f, est_to_s, data1)
-            if not flag: continue
+            # if not flag: continue ## !!!TODO debug
             est_cfo_f, est_to_s = refine_ft(est_cfo_f, est_to_s, data1)
+            # showfit(est_cfo_f, est_to_s, data1, 0)
+            # showfit(est_cfo_f, est_to_s, data1, 7)
+            # showfit(est_cfo_f, est_to_s, data1, 8)
+            # showfit(est_cfo_f, est_to_s, data1, 9)
+            # showfit(est_cfo_f, est_to_s, data1, 10)
+            # showfit(est_cfo_f, est_to_s, data1, 11)
+            # showfit(est_cfo_f, est_to_s, data1, 12)
+            # showfit(est_cfo_f, est_to_s, data1, 13)
             # showpower(est_cfo_f, est_to_s, data1, "PLT")
-            codes1,freqs,phases,_ = objective_decode(est_cfo_f, est_to_s, data1)
+            # codes1 = objective_decode(est_cfo_f, est_to_s, data1)
             # logger.warning(est_cfo_f"ours {codes1=}")
-            # codes2,_,_,_ = objective_decode_baseline(est_cfo_f, est_to_s, data1)
+            # codes2 = objective_decode_baseline(est_cfo_f, est_to_s, data1)
             # logger.warning(est_cfo_f"base {codes2=}")
             # logger.warning(est_cfo_f"codes1 and codes2 acc: {sum(1 for a, b in zip(codes1, codes2) if a == b)/len(codes1)}")
 
             # continue # <<< FIRST CONTINUE HERE TO MAKE SURE PAYLOAD LEN IS CORRECT AND CAN DECODE >>>
-
             objective_cut(est_cfo_f, est_to_s, data1, pkt_idx_cnt)
             pkt_idx_cnt += 1

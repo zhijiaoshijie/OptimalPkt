@@ -5,6 +5,7 @@ from sklearn.cluster import KMeans
 import plotly.express as px
 
 from utils import *
+from pltfig import pltfig1
 
 
 
@@ -97,12 +98,16 @@ def read_pkt(file_path_in1, threshold, min_length=15):
         read_idx += 1
 
         number1 = cp.max(cp.abs(rawdata1))
+        # if read_idx > 12564: logger.warning(f"{read_idx=} {number1=}")
 
         # Check for threshold in both files
         if number1 > threshold:
             current_sequence1.append(rawdata1)
         else:
             if len(current_sequence1) > min_length:
+                # if read_idx > 12564:
+                     #logger.warning(f"end {read_idx=} {threshold=} {number1=}")
+                     # pltfig1(None, cp.unwrap(cp.angle(rawdata1)), title="read_pkt ending code").show()
                 current_sequence1.append(rawdata1) # end +1 window
                 yield read_idx + 1 - len(current_sequence1), cp.concatenate(current_sequence1)
             current_sequence1 = [rawdata1,] # previous +1 window
