@@ -19,11 +19,11 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
     # plt.axvline(Config.nsamp*2)
     # plt.show()
 
-    tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
-    cfoppm = fstart / Config.sig_freq
-    t1 = 2 ** Config.sf / Config.bw * (1 - cfoppm)
-    upchirp = mychirp(tstandard, f0=-Config.bw / 2, f1=Config.bw / 2, t1=t1)
-    downchirp = mychirp(tstandard, f0=Config.bw / 2, f1=-Config.bw / 2, t1=t1)
+    # tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
+    # cfoppm = fstart / Config.sig_freq
+    # t1 = 2 ** Config.sf / Config.bw * (1 - cfoppm)
+    # upchirp = mychirp(tstandard, f0=-Config.bw / 2, f1=Config.bw / 2, t1=t1)
+    # downchirp = mychirp(tstandard, f0=Config.bw / 2, f1=-Config.bw / 2, t1=t1)
 
     fft_sig_n = Config.bw / Config.fs * Config.fft_n  # around(Config.bw / Config.fs * Config.fft_n) # 4096 fft_n=nsamp*fft_upsamp, nsamp=t*fs=2**sf/bw*fs, fft_sig_n=2**sf * fft_upsamp
 

@@ -53,6 +53,7 @@ parser = argparse.ArgumentParser(description="Sample argparse script")
 
 # Add the integer argument with a default value of 7
 parser.add_argument('--sf', type=int, default=7, help="Set the value of sf (default is 7)")
+parser.add_argument('-n', type=str, default='farm', help="fname")
 args = parser.parse_args()
 
 class Config:
@@ -62,10 +63,11 @@ class Config:
     bw = 125000
     sig_freq = 927.9e6
     preamble_len = 8
-    total_len = [97, 0, 0, 90][sf - 7]
-    file_paths_zip = [f"/data/djl/datasets/msudata_ljk/farm/clean_data/farm-7-{x}" for x in range(1, 4)]
+    total_len = [97, 0, 0, 76][sf - 7]
+    file_paths_zip = []
+    for x in range(1,4): file_paths_zip.append(f"/data/djl/datasets/msudata_ljk/{args.n}-{sf}-{x}")
     guess_f = 0
-    outpath = f"/data/djl/datasets/msudata_ljk_cut/farm/clean_data/sf{sf}"
+    outpath = f"/data/djl/datasets/msudata_ljk_cut/{args.n}/clean_data/sf{sf}"
 
     # sf = args.sf # parse hbq's 6~12 data
     # bw = 406250#*(1-20*1e-6)
@@ -104,7 +106,7 @@ class Config:
 
 
     fs = 1e6
-    skip_preambles = 8  # skip first 8 preambles ## TODO
+    skip_preambles = 2  # skip first 8 preambles ## TODO
     thresh = None# 0.03
     cfo_range = bw // 8
     code_len = 2
@@ -151,6 +153,7 @@ class Config:
     fft_downs_x = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.complex64)
 
 
+
 logging.basicConfig(
     # format='%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(funcName)s - %(message)s',
     format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s',
@@ -176,6 +179,10 @@ else:
 Config = Config()
 
 if Config.sf>=11: logger.error(f"WARNING: ENABLING LDRO")
+
+
+if Config.skip_preambles > Config.preamble_len * 0.4: logger.error(f"ERR skip_preambles too long {Config.skip_preambles} in {Config.preamble_len}")
+if Config.skip_preambles < Config.preamble_len * 0.1: logger.error(f"ERR skip_preambles too short {Config.skip_preambles} in {Config.preamble_len}")
 
 def add_freq(pktdata_in, est_cfo_freq):
     cfosymb = cp.exp(2j * cp.pi * est_cfo_freq * cp.linspace(0, (len(pktdata_in) - 1) / Config.fs, num=len(pktdata_in)))
