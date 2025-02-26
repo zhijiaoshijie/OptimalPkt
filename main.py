@@ -78,7 +78,7 @@ if __name__ == "__main__":
             # objective_cut(f, t, data1, pkt_idx_cnt)
             # pkt_idx_cnt += 1
 
-            reps = 100
+            reps = 10
 
             snrrange = np.arange(-40, 10, 1)
             accs = cp.zeros((2, len(snrrange), reps), dtype=float)
