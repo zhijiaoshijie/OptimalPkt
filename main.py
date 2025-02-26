@@ -56,74 +56,26 @@ if __name__ == "__main__":
             for tryi in range(trytimes):
 
                     # main detection function with up-down
-                    f, t, retval = coarse_work_fast(data1, est_cfo_f, est_to_s, False)# tryi >= 1)
-                    pktlen = int((len(data1) - t) / Config.nsampf - 0.25)
-                    est_cfo_f, est_to_s = f, t
+                    est_cfo_f, est_to_s, retval = coarse_work_fast(data1, est_cfo_f, est_to_s, False)# tryi >= 1)
+                    pktlen = int((len(data1) - est_to_s) / Config.nsampf - 0.25)
                     est_to_s_full = est_to_s + (read_idx * Config.nsamp)
                     logger.warning(f"coarse_work_fast() end: {Config.sf=} {pkt_idx=} inputf={est_cfo_f=} {est_to_s=} {read_idx=} tot {est_to_s_full} {retval=}")
 
-                    if t < 0:
-                        logger.error(f"ERROR in {est_cfo_f=} {est_to_s=} out {f=} {t=} {file_path=} {pkt_idx=}")
+                    if est_to_s < 0:
+                        logger.error(f"ERROR in {est_cfo_f=} {est_to_s=} out {est_cfo_f=} {est_to_s=} {file_path=} {pkt_idx=}")
+                        est_to_s = 0
                         break
-            t, flag = find_power(f, t, data1)
+            est_to_s, flag = find_power(est_cfo_f, est_to_s, data1)
             if not flag: continue
-            f, t = refine_ft(f, t, data1)
-            # showpower(f, t, data1, "PLT")
-            codes1,freqs,phases,_ = objective_decode(f, t, data1)
-            # logger.warning(f"ours {codes1=}")
-            codes2,_,_,_ = objective_decode_baseline(f, t, data1)
-            # logger.warning(f"base {codes2=}")
-            logger.warning(f"codes1 and codes2 acc: {sum(1 for a, b in zip(codes1, codes2) if a == b)/len(codes1)}")
+            est_cfo_f, est_to_s = refine_ft(est_cfo_f, est_to_s, data1)
+            # showpower(est_cfo_f, est_to_s, data1, "PLT")
+            codes1,freqs,phases,_ = objective_decode(est_cfo_f, est_to_s, data1)
+            # logger.warning(est_cfo_f"ours {codes1=}")
+            # codes2,_,_,_ = objective_decode_baseline(est_cfo_f, est_to_s, data1)
+            # logger.warning(est_cfo_f"base {codes2=}")
+            # logger.warning(est_cfo_f"codes1 and codes2 acc: {sum(1 for a, b in zip(codes1, codes2) if a == b)/len(codes1)}")
+
             # continue # <<< FIRST CONTINUE HERE TO MAKE SURE PAYLOAD LEN IS CORRECT AND CAN DECODE >>>
-            # objective_cut(f, t, data1, pkt_idx_cnt)
-            # pkt_idx_cnt += 1
 
-            reps = 100
-
-            snrrange = np.arange(-40, 10, 1)
-            accs = cp.zeros((2, len(snrrange), reps), dtype=float)
-            fccs = cp.zeros((2, len(snrrange), reps), dtype=float)
-            pccs = cp.zeros((2, len(snrrange), reps), dtype=float)
-            hccs = cp.zeros((2, len(snrrange), reps), dtype=float)
-
-            pbar = tqdm(total=len(snrrange) * reps)
-            for snridx, snr in enumerate(snrrange):
-                for rep in range(reps):
-                    amp = math.pow(0.1, snr / 20) * cp.mean(
-                        cp.abs(data1[around(len(data1) / 4):around(len(data1) * 0.75)]))
-                    noise = (amp / math.sqrt(2) * cp.random.randn(len(data1)) + 1j * amp / math.sqrt(
-                        2) * cp.random.randn(len(data1)))
-                    dataX = data1 + noise  # dataX: data with noise
-                    codesx1,freqs1,phases1,h1 = objective_decode(f, t, dataX)
-                    codesx2,freqs2,phases2,h2 = objective_decode_baseline(f, t, dataX)
-                    accs[0, snridx, rep] = sum(1 for a, b in zip(codesx1, codes1) if a == b) / len(codes1)
-                    accs[1, snridx, rep] = sum(1 for a, b in zip(codesx2, codes1) if a == b) / len(codes1)
-                    fccs[0, snridx, rep] = cp.mean(cp.abs(freqs1)).item()
-                    fccs[1, snridx, rep] = cp.mean(cp.abs(freqs2)).item()
-                    pccs[0, snridx, rep] = cp.mean(cp.abs(wrap(phases1-phases))).item()
-                    pccs[1, snridx, rep] = cp.mean(cp.abs(wrap(phases2-phases))).item()
-                    hccs[0, snridx, rep] = cp.mean(cp.abs(h1 - 1)).item()
-                    hccs[1, snridx, rep] = cp.mean(cp.abs(h2 - 1)).item()
-
-
-                    pbar.update(1)
-                    # logger.warning(f"{snr=} {accs[0, snridx, rep]} {accs[1, snridx, rep]} {fccs[0, snridx, rep]} {fccs[1, snridx, rep]} {pccs[0, snridx, rep]} {pccs[1, snridx, rep]} {hccs[0, snridx, rep]} {hccs[1, snridx, rep]}")
-            accs = cp.mean(accs, axis=2)
-            fccs = cp.mean(fccs, axis=2)
-            pccs = cp.mean(pccs, axis=2)
-            hccs = cp.mean(hccs, axis=2)
-
-            for snridx, snr in enumerate(snrrange):
-                if pkt_idx == 1: logger.warning(f"{pkt_idx=}, {snr=}, {accs[0, snridx]=}, {accs[1, snridx]=}")
-                fulldata.append([pkt_idx, snr, accs[0, snridx], accs[1, snridx], fccs[0, snridx], fccs[1, snridx], pccs[0, snridx], pccs[1, snridx], hccs[0, snridx], hccs[1, snridx]])
-            pbar.close()
-
-            with open(f"{Config.sf}data_no_dt.pkl", "wb") as fi:
-                pickle.dump(accs, fi)
-            header = ["pktID", "SNR", "ACCOurs", "ACCBaseline", "FreqErrOurs", "FreqErrBaseline", "PhaseErrOurs", "PhaseErrBaseline", "HeightErrOurs", "HeightErrBaseline"]
-            csv_file_path = f'data_out_no_dt_{Config.sf}.csv'
-            with open(csv_file_path, 'w', newline='') as csvfile:
-                csvwriter = csv.writer(csvfile)
-                csvwriter.writerow(header)  # Write the header
-                for row in fulldata:
-                    csvwriter.writerow(row)
+            objective_cut(est_cfo_f, est_to_s, data1, pkt_idx_cnt)
+            pkt_idx_cnt += 1
