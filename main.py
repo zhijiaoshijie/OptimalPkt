@@ -98,8 +98,8 @@ if __name__ == "__main__":
                     codesx2,freqs2,phases2,h2 = objective_decode_baseline(f, t, dataX)
                     accs[0, snridx, rep] = sum(1 for a, b in zip(codesx1, codes1) if a == b) / len(codes1)
                     accs[1, snridx, rep] = sum(1 for a, b in zip(codesx2, codes1) if a == b) / len(codes1)
-                    fccs[0, snridx, rep] = cp.mean(cp.abs(freqs1)).item()
-                    fccs[1, snridx, rep] = cp.mean(cp.abs(freqs2)).item()
+                    fccs[0, snridx, rep] = cp.mean(cp.abs(freqs1-freqs)).item()
+                    fccs[1, snridx, rep] = cp.mean(cp.abs(freqs2-freqs)).item()
                     pccs[0, snridx, rep] = cp.mean(cp.abs(wrap(phases1-phases))).item()
                     pccs[1, snridx, rep] = cp.mean(cp.abs(wrap(phases2-phases))).item()
                     hccs[0, snridx, rep] = cp.mean(cp.abs(h1 - 1)).item()
@@ -118,7 +118,7 @@ if __name__ == "__main__":
                 fulldata.append([pkt_idx, snr, accs[0, snridx], accs[1, snridx], fccs[0, snridx], fccs[1, snridx], pccs[0, snridx], pccs[1, snridx], hccs[0, snridx], hccs[1, snridx]])
             pbar.close()
 
-            with open(f"{Config.sf}data_no_dt.pkl", "wb") as fi:
+            with open(f"{Config.sf}data_h.pkl", "wb") as fi:
                 pickle.dump(accs, fi)
             header = ["pktID", "SNR", "ACCOurs", "ACCBaseline", "FreqErrOurs", "FreqErrBaseline", "PhaseErrOurs", "PhaseErrBaseline", "HeightErrOurs", "HeightErrBaseline"]
             csv_file_path = f'data_out_no_dt_{Config.sf}.csv'
