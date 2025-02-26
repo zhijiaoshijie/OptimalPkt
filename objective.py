@@ -81,6 +81,9 @@ def objective_cut(est_cfo_f, est_to_s, pktdata_in, pkt_idx):
     for pidx in range(Config.sfdpos + 2, Config.total_len):
         start_pos_all_new = 2 ** Config.sf / Config.bw * Config.fs * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
         start_pos = around(start_pos_all_new)
+        if Config.nsamp + start_pos > len(pktdata_in):
+            logger.error(f"{pkt_idx} outofbounds")
+            break
         tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
         dt = (start_pos - start_pos_all_new) / Config.fs
         dataX = pktdata_in[start_pos: Config.nsamp + start_pos] * cp.exp(-1j * 2 * cp.pi * (est_cfo_f + betai * dt) * tstandard)
@@ -171,8 +174,8 @@ def objective_decode_baseline(est_cfo_f, est_to_s, pktdata_in):
 
 def find_power_new(est_cfo_f, est_to_s, pktdata_in, minrange = -2, maxrange = 2):
     nsamp_small = 2 ** Config.sf / Config.bw * Config.fs * (1 - est_cfo_f / Config.sig_freq)
-    powers = []
     px = []
+    px2 = []
     pidx_range = range(Config.sfdpos + minrange, Config.sfdpos + 2 + maxrange)
     betai = Config.bw / ((2 ** Config.sf) / Config.bw) * (1 + 2 * est_cfo_f / Config.sig_freq)
     for pidx in pidx_range:
@@ -180,7 +183,8 @@ def find_power_new(est_cfo_f, est_to_s, pktdata_in, minrange = -2, maxrange = 2)
         start_pos = around(start_pos_all_new)
         sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
         tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]* (1 - est_cfo_f / Config.sig_freq) + (start_pos - start_pos_all_new) / Config.fs
-        refchirp = cp.exp(-1j * 2 * cp.pi * ((Config.bw * -0.5 * (1 + est_cfo_f / Config.sig_freq) + est_cfo_f) * tstandard + 0.5 * betai * tstandard * tstandard))
+        # downchirp's conj(sfd)
+        refchirp = cp.exp(-1j * 2 * cp.pi * ((Config.bw * 0.5 * (1 + est_cfo_f / Config.sig_freq) + est_cfo_f) * tstandard - 0.5 * betai * tstandard * tstandard))
 
         sig2 = sig1 * refchirp
         data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
@@ -189,12 +193,23 @@ def find_power_new(est_cfo_f, est_to_s, pktdata_in, minrange = -2, maxrange = 2)
         # pltfig1(cp.fft.fftshift(cp.fft.fftfreq(Config.fft_n, d=1 / Config.fs)), cp.abs(data0), title=f"findpower fft {pidx=}").show()
         freq, pow = optimize_1dfreq(sig2, tstandard, freq1, Config.bw / 4)
         px.append(pow)
+
         ## todo debug
-        plt.plot(tocpu(cp.unwrap(cp.angle(sig1))))
-        plt.plot(tocpu(cp.unwrap(cp.angle(refchirp))))
-        plt.show()
-        logger.warning(f"{pow=}")
-    pltfig1(pidx_range,sqlist(px), addvline=(Config.sfdpos, Config.sfdpos + 1), title="findpower new").show()
+        # plt.plot(tocpu(cp.unwrap(cp.angle(sig1))))
+        # plt.plot(tocpu(cp.unwrap(cp.angle(refchirp))))
+        # plt.show()
+        # logger.warning(f"{pow=}")
+    px = cp.array(sqlist(px))
+    psum = cp.argmax(px[:-1] + px[1:]).item()
+    if pidx_range[psum] != Config.sfdpos:
+        # pltfig1(pidx_range,px, addvline=(Config.sfdpos, Config.sfdpos + 1), title="findpower new").show()
+        # start_pos_all_new = nsamp_small * (Config.sfdpos - 2) + est_to_s
+        # start_pos = around(start_pos_all_new)
+        # plt.plot(tocpu(cp.unwrap(cp.angle(pktdata_in[start_pos: Config.nsamp * 6 + start_pos]))))
+        # plt.show()
+        logger.error(f"sfdstart {pidx_range[psum]} != {Config.sfdpos}")
+    new_est_to_s = (pidx_range[psum] - Config.sfdpos) * nsamp_small + est_to_s
+    return new_est_to_s
 
 
 def find_power(est_cfo_f, est_to_s, pktdata_in):
@@ -272,9 +287,9 @@ def optimize_1dfreq(sig2, tsymbr, freq, margin):
         yvals = cp.array(sqlist(yvals))
         freq = xvals[cp.argmax(yvals)]
         valnew = cp.max(yvals)
-        if valnew < val * (1 - 1e-7):
-            pltfig1(xvals, yvals, addvline=(freq,), title=f"{i=} {val=} {valnew=}").show()
-        assert valnew >= val * (1 - 1e-7), f"{val=} {valnew=} {i=} {val-valnew=}"
+        # if valnew < val * (1 - 1e-7): pltfig1(xvals, yvals, addvline=(freq,), title=f"{i=} {val=} {valnew=}").show()
+        # assert valnew >= val * (1 - 1e-7), f"{val=} {valnew=} {i=} {val-valnew=}"
+        if valnew < val * (1 - 1e-7): logger.error(f"optimization error optimize_1dfreq {val=} {valnew=} {i=} {val-valnew=}")
         if abs(valnew - val) < 1e-7: margin /= 4
         val = valnew
     return freq, val / cp.sum(cp.abs(sig2))
@@ -289,8 +304,10 @@ def refine_ft(est_cfo_f, est_to_s, pktdata_in):
         start_pos = around(start_pos_all_new)
         tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]* (1 - est_cfo_f / Config.sig_freq) + (start_pos - start_pos_all_new) / Config.fs
         if pidx < Config.sfdpos:
+            # upchirp's conj (preamble)
             refchirp = cp.exp(-1j * 2 * cp.pi * ((Config.bw * -0.5 * (1 + est_cfo_f / Config.sig_freq) + est_cfo_f) * tstandard + 0.5 * betai * tstandard * tstandard))
         else:
+            # downchirp's conj (sfd)
             refchirp = cp.exp(-1j * 2 * cp.pi * ((Config.bw * 0.5 * (1 + est_cfo_f / Config.sig_freq) + est_cfo_f) * tstandard - 0.5 * betai * tstandard * tstandard))
         sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
         sig2 = sig1 * refchirp

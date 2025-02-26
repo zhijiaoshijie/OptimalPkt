@@ -24,7 +24,7 @@ if __name__ == "__main__":
         thresh = preprocess_file(file_path)
 
         # loop for demodulating all decoded packets: iterate over pkts with energy>thresh and length>min_length
-        pbar = tqdm(total=os.path.getsize(file_path), unit='B', unit_scale=True)
+        pbar = tqdm(total=os.path.getsize(file_path), unit='B', unit_scale=True, disable=True)
         for pkt_idx, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=Config.total_len)):
 
             # read data: read_idx is the index of packet end window in the file
@@ -63,18 +63,21 @@ if __name__ == "__main__":
                     pktlen = int((len(data1) - est_to_s) / Config.nsampf - 0.25)
                     est_to_s_full = est_to_s + (read_idx * Config.nsamp)
                     pbar.set_description(f"{os.path.basename(file_path)} sf={Config.sf} {pkt_idx_cnt} f={est_cfo_f:.2f} t={est_to_s:.2f} Cw")
-                    logger.info(f"coarse_work_fast() end: {Config.sf=} {pkt_idx=} inputf={est_cfo_f=} {est_to_s=} {read_idx=}")
+                    logger.warning(f"Cw {pkt_idx} f={est_cfo_f} t={est_to_s}")
 
                     if est_to_s < 0:
-                        logger.error(f"ERROR in {est_cfo_f=} {est_to_s=} out {est_cfo_f=} {est_to_s=} {file_path=} {pkt_idx=}")
+                        logger.error(f"ERROR in Coarsework {est_cfo_f=} {est_to_s=} out {est_cfo_f=} {est_to_s=} {file_path=} {pkt_idx=}")
                         est_to_s = 0
                         break
             pbar.set_description(f"{os.path.basename(file_path)} sf={Config.sf} {pkt_idx_cnt} f={est_cfo_f:.2f} t={est_to_s:.2f} Fw")
-            find_power_new(est_cfo_f, est_to_s, data1)
             est_to_s, flag = find_power(est_cfo_f, est_to_s, data1)
+            logger.warning(f"Fw {pkt_idx} f={est_cfo_f} t={est_to_s}")
             # if not flag: continue ## !!!TODO debug
             pbar.set_description(f"{os.path.basename(file_path)} sf={Config.sf} {pkt_idx_cnt} f={est_cfo_f:.2f} t={est_to_s:.2f} Rw")
             est_cfo_f, est_to_s = refine_ft(est_cfo_f, est_to_s, data1)
+            logger.warning(f"Rw {pkt_idx} f={est_cfo_f} t={est_to_s}")
+            est_to_s = find_power_new(est_cfo_f, est_to_s, data1)
+            logger.warning(f"FF {pkt_idx} f={est_cfo_f} t={est_to_s}")
             # showfit(est_cfo_f, est_to_s, data1, 0)
             # showfit(est_cfo_f, est_to_s, data1, 7)
             # showfit(est_cfo_f, est_to_s, data1, 8)
