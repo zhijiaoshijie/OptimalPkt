@@ -24,6 +24,7 @@ if __name__ == "__main__":
         thresh = preprocess_file(file_path)
 
         # loop for demodulating all decoded packets: iterate over pkts with energy>thresh and length>min_length
+        pbar = tqdm(total=os.path.getsize(file_path), unit='B', unit_scale=True)
         for pkt_idx, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=Config.total_len)):
 
             # read data: read_idx is the index of packet end window in the file
@@ -35,7 +36,7 @@ if __name__ == "__main__":
             # data1.tofile(os.path.join(Config.outpath, "data1.sigdat"))
 
             nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
-            logger.warning(f"Prework {pkt_idx=} {len(data1)/nsamp_small=} {cp.mean(cp.abs(data1))=}")
+            logger.info(f"Prework {pkt_idx=} {len(data1)/nsamp_small=} {cp.mean(cp.abs(data1))=}")
 
             # <<< PLOT WHOLE DATA1 TO SEE LENGTH OF PREAMBLE AND PAYLOAD >>>
             # fig = go.Figure()
@@ -61,14 +62,17 @@ if __name__ == "__main__":
                     est_cfo_f, est_to_s, retval = coarse_work_fast(data1, est_cfo_f, est_to_s, False)# tryi >= 1)
                     pktlen = int((len(data1) - est_to_s) / Config.nsampf - 0.25)
                     est_to_s_full = est_to_s + (read_idx * Config.nsamp)
-                    logger.warning(f"coarse_work_fast() end: {Config.sf=} {pkt_idx=} inputf={est_cfo_f=} {est_to_s=} {read_idx=}")
+                    pbar.set_description(f"{os.path.basename(file_path)} sf={Config.sf} {pkt_idx_cnt} f={est_cfo_f:.2f} t={est_to_s:.2f} Cw")
+                    logger.info(f"coarse_work_fast() end: {Config.sf=} {pkt_idx=} inputf={est_cfo_f=} {est_to_s=} {read_idx=}")
 
                     if est_to_s < 0:
                         logger.error(f"ERROR in {est_cfo_f=} {est_to_s=} out {est_cfo_f=} {est_to_s=} {file_path=} {pkt_idx=}")
                         est_to_s = 0
                         break
+            pbar.set_description(f"{os.path.basename(file_path)} sf={Config.sf} {pkt_idx_cnt} f={est_cfo_f:.2f} t={est_to_s:.2f} Fw")
             est_to_s, flag = find_power(est_cfo_f, est_to_s, data1)
             # if not flag: continue ## !!!TODO debug
+            pbar.set_description(f"{os.path.basename(file_path)} sf={Config.sf} {pkt_idx_cnt} f={est_cfo_f:.2f} t={est_to_s:.2f} Rw")
             est_cfo_f, est_to_s = refine_ft(est_cfo_f, est_to_s, data1)
             # showfit(est_cfo_f, est_to_s, data1, 0)
             # showfit(est_cfo_f, est_to_s, data1, 7)
@@ -86,5 +90,11 @@ if __name__ == "__main__":
             # logger.warning(est_cfo_f"codes1 and codes2 acc: {sum(1 for a, b in zip(codes1, codes2) if a == b)/len(codes1)}")
 
             # continue # <<< FIRST CONTINUE HERE TO MAKE SURE PAYLOAD LEN IS CORRECT AND CAN DECODE >>>
+            pbar.set_description(f"{os.path.basename(file_path)} sf={Config.sf} {pkt_idx_cnt} f={est_cfo_f:.2f} t={est_to_s:.2f} Cut")
             objective_cut(est_cfo_f, est_to_s, data1, pkt_idx_cnt)
             pkt_idx_cnt += 1
+
+            pbar.n = read_idx * Config.nsamp * 8
+            pbar.last_print_n = read_idx * Config.nsamp * 8
+            pbar.update(0)
+            pbar.set_description(f"{os.path.basename(file_path)} sf={Config.sf} {pkt_idx_cnt} f={est_cfo_f:.2f} t={est_to_s:.2f} ")
