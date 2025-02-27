@@ -404,7 +404,7 @@ def decode_core(pktdata_in, tstart, tend, estfcoef_to_num, startphase, pidx):
     sig2 = pktdata_in[nsymbr] * cp.exp(-1j * cp.polyval(coef2d_est, tsymbr))
     data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
     freq1 = cp.fft.fftshift(cp.fft.fftfreq(Config.fft_n, d=1 / Config.fs))[cp.argmax(cp.abs(data0))]
-    freq, valnew = optimize_1dfreq_Fast(sig2, tsymbr, freq1) # valnew may be as low as 0.3, only half the power will be collected
+    freq, valnew = optimize_1dfreq_fast(sig2, tsymbr, freq1) # valnew may be as low as 0.3, only half the power will be collected
     # assert valnew > 0.3, f"{freq=} {freq1=} {valnew=}"
     if freq < 0: freq += estbw
     codex = freq / estbw * 2 ** Config.sf
