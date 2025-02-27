@@ -344,10 +344,8 @@ def showfit(est_cfo_f, est_to_s, pktdata_in, pidx):
                     1 + est_cfo_f / Config.sig_freq) + est_cfo_f) * tstandard - 0.5 * betai * tstandard * tstandard))
 
     sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
-    fig = go.Figure(layout_title_text=f"showfit {pidx=}")
-    fig.add_trace(go.Scatter(x=tocpu(tstandard), y=tocpu(cp.unwrap(cp.angle(sig1)))))
-    fig.add_trace(go.Scatter(x=tocpu(tstandard), y=tocpu(cp.unwrap(cp.angle(cp.conj(refchirp))))))
-    fig.show()
+    # pltfig1(tstandard, cp.unwrap(cp.angle(sig1 * refchirp)), title=f"showfit {pidx=}").show()
+    return sig1.dot(refchirp) / cp.sum(cp.abs(sig1))
 
 
 

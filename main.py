@@ -54,7 +54,6 @@ if __name__ == "__main__":
             est_cfo_f = Config.guess_f
             est_to_s = 0
             trytimes = 2
-            vals = np.zeros((trytimes, 3))
             # iterate trytimes times to detect, each time based on estimations of the last time
             for tryi in range(trytimes):
 
@@ -78,8 +77,26 @@ if __name__ == "__main__":
             logger.warning(f"Rw {pkt_idx} f={est_cfo_f} t={est_to_s}")
             est_to_s = find_power_new(est_cfo_f, est_to_s, data1)
             logger.warning(f"FF {pkt_idx} f={est_cfo_f} t={est_to_s}")
-            # showfit(est_cfo_f, est_to_s, data1, 0)
-            # showfit(est_cfo_f, est_to_s, data1, 7)
+
+            est_cfo_fs = cp.arange(10) * 10 + est_cfo_f
+            c1 = []
+            c2 = []
+            for est_cfo_f in est_cfo_fs:
+                xx = []
+                xx2 = []
+                for pidx in range(Config.preamble_len):
+                    xx.append(cp.angle(showfit(est_cfo_f, est_to_s, data1, pidx)))
+                    xx2.append(cp.abs(showfit(est_cfo_f, est_to_s, data1, pidx)))
+                x_values = cp.arange(Config.preamble_len)
+                coefficients = cp.polyfit(x_values, cp.array(sqlist(xx)), 1)
+                print(coefficients,est_cfo_f)
+                c1.append(coefficients[0])
+                c2.append(coefficients[1])
+            pltfig1(est_cfo_fs, c1).show()
+            pltfig1(est_cfo_fs, c2).show()
+
+
+            sys.exit(0)
             # showfit(est_cfo_f, est_to_s, data1, 8)
             # showfit(est_cfo_f, est_to_s, data1, 9)
             # showfit(est_cfo_f, est_to_s, data1, 10)
