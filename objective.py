@@ -93,8 +93,6 @@ def objective_cut(est_cfo_f, est_to_s, pktdata_in, pkt_idx):
 
 def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     codes = []
-    freqs = []
-    phases = []
     heights = []
     betai = Config.bw / ((2 ** Config.sf) / Config.bw) * (1 + 2 * est_cfo_f / Config.sig_freq)
     for pidx in range(Config.sfdpos + 2, Config.total_len):
@@ -108,15 +106,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         vals = cp.abs(data1) ** 2 + cp.abs(data2) ** 2
         coderet = cp.argmax(vals).item()
         codes.append(coderet)
-        if coderet < 2 ** Config.sf / 2:
-            sig2 = Config.decode_matrix_a[coderet] * dataX
-            phases.append(cp.angle(data1[coderet]).item())
-        else:
-            sig2 = Config.decode_matrix_b[coderet] * dataX
-            phases.append(cp.angle(data2[coderet]).item())
-        freq,x = optimize_1dfreq_fast(sig2, tstandard, 0, Config.bw / 2 ** Config.sf * 4)
-        freqs.append(freq)
-        heights.append((cp.abs(data1[coderet])+ cp.abs(data2[coderet])) / cp.sum(cp.abs(dataX))) 
+        heights.append(cp.abs(data1[coderet])+ cp.abs(data2[coderet]))
 
         # <<< DEBUG >>>
         # code = coderet
@@ -137,7 +127,7 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         # freq = freq1 * nsamples/Config.nsamp + freq2 * (1 - nsamples/Config.nsamp)
         # freqs.append(freq)
 
-    return codes,cp.array(sqlist(freqs)),cp.array(sqlist(phases)),cp.array(sqlist(heights))
+    return codes,cp.array(sqlist(heights))
 def objective_decode_baseline(est_cfo_f, est_to_s, pktdata_in):
     codes = []
     phases = []
@@ -162,7 +152,7 @@ def objective_decode_baseline(est_cfo_f, est_to_s, pktdata_in):
             phases.append(cp.angle(data2[coderet]).item())
         freq,h = optimize_1dfreq_fast(sig2, tstandard, 0, Config.bw / 2 ** Config.sf * 4)
         freqs.append(freq)
-        heights.append((cp.abs(data1[coderet])+ cp.abs(data2[coderet])) / cp.sum(cp.abs(dataX)))
+        heights.append(cp.abs(data1[coderet])+ cp.abs(data2[coderet]))
     return codes,cp.array(sqlist(freqs)),cp.array(sqlist(phases)),cp.array(sqlist(heights))
 def find_power(est_cfo_f, est_to_s, pktdata_in):
     nsamp_small = 2 ** Config.sf / Config.bw * Config.fs * (1 - est_cfo_f / Config.sig_freq)
