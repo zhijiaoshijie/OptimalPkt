@@ -83,8 +83,8 @@ if __name__ == "__main__":
 
             snrrange = np.arange(-40, 10, 1)
             accs = cp.zeros((2, len(snrrange), reps), dtype=float)
-            # fccs = cp.zeros((2, len(snrrange), reps), dtype=float)
-            # pccs = cp.zeros((2, len(snrrange), reps), dtype=float)
+            fccs = cp.zeros((2, len(snrrange), reps), dtype=float)
+            pccs = cp.zeros((2, len(snrrange), reps), dtype=float)
             hccs = cp.zeros((2, len(snrrange), reps), dtype=float)
 
             pbar = tqdm(total=len(snrrange) * reps)
@@ -99,10 +99,10 @@ if __name__ == "__main__":
                     codesx2,freqs2,phases2,h2 = objective_decode_baseline(f, t, dataX)
                     accs[0, snridx, rep] = sum(1 for a, b in zip(codesx1, codes1) if a == b) / len(codes1)
                     accs[1, snridx, rep] = sum(1 for a, b in zip(codesx2, codes1) if a == b) / len(codes1)
-                    # fccs[0, snridx, rep] = cp.mean(cp.abs(freqs1-freqs)).item()
-                    # fccs[1, snridx, rep] = cp.mean(cp.abs(freqs2-freqs)).item()
-                    # pccs[0, snridx, rep] = cp.mean(cp.abs(wrap(phases1-phases))).item()
-                    # pccs[1, snridx, rep] = cp.mean(cp.abs(wrap(phases2-phases))).item()
+                    fccs[0, snridx, rep] = cp.mean(cp.abs(freqs1-freqs)).item()
+                    fccs[1, snridx, rep] = cp.mean(cp.abs(freqs2-freqs)).item()
+                    pccs[0, snridx, rep] = cp.mean(cp.abs(wrap(phases1-phases))).item()
+                    pccs[1, snridx, rep] = cp.mean(cp.abs(wrap(phases2-phases))).item()
                     hccs[0, snridx, rep] = cp.mean(cp.abs(h1)) / hmean
                     hccs[1, snridx, rep] = cp.mean(cp.abs(h2)) / hmean
 
@@ -110,19 +110,19 @@ if __name__ == "__main__":
                     pbar.update(1)
                     # logger.warning(f"{snr=} {accs[0, snridx, rep]} {accs[1, snridx, rep]} {fccs[0, snridx, rep]} {fccs[1, snridx, rep]} {pccs[0, snridx, rep]} {pccs[1, snridx, rep]} {hccs[0, snridx, rep]} {hccs[1, snridx, rep]}")
             accs = cp.mean(accs, axis=2)
-            # fccs = cp.mean(fccs, axis=2)
-            # pccs = cp.mean(pccs, axis=2)
+            fccs = cp.mean(fccs, axis=2)
+            pccs = cp.mean(pccs, axis=2)
             hccs = cp.mean(hccs, axis=2)
 
             for snridx, snr in enumerate(snrrange):
                 if pkt_idx == 1: logger.warning(f"{pkt_idx=}, {snr=}, {accs[0, snridx]=}, {accs[1, snridx]=}")
-                fulldata.append([pkt_idx, snr, accs[0, snridx], accs[1, snridx], hccs[0, snridx], hccs[1, snridx]])
+                fulldata.append([pkt_idx, snr, accs[0, snridx], accs[1, snridx], fccs[0, snridx], fccs[1, snridx], pccs[0, snridx], pccs[1, snridx], hccs[0, snridx], hccs[1, snridx]])
             pbar.close()
 
-            with open(f"{Config.sf}data_hh.pkl", "wb") as fi:
+            with open(f"{Config.sf}data_hf.pkl", "wb") as fi:
                 pickle.dump(accs, fi)
-            header = ["pktID", "SNR", "ACCOurs", "ACCBaseline", "HeightErrOurs", "HeightErrBaseline"]
-            csv_file_path = f'data_out_hh_{Config.sf}.csv'
+            header = ["pktID", "SNR", "ACCOurs", "ACCBaseline", "FreqErrOurs", "FreqErrBaseline", "PhaseErrOurs", "PhaseErrBaseline", "HeightErrOurs", "HeightErrBaseline"]
+            csv_file_path = f'data_out_hf_{Config.sf}.csv'
             with open(csv_file_path, 'w', newline='') as csvfile:
                 csvwriter = csv.writer(csvfile)
                 csvwriter.writerow(header)  # Write the header
