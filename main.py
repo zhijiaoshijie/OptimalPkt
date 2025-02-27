@@ -17,7 +17,10 @@ if __name__ == "__main__":
     readable_time = time.ctime(mod_time)
     logger.warning(f"Last modified time of the script: {readable_time}")
 
-    fulldata = []
+    fulldata11 = []
+    fulldata12 = []
+    fulldata21 = []
+    fulldata22 = []
     # Main loop read files
     pkt_idx_cnt = 0
     for file_path in Config.file_paths_zip:
@@ -33,7 +36,7 @@ if __name__ == "__main__":
             if read_idx == 0: continue
 
             nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
-            logger.info(f"Prework {pkt_idx=} {len(data1)/nsamp_small=} {cp.mean(cp.abs(data1))=}")
+            logger.warning(f"Prework {pkt_idx=} {len(data1)/nsamp_small=} {cp.mean(cp.abs(data1))=}")
 
             # <<< PLOT WHOLE DATA1 TO SEE LENGTH OF PREAMBLE AND PAYLOAD >>>
             # fig = go.Figure()
@@ -69,62 +72,96 @@ if __name__ == "__main__":
             if not flag: continue
             f, t = refine_ft(f, t, data1)
             # showpower(f, t, data1, "PLT")
-            codes1,hs = objective_decode(f, t, data1)
+            codes1,phases,hs = objective_decode(f, t, data1)
             hmean = cp.mean(cp.abs(hs))
             # logger.warning(f"ours {codes1=}")
-            codes2,_ = objective_decode_baseline(f, t, data1)
+            codes2,_,_ = objective_decode_baseline(f, t, data1)
             # logger.warning(f"base {codes2=}")
             logger.warning(f"codes1 and codes2 acc: {sum(1 for a, b in zip(codes1, codes2) if a == b)/len(codes1)}")
             # continue # <<< FIRST CONTINUE HERE TO MAKE SURE PAYLOAD LEN IS CORRECT AND CAN DECODE >>>
             # objective_cut(f, t, data1, pkt_idx_cnt)
             # pkt_idx_cnt += 1
 
-            reps = 10
+            reps = 20
 
-            snrrange = np.arange(-40, 10, 1)
+            snrrange = np.arange(-30, 0, 5)
             accs = cp.zeros((2, len(snrrange), reps), dtype=float)
             # fccs = cp.zeros((2, len(snrrange), reps), dtype=float)
-            # pccs = cp.zeros((2, len(snrrange), reps), dtype=float)
+            pccs = cp.zeros((2, len(snrrange), reps), dtype=float)
             hccs = cp.zeros((2, len(snrrange), reps), dtype=float)
 
             pbar = tqdm(total=len(snrrange) * reps)
+            ampsig = cp.mean(cp.abs(data1[around(len(data1) / 4):around(len(data1) * 0.75)]))
             for snridx, snr in enumerate(snrrange):
                 for rep in range(reps):
-                    amp = math.pow(0.1, snr / 20) * cp.mean(
-                        cp.abs(data1[around(len(data1) / 4):around(len(data1) * 0.75)]))
+                    amp = math.pow(0.1, snr / 20) * ampsig
                     noise = (amp / math.sqrt(2) * cp.random.randn(len(data1)) + 1j * amp / math.sqrt(
                         2) * cp.random.randn(len(data1)))
                     dataX = data1 + noise  # dataX: data with noise
-                    codesx1,h1 = objective_decode(f, t, dataX)
-                    codesx2,h2 = objective_decode_baseline(f, t, dataX)
+                    codesx1,phases1,h1 = objective_decode(f, t, dataX)
+                    codesx2,phases2,h2 = objective_decode_baseline(f, t, dataX)
                     accs[0, snridx, rep] = sum(1 for a, b in zip(codesx1, codes1) if a == b) / len(codes1)
                     accs[1, snridx, rep] = sum(1 for a, b in zip(codesx2, codes1) if a == b) / len(codes1)
                     # fccs[0, snridx, rep] = cp.mean(cp.abs(freqs1-freqs)).item()
                     # fccs[1, snridx, rep] = cp.mean(cp.abs(freqs2-freqs)).item()
-                    # pccs[0, snridx, rep] = cp.mean(cp.abs(wrap(phases1-phases))).item()
-                    # pccs[1, snridx, rep] = cp.mean(cp.abs(wrap(phases2-phases))).item()
+                    pccs[0, snridx, rep] = cp.mean(cp.abs(wrap(phases1-phases))).item()
+                    pccs[1, snridx, rep] = cp.mean(cp.abs(wrap(phases2-phases))).item()
                     hccs[0, snridx, rep] = cp.mean(cp.abs(h1)) / hmean
                     hccs[1, snridx, rep] = cp.mean(cp.abs(h2)) / hmean
 
 
                     pbar.update(1)
-                    # logger.warning(f"{snr=} {accs[0, snridx, rep]} {accs[1, snridx, rep]} {fccs[0, snridx, rep]} {fccs[1, snridx, rep]} {pccs[0, snridx, rep]} {pccs[1, snridx, rep]} {hccs[0, snridx, rep]} {hccs[1, snridx, rep]}")
+                    # logger.warning(f"{snr=} {accs[0, snridx, rep]} {accs[1, snridx, rep]} {hccs[0, snridx, rep]} {hccs[1, snridx, rep]}")
             accs = cp.mean(accs, axis=2)
             # fccs = cp.mean(fccs, axis=2)
             # pccs = cp.mean(pccs, axis=2)
-            hccs = cp.mean(hccs, axis=2)
+            # hccs = cp.mean(hccs, axis=2)
 
             for snridx, snr in enumerate(snrrange):
                 if pkt_idx == 1: logger.warning(f"{pkt_idx=}, {snr=}, {accs[0, snridx]=}, {accs[1, snridx]=}")
-                fulldata.append([pkt_idx, snr, accs[0, snridx], accs[1, snridx], hccs[0, snridx], hccs[1, snridx]])
+                dx1 = [pkt_idx, snr]
+                dx1.extend(list(tocpu(pccs[0, snridx])))
+                fulldata11.append(dx1)
+                dx1 = [pkt_idx, snr]
+                dx1.extend(list(tocpu(pccs[1, snridx])))
+                fulldata21.append(dx1)
+                dx1 = [pkt_idx, snr]
+                dx1.extend(list(tocpu(hccs[0, snridx])))
+                fulldata12.append(dx1)
+                dx1 = [pkt_idx, snr]
+                dx1.extend(list(tocpu(hccs[1, snridx])))
+                fulldata22.append(dx1)
             pbar.close()
 
-            with open(f"{Config.sf}data_hh.pkl", "wb") as fi:
-                pickle.dump(accs, fi)
-            header = ["pktID", "SNR", "ACCOurs", "ACCBaseline", "HeightErrOurs", "HeightErrBaseline"]
-            csv_file_path = f'data_out_hh_{Config.sf}.csv'
+            header = ["pktID", "SNR", "PhaseOurs"]
+            csv_file_path = f'data_out_{Config.sf}_p_ours.csv'
             with open(csv_file_path, 'w', newline='') as csvfile:
                 csvwriter = csv.writer(csvfile)
                 csvwriter.writerow(header)  # Write the header
-                for row in fulldata:
+                for row in fulldata11:
                     csvwriter.writerow(row)
+
+            header = ["pktID", "SNR", "PhaseBase"]
+            csv_file_path = f'data_out_{Config.sf}_p_base.csv'
+            with open(csv_file_path, 'w', newline='') as csvfile:
+                csvwriter = csv.writer(csvfile)
+                csvwriter.writerow(header)  # Write the header
+                for row in fulldata21:
+                    csvwriter.writerow(row)
+
+            header = ["pktID", "SNR", "HeightOurs"]
+            csv_file_path = f'data_out_{Config.sf}_h_ours.csv'
+            with open(csv_file_path, 'w', newline='') as csvfile:
+                csvwriter = csv.writer(csvfile)
+                csvwriter.writerow(header)  # Write the header
+                for row in fulldata12:
+                    csvwriter.writerow(row)
+
+            header = ["pktID", "SNR", "HeightBase"]
+            csv_file_path = f'data_out_{Config.sf}_h_base.csv'
+            with open(csv_file_path, 'w', newline='') as csvfile:
+                csvwriter = csv.writer(csvfile)
+                csvwriter.writerow(header)  # Write the header
+                for row in fulldata22:
+                    csvwriter.writerow(row)
+

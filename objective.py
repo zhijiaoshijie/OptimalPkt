@@ -94,6 +94,7 @@ def objective_cut(est_cfo_f, est_to_s, pktdata_in, pkt_idx):
 def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     codes = []
     heights = []
+    phases = []
     betai = Config.bw / ((2 ** Config.sf) / Config.bw) * (1 + 2 * est_cfo_f / Config.sig_freq)
     for pidx in range(Config.sfdpos + 2, Config.total_len):
         start_pos_all_new = 2 ** Config.sf / Config.bw * Config.fs * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
@@ -106,7 +107,11 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         vals = cp.abs(data1) ** 2 + cp.abs(data2) ** 2
         coderet = cp.argmax(vals).item()
         codes.append(coderet)
-        heights.append(cp.abs(data1[coderet])+ cp.abs(data2[coderet]))
+        heights.append((cp.abs(data1[coderet])+ cp.abs(data2[coderet]))/cp.sum(cp.abs(dataX)))
+        if coderet < 2 ** Config.sf / 2:
+            phases.append(cp.angle(data1[coderet]).item())
+        else:
+            phases.append(cp.angle(data2[coderet]).item())
 
         # <<< DEBUG >>>
         # code = coderet
@@ -127,9 +132,10 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         # freq = freq1 * nsamples/Config.nsamp + freq2 * (1 - nsamples/Config.nsamp)
         # freqs.append(freq)
 
-    return codes,cp.array(sqlist(heights))
+    return codes,cp.array(sqlist(phases)),cp.array(sqlist(heights))
 def objective_decode_baseline(est_cfo_f, est_to_s, pktdata_in):
     codes = []
+    phases = []
     heights = []
     for pidx in range(Config.sfdpos + 2, Config.total_len):
         #start_pos_all_new = 2 ** Config.sf / Config.bw * Config.fs * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s # decode considering STO
@@ -142,8 +148,13 @@ def objective_decode_baseline(est_cfo_f, est_to_s, pktdata_in):
         vals = cp.abs(data1) ** 2 + cp.abs(data2) ** 2
         coderet = cp.argmax(vals).item()
         codes.append(coderet)
-        heights.append(cp.abs(data1[coderet])+ cp.abs(data2[coderet]))
-    return codes,cp.array(sqlist(heights))
+        heights.append((cp.abs(data1[coderet])+ cp.abs(data2[coderet]))/cp.sum(cp.abs(dataX)))
+        if coderet < 2 ** Config.sf / 2:
+            phases.append(cp.angle(data1[coderet]).item())
+        else:
+            phases.append(cp.angle(data2[coderet]).item())
+
+    return codes,cp.array(sqlist(phases)),cp.array(sqlist(heights))
 def find_power(est_cfo_f, est_to_s, pktdata_in):
     nsamp_small = 2 ** Config.sf / Config.bw * Config.fs * (1 - est_cfo_f / Config.sig_freq)
     powers = []
