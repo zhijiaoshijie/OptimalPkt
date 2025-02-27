@@ -53,6 +53,27 @@ if __name__ == "__main__":
 
             est_cfo_f = Config.guess_f
             est_to_s = 0
+
+
+            logger.warning("ERR this only work for integer")
+
+            beta = Config.bw / ((2 ** Config.sf) / Config.bw)
+            x = cp.arange(Config.nsamp)
+            upchirp = cp.exp(2j * cp.pi * (beta / 2 * x ** 2 / Config.fs ** 2 + (- Config.bw / 2) * x / Config.fs))
+            downchirp = cp.conj(upchirp)
+            for pidx in range(0, Config.preamble_len + Config.detect_range_pkts):
+                start_pos = round(Config.nsamp * pidx + est_to_s)
+                sig1 = data1[start_pos: Config.nsamp + start_pos]
+                sig2 = sig1 * downchirp
+
+                data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
+                Config.fft_ups_x[pidx] = data0
+            print(cp.max(cp.abs(Config.fft_ups_x), axis=1))
+            print(cp.argmax(cp.abs(Config.fft_ups_x), axis=1))
+
+
+
+
             trytimes = 2
             # iterate trytimes times to detect, each time based on estimations of the last time
             for tryi in range(trytimes):
