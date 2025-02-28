@@ -20,7 +20,33 @@ if __name__ == "__main__":
     fulldata = []
     # Main loop read files
     pkt_idx_cnt = 0
+    logger.warning("ERR this only work for integer")
+
+
+
     for file_path in Config.file_paths_zip:
+
+        current_sequence1 = []
+
+        read_idx = -1
+        for rawdata1 in read_large_file(file_path):
+            read_idx += 1
+            if read_idx != 90: continue
+            data2s = []
+            beta = Config.bw / ((2 ** Config.sf) / Config.bw)
+            tstandard = cp.arange(Config.n_classes) / Config.fs
+            refchirp = cp.exp(-1j * 2 * cp.pi * (Config.bw * 0.5 * tstandard - 0.5 * beta * tstandard * tstandard))
+            for x in range(around(Config.fs / Config.bw)):
+                data1 = rawdata1[x * Config.n_classes: (x + 1) * Config.n_classes]
+                data2 = data1 * refchirp
+                data3 = myfft(data2, Config.n_classes, Config.plan2)
+                data2s.append(data3)
+            data2s = cp.sum(cp.abs(cp.vstack(data2s)), axis=0)
+            # print(data2s.shape)
+            pltfig1(None, cp.abs(data2s), title="main powers").show()
+            pltfig1(None, cp.unwrap(cp.angle(data1)), title="angle").show()
+            sys.exit(0)
+
         thresh = preprocess_file(file_path)
 
         # loop for demodulating all decoded packets: iterate over pkts with energy>thresh and length>min_length
@@ -55,7 +81,6 @@ if __name__ == "__main__":
             est_to_s = 0
 
 
-            logger.warning("ERR this only work for integer")
 
             beta = Config.bw / ((2 ** Config.sf) / Config.bw)
             x = cp.arange(Config.nsamp)

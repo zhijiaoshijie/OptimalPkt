@@ -68,7 +68,7 @@ class Config:
     # for x in range(1,4): file_paths_zip.append(f"/data/djl/datasets/msudata_ljk/{args.n}-{sf}-{x}")
     file_paths_zip = ['/data/djl/datasets/msudata_ljk/farm-cover-10-1-NE-042mile',]
     guess_f = 0
-    outpath = f"/data/djl/datasets/msudata_ljk_cut/{args.n}/clean_data/sf{sf}"
+    outpath = f"/data/djl/datasets/msudata_ljk_cut/{args.n}/cover/sf{sf}"
 
     # sf = args.sf # parse hbq's 6~12 data
     # bw = 406250#*(1-20*1e-6)
@@ -146,8 +146,12 @@ class Config:
     assert detect_range_pkts >= 2 # add 1, for buffer of cross-add
     detect_to_max = nsamp * 2
     fft_n = int(fs) #nsamp * fft_upsamp
-    if use_gpu: plan = fft.get_fft_plan(cp.zeros(fft_n, dtype=cp.complex64))
-    else: plan = None
+    if use_gpu:
+        plan = fft.get_fft_plan(cp.zeros(fft_n, dtype=cp.complex64))
+        plan2 = fft.get_fft_plan(cp.zeros(n_classes, dtype=cp.complex64))
+    else:
+        plan = None
+        plan2 = None
     fft_ups = cp.zeros((preamble_len + detect_range_pkts, fft_n), dtype=cp.float32)
     fft_downs = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.float32)
     fft_ups_x = cp.zeros((preamble_len + detect_range_pkts, fft_n), dtype=cp.complex64)
