@@ -148,7 +148,7 @@ class Config:
     fft_n = int(fs) #nsamp * fft_upsamp
     if use_gpu:
         plan = fft.get_fft_plan(cp.zeros(fft_n, dtype=cp.complex64))
-        plan2 = fft.get_fft_plan(cp.zeros(n_classes, dtype=cp.complex64))
+        plan2 = fft.get_fft_plan(cp.zeros(nsamp, dtype=cp.complex64))
     else:
         plan = None
         plan2 = None

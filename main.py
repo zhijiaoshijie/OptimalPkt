@@ -29,22 +29,27 @@ if __name__ == "__main__":
         current_sequence1 = []
 
         read_idx = -1
-        data2s = []
+        data2s = cp.zeros((Config.preamble_len, Config.nsamp), dtype=cp.float32)
         data3s = []
+        data4s = []
+        data5s = []
         for rawdata1 in read_large_file(file_path):
             read_idx += 1
-            if read_idx > 100: break
+            if read_idx > 500: break
             beta = Config.bw / ((2 ** Config.sf) / Config.bw)
-            tstandard = cp.arange(Config.n_classes) / Config.fs
+            tstandard = cp.arange(Config.nsamp) / Config.fs
             refchirp = cp.exp(-1j * 2 * cp.pi * (-Config.bw * 0.5 * tstandard + 0.5 * beta * tstandard * tstandard))
-            for x in range(around(Config.fs / Config.bw)):
-                data1 = rawdata1[x * Config.n_classes: (x + 1) * Config.n_classes]
-                data2 = data1 * refchirp
-                data3 = myfft(data2, Config.n_classes, Config.plan2)
-                data2s.append(cp.argmax(cp.abs(data3)).item())
-                data3s.append(cp.max(cp.abs(data3)).item())
-        pltfig1(None, data2s, title="argmax").show()
-        pltfig1(None, data3s, title="powers").show()
+            data2 = rawdata1 * refchirp
+            data3 = cp.abs(myfft(data2, Config.nsamp, Config.plan2))
+            data3a = cp.convolve(data3, cp.array([1,1,1]), mode='same')
+            data2s[read_idx % 8] = data3a
+            datav = cp.sum(data2s, axis=0)
+            data3s.append(cp.argmax(datav).item())
+            data4s.append(cp.max(datav).item())
+            data5s.append(cp.argmax(data3a).item())
+        pltfig1(None, data3s, title="argmax").show()
+        pltfig1(None, data4s, title="powers").show()
+        pltfig1(None, data5s, title="argmax any").show()
         sys.exit(0)
 
         thresh = preprocess_file(file_path)
