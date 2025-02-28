@@ -172,7 +172,7 @@ def objective_decode_baseline(est_cfo_f, est_to_s, pktdata_in):
         heights.append((cp.abs(data1[coderet])+ cp.abs(data2[coderet])) / cp.sum(cp.abs(dataX)))
     return codes,cp.array(sqlist(freqs)),cp.array(sqlist(phases)),cp.array(sqlist(heights))
 
-def find_power_new(est_cfo_f, est_to_s, pktdata_in, minrange = -2, maxrange = 2):
+def find_power_new(est_cfo_f, est_to_s, pktdata_in, minrange = -5, maxrange = 5):
     nsamp_small = 2 ** Config.sf / Config.bw * Config.fs * (1 - est_cfo_f / Config.sig_freq)
     px = []
     px2 = []
@@ -207,9 +207,10 @@ def find_power_new(est_cfo_f, est_to_s, pktdata_in, minrange = -2, maxrange = 2)
         # start_pos = around(start_pos_all_new)
         # plt.plot(tocpu(cp.unwrap(cp.angle(pktdata_in[start_pos: Config.nsamp * 6 + start_pos]))))
         # plt.show()
-        logger.error(f"sfdstart {pidx_range[psum]} != {Config.sfdpos}")
-    new_est_to_s = (pidx_range[psum] - Config.sfdpos) * nsamp_small + est_to_s
-    return new_est_to_s
+        new_est_to_s = (pidx_range[psum] - Config.sfdpos) * nsamp_small + est_to_s
+        logger.error(f"sfdstart {pidx_range[psum]} != {Config.sfdpos} {est_cfo_f=} {est_to_s=} {new_est_to_s=}")
+        return refine_ft(est_cfo_f, new_est_to_s, pktdata_in)
+    else: return est_cfo_f, est_to_s
 
 
 def find_power(est_cfo_f, est_to_s, pktdata_in):

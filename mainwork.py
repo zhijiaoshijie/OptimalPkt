@@ -37,7 +37,7 @@ def mainwork(pkt_idx, data1, outpath):
     # if not flag: continue ## !!!TODO debug
     est_cfo_f, est_to_s = refine_ft(est_cfo_f, est_to_s, data1)
     logger.warning(f"Rw {pkt_idx} f={est_cfo_f} t={est_to_s}")
-    est_to_s = find_power_new(est_cfo_f, est_to_s, data1)
+    est_cfo_f, est_to_s = find_power_new(est_cfo_f, est_to_s, data1)
     logger.warning(f"FF {pkt_idx} f={est_cfo_f} t={est_to_s}")
 
     # for totlen in range(Config.total_len - 10, Config.total_len + 20, 2):

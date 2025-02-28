@@ -67,8 +67,11 @@ def preprocess_file(file_path, outpath):
         with open(file_path, 'rb') as file:
             # Move the file pointer to the desired position (e.g., 100 bytes from the start)
             file.seek(around(max(peak, 0) * Config.nsamp * 4 * 2))
-            rawdata = cp.fromfile(file, dtype=cp.complex64, count=Config.nsamp * (Config.total_len + 20))
-            mainwork(pkt_idx, rawdata, outpath)
+            rawdata = cp.fromfile(file, dtype=cp.complex64, count=Config.nsamp * (Config.total_len + 30))
+            try:
+                mainwork(pkt_idx, rawdata, outpath)
+            except Exception as e:
+                logger.error(str(e))
             pkt_idx += 1
     return pkt_idx
 
