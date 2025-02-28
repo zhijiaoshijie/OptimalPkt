@@ -60,6 +60,7 @@ class Config:
 
     # parse linjingkai farm clean sf7 20250226
     sf = args.sf
+    name = args.n
     bw = 125000
     sig_freq = 927.9e6
     preamble_len = 8
@@ -106,7 +107,6 @@ class Config:
     # #     file_paths_zip.append(f"/data/djl/datasets/outdoordata0217/sf{sf}{x}.sigdat")
     # outpath = f"/data/djl/datasets/outdoordata0217_cut/sf{sf}"
     # guess_f = 0
-
 
 
 

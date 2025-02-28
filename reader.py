@@ -8,18 +8,27 @@ from utils import *
 from pltfig import pltfig1
 import scipy.signal as signal
 from mainwork import mainwork
+import sys
 
-def preprocess_file(file_path, pkt_idx, fftflag = False):
+def preprocess_file(file_path, outpath):
+    # with open(file_path, 'rb') as file:
+    #     peak = 1750 - Config.preamble_len - 2
+    #     file.seek(around(max(peak, 0) * Config.nsamp * 4 * 2))
+    #     rawdata = cp.fromfile(file, dtype=cp.complex64, count=Config.nsamp * (Config.total_len + 20))
+    #     rawdata.tofile("test.sigdat")
+    #     mainwork(0, rawdata, '/data/djl/OptimalPkt')
+    # sys.exit(0)
+    if  'lot-cover-10-4-E63' in file_path: return
+
+    pkt_idx = 0
     #  read file and count size
-    logger.info(f"FILEPATH {file_path}")
-    pkt_cnt = 0
-    pktdata = []
+    logger.warning(f"FILEPATH {file_path}")
     fsize = int(os.stat(file_path).st_size / (Config.nsamp * 4 * 2))
     logger.debug(f'reading file: {file_path} SF: {Config.sf} pkts in file: {fsize}')
     # read max power of first 5000 windows, for envelope detection
 
     # power_eval_len = 5000
-    power_skip_len = 10
+    power_skip_len = 15
 
     beta = Config.bw / ((2 ** Config.sf) / Config.bw)
     tstandard = cp.arange(Config.nsamp) / Config.fs
@@ -28,30 +37,38 @@ def preprocess_file(file_path, pkt_idx, fftflag = False):
     nmaxs = []
     data2s = cp.zeros((Config.preamble_len, Config.nsamp), dtype=cp.float32)
     for idx, rawdata in enumerate(read_large_file(file_path)):
-        if fftflag:
+        if idx < power_skip_len: nmaxs.append(0)
+        else:
             data2 = rawdata * refchirp
             data3 = cp.abs(myfft(data2, Config.nsamp, Config.plan2))
             data3a = cp.convolve(data3, cp.array([1, 1, 1]), mode='same')
             data2s[idx % Config.preamble_len] = data3a
             datav = cp.sum(data2s, axis=0)
             nmaxs.append(cp.max(datav).item())
-        else:
-            if idx >= power_skip_len:
-                nmaxs.append(cp.max(cp.abs(rawdata)))
-        # if idx == power_eval_len - 1: break
     nmaxs = tocpu(cp.array(nmaxs))
-    peaks, properties = signal.find_peaks(nmaxs, prominence=0.5, distance=Config.total_len)  # Detect peaks above height 0
+    # pltfig1(None, nmaxs, title=f"{file_path}").show()
+    prominence = 0.1 if 'case' in file_path else 0.2
+    # prominence = 0.2
+    peaks, properties = signal.find_peaks(nmaxs, prominence=prominence, distance=Config.total_len)  # Detect peaks above height 0
     logger.warning(f"{file_path} {len(peaks)=} {peaks[0]=} {peaks[-1]=}")
     # Plot result
-    # pltfig1(None, nmaxs, addvline=peaks).show()
+    # sys.exit(0)
     # pltfig1(None, peaks, title="peak positions").show()
     peaks = cp.array(peaks) - Config.preamble_len - 1
-    for peak in peaks[1:5]:
+
+    differences = np.diff(peaks)
+    common_diff = np.nanmedian(differences)
+    n = around((peaks[-1] - peaks[0]) / common_diff) + 1
+    peaks = peaks[0] + common_diff * cp.arange(n)
+    # pltfig1(None, nmaxs, addvline=peaks, title=f"{file_path}").show()
+    # return
+
+    for peak in peaks:
         with open(file_path, 'rb') as file:
             # Move the file pointer to the desired position (e.g., 100 bytes from the start)
             file.seek(around(max(peak, 0) * Config.nsamp * 4 * 2))
             rawdata = cp.fromfile(file, dtype=cp.complex64, count=Config.nsamp * (Config.total_len + 20))
-            mainwork(pkt_idx, rawdata)
+            mainwork(pkt_idx, rawdata, outpath)
             pkt_idx += 1
     return pkt_idx
 

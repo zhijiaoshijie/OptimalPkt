@@ -74,9 +74,9 @@ def gen_matrix2(dt, est_cfo_f):
                            t1=2 ** Config.sf / Config.bw * (1 - est_cfo_f / Config.sig_freq) )
         decode_matrix_b[code, nsamples:] = cp.conj(refchirp[nsamples:])* cfosymb[nsamples:]
     return decode_matrix_a, decode_matrix_b
-def objective_cut(est_cfo_f, est_to_s, pktdata_in, pkt_idx):
+def objective_cut(est_cfo_f, est_to_s, pktdata_in, pkt_idx, outpath_in):
     betai = Config.bw / ((2 ** Config.sf) / Config.bw) * (1 + 2 * est_cfo_f / Config.sig_freq)
-    outpath = os.path.join(Config.outpath, str(pkt_idx))
+    outpath = os.path.join(outpath_in, str(pkt_idx))
     if not os.path.exists(outpath): os.makedirs(outpath)
     for pidx in range(Config.sfdpos + 2, Config.total_len):
         start_pos_all_new = 2 ** Config.sf / Config.bw * Config.fs * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
