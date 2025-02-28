@@ -9,7 +9,7 @@ from pltfig import pltfig1
 import scipy.signal as signal
 from mainwork import mainwork
 
-def preprocess_file(file_path, fftflag = False, draw=False, thresh_manual = None):
+def preprocess_file(file_path, pkt_idx, fftflag = False):
     #  read file and count size
     logger.info(f"FILEPATH {file_path}")
     pkt_cnt = 0
@@ -46,56 +46,15 @@ def preprocess_file(file_path, fftflag = False, draw=False, thresh_manual = None
     # Plot result
     # pltfig1(None, nmaxs, addvline=peaks).show()
     # pltfig1(None, peaks, title="peak positions").show()
-    peaks = cp.array(peaks) - Config.preamble_len - 2
+    peaks = cp.array(peaks) - Config.preamble_len - 1
     for peak in peaks[1:5]:
         with open(file_path, 'rb') as file:
             # Move the file pointer to the desired position (e.g., 100 bytes from the start)
             file.seek(around(max(peak, 0) * Config.nsamp * 4 * 2))
-            rawdata = cp.fromfile(file, dtype=cp.complex64, count=Config.nsamp * (Config.total_len + 10))
-            rawdata.tofile(f"test{peak}.sigdat")
-    sys.exit(0)
-    # clustering
-
-
-    data = nmaxs.reshape(-1, 1)
-    gmm = GaussianMixture(n_components=2)
-    gmm.fit(data)
-    means = gmm.means_.flatten()
-    covariances = gmm.covariances_.flatten()
-    weights = gmm.weights_.flatten()
-    sorted_indices = np.argsort(means)
-    mean1, mean2 = means[sorted_indices]
-    covariance1, covariance2 = covariances[sorted_indices]
-    weight1, weight2 = weights[sorted_indices]
-    # threshold to divide the noise power from signal power
-    thresh = (mean1 * covariance2 + mean2 * covariance1) / (covariance1 + covariance2)
-    if thresh < 0.01:
-        logger.error(f"ERR too small thresh check {thresh=} {mean1=} {mean2=} {file_path=}")
-    # # <<< PLOTFIG FOR POWER ENVELOPE DETECTION >>>
-    if draw or thresh_manual:
-        counts, bins = cp.histogram(togpu(nmaxs), bins=100)
-        # logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
-        threshpos = np.searchsorted(tocpu(bins), thresh).item()
-        logger.warning(f"lower: {cp_str(counts[:threshpos])}")
-        logger.warning(f"higher: {cp_str(counts[threshpos:])}")
-        fig = px.line(nmaxs)
-        if thresh_manual is not None: fig.add_hline(y=thresh_manual, line_color='Red')
-        fig.add_hline(y=thresh, line_color='Black')
-        fig.update_layout(title=f"powermap of {file_path} length {len(nmaxs)}")
-        fig.show()
-        # plt.plot(nmaxs)
-        # plt.axhline(y=thresh, color='black', linestyle='-', label=f'Threshold (Auto): {thresh}')
-        # if thresh_manual is not None:
-        #     plt.axhline(y=thresh_manual, color='red', linestyle='-', label=f'Threshold (Manual): {thresh_manual}')
-        # plt.title(f"Powermap of {file_path} length {len(nmaxs)} {thresh=} {thresh_manual=}")
-        # plt.show()
-
-    # thresh = max(thresh, 0.01)
-    # if threshold may not work set this to True
-    # plot the power map
-
-    if thresh_manual is not None: thresh = thresh_manual
-    return thresh
+            rawdata = cp.fromfile(file, dtype=cp.complex64, count=Config.nsamp * (Config.total_len + 20))
+            mainwork(pkt_idx, rawdata)
+            pkt_idx += 1
+    return pkt_idx
 
 def read_large_file(file_path_in):
     with open(file_path_in, 'rb') as file:

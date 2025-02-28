@@ -20,20 +20,6 @@ def mainwork(pkt_idx, data1):
     est_cfo_f = Config.guess_f
     est_to_s = 0
 
-    beta = Config.bw / ((2 ** Config.sf) / Config.bw)
-    x = cp.arange(Config.nsamp)
-    upchirp = cp.exp(2j * cp.pi * (beta / 2 * x ** 2 / Config.fs ** 2 + (- Config.bw / 2) * x / Config.fs))
-    downchirp = cp.conj(upchirp)
-    for pidx in range(0, Config.preamble_len + Config.detect_range_pkts):
-        start_pos = round(Config.nsamp * pidx + est_to_s)
-        sig1 = data1[start_pos: Config.nsamp + start_pos]
-        sig2 = sig1 * downchirp
-
-        data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
-        Config.fft_ups_x[pidx] = data0
-    print(cp.max(cp.abs(Config.fft_ups_x), axis=1))
-    print(cp.argmax(cp.abs(Config.fft_ups_x), axis=1))
-
     trytimes = 2
     # iterate trytimes times to detect, each time based on estimations of the last time
     for tryi in range(trytimes):
@@ -54,37 +40,9 @@ def mainwork(pkt_idx, data1):
     est_to_s = find_power_new(est_cfo_f, est_to_s, data1)
     logger.warning(f"FF {pkt_idx} f={est_cfo_f} t={est_to_s}")
 
-    est_cfo_fs = cp.arange(10) * 10 + est_cfo_f
-    c1 = []
-    c2 = []
-    for est_cfo_f in est_cfo_fs:
-        xx = []
-        xx2 = []
-        for pidx in range(Config.preamble_len):
-            xx.append(cp.angle(showfit(est_cfo_f, est_to_s, data1, pidx)))
-            xx2.append(cp.abs(showfit(est_cfo_f, est_to_s, data1, pidx)))
-        x_values = cp.arange(Config.preamble_len)
-        coefficients = cp.polyfit(x_values, cp.array(sqlist(xx)), 1)
-        print(coefficients, est_cfo_f)
-        c1.append(coefficients[0])
-        c2.append(coefficients[1])
-    # pltfig1(est_cfo_fs, c1).show()
-    # pltfig1(est_cfo_fs, c2).show()
-
-    sys.exit(0)
-    # showfit(est_cfo_f, est_to_s, data1, 8)
-    # showfit(est_cfo_f, est_to_s, data1, 9)
-    # showfit(est_cfo_f, est_to_s, data1, 10)
-    # showfit(est_cfo_f, est_to_s, data1, 11)
-    # showfit(est_cfo_f, est_to_s, data1, 12)
-    # showfit(est_cfo_f, est_to_s, data1, 13)
-    # showpower(est_cfo_f, est_to_s, data1, "PLT")
-    # codes1 = objective_decode(est_cfo_f, est_to_s, data1)
-    # logger.warning(est_cfo_f"ours {codes1=}")
-    # codes2 = objective_decode_baseline(est_cfo_f, est_to_s, data1)
-    # logger.warning(est_cfo_f"base {codes2=}")
-    # logger.warning(est_cfo_f"codes1 and codes2 acc: {sum(1 for a, b in zip(codes1, codes2) if a == b)/len(codes1)}")
-
-    # continue # <<< FIRST CONTINUE HERE TO MAKE SURE PAYLOAD LEN IS CORRECT AND CAN DECODE >>>
-    objective_cut(est_cfo_f, est_to_s, data1, pkt_idx_cnt)
+    # for totlen in range(Config.total_len - 10, Config.total_len + 20, 2):
+    #     data1[around(est_to_s) : around(2 ** Config.sf / Config.bw * Config.fs * (totlen + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s)].tofile(f"out{totlen}")
+    # sys.exit(0)
+    data1[around(est_to_s) : around(2 ** Config.sf / Config.bw * Config.fs * (Config.total_len + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s)].tofile(f"out")
+    objective_cut(est_cfo_f, est_to_s, data1, pkt_idx)
     return est_cfo_f, est_to_s
