@@ -29,12 +29,11 @@ if __name__ == "__main__":
         current_sequence1 = []
 
         read_idx = -1
+        data2s = []
+        data3s = []
         for rawdata1 in read_large_file(file_path):
             read_idx += 1
-            if read_idx > 10: current_sequence1.append(rawdata1)
-            if read_idx == 32: break
-            if read_idx != 12: continue
-            data2s = []
+            if read_idx > 100: break
             beta = Config.bw / ((2 ** Config.sf) / Config.bw)
             tstandard = cp.arange(Config.n_classes) / Config.fs
             refchirp = cp.exp(-1j * 2 * cp.pi * (-Config.bw * 0.5 * tstandard + 0.5 * beta * tstandard * tstandard))
@@ -42,13 +41,10 @@ if __name__ == "__main__":
                 data1 = rawdata1[x * Config.n_classes: (x + 1) * Config.n_classes]
                 data2 = data1 * refchirp
                 data3 = myfft(data2, Config.n_classes, Config.plan2)
-                data2s.append(data3)
-            data2s = cp.sum(cp.abs(cp.vstack(data2s)), axis=0)
-            # print(data2s.shape)
-            pltfig1(None, cp.abs(data2s), title="main powers").show()
-            pltfig1(None, cp.unwrap(cp.angle(data1)), title="angle").show()
-        current_sequence1 = cp.concatenate(current_sequence1)
-        current_sequence1.tofile("data1.sigdat")
+                data2s.append(cp.argmax(cp.abs(data3)).item())
+                data3s.append(cp.max(cp.abs(data3)).item())
+        pltfig1(None, data2s, title="argmax").show()
+        pltfig1(None, data3s, title="powers").show()
         sys.exit(0)
 
         thresh = preprocess_file(file_path)
