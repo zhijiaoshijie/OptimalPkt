@@ -31,11 +31,13 @@ if __name__ == "__main__":
         read_idx = -1
         for rawdata1 in read_large_file(file_path):
             read_idx += 1
-            if read_idx != 90: continue
+            if read_idx > 10: current_sequence1.append(rawdata1)
+            if read_idx == 32: break
+            if read_idx != 12: continue
             data2s = []
             beta = Config.bw / ((2 ** Config.sf) / Config.bw)
             tstandard = cp.arange(Config.n_classes) / Config.fs
-            refchirp = cp.exp(-1j * 2 * cp.pi * (Config.bw * 0.5 * tstandard - 0.5 * beta * tstandard * tstandard))
+            refchirp = cp.exp(-1j * 2 * cp.pi * (-Config.bw * 0.5 * tstandard + 0.5 * beta * tstandard * tstandard))
             for x in range(around(Config.fs / Config.bw)):
                 data1 = rawdata1[x * Config.n_classes: (x + 1) * Config.n_classes]
                 data2 = data1 * refchirp
@@ -45,7 +47,9 @@ if __name__ == "__main__":
             # print(data2s.shape)
             pltfig1(None, cp.abs(data2s), title="main powers").show()
             pltfig1(None, cp.unwrap(cp.angle(data1)), title="angle").show()
-            sys.exit(0)
+        current_sequence1 = cp.concatenate(current_sequence1)
+        current_sequence1.tofile("data1.sigdat")
+        sys.exit(0)
 
         thresh = preprocess_file(file_path)
 
