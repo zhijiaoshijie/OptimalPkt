@@ -18,8 +18,8 @@ def preprocess_file(file_path, pkt_idx, fftflag = False):
     logger.debug(f'reading file: {file_path} SF: {Config.sf} pkts in file: {fsize}')
     # read max power of first 5000 windows, for envelope detection
 
-    power_eval_len = 5000
-    power_skip_len = 51
+    # power_eval_len = 5000
+    power_skip_len = 10
 
     beta = Config.bw / ((2 ** Config.sf) / Config.bw)
     tstandard = cp.arange(Config.nsamp) / Config.fs
@@ -38,11 +38,10 @@ def preprocess_file(file_path, pkt_idx, fftflag = False):
         else:
             if idx >= power_skip_len:
                 nmaxs.append(cp.max(cp.abs(rawdata)))
-        if idx == power_eval_len - 1: break
+        # if idx == power_eval_len - 1: break
     nmaxs = tocpu(cp.array(nmaxs))
     peaks, properties = signal.find_peaks(nmaxs, prominence=0.5, distance=Config.total_len)  # Detect peaks above height 0
-    print(peaks)
-
+    logger.warning(f"{file_path} {len(peaks)=} {peaks[0]=} {peaks[-1]=}")
     # Plot result
     # pltfig1(None, nmaxs, addvline=peaks).show()
     # pltfig1(None, peaks, title="peak positions").show()

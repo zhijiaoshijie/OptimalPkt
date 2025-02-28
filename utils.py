@@ -64,9 +64,13 @@ class Config:
     sig_freq = 927.9e6
     preamble_len = 8
     total_len = [97, 0, 0, 48][sf - 7]
-    # file_paths_zip = []
+    file_paths_zip = []
+    dpath = "/data/djl/datasets/msudata_ljk/"
+    for fname in os.listdir(dpath):
+        if f"{args.n}-cover-{sf}-" in fname:
+            file_paths_zip.append(os.path.join(dpath, fname))
     # for x in range(1,4): file_paths_zip.append(f"/data/djl/datasets/msudata_ljk/{args.n}-{sf}-{x}")
-    file_paths_zip = ['/data/djl/datasets/msudata_ljk/farm-cover-10-1-NE-042mile',]
+    # file_paths_zip = ['/data/djl/datasets/msudata_ljk/farm-cover-10-1-NE-042mile',]
     guess_f = 0
     outpath = f"/data/djl/datasets/msudata_ljk_cut/{args.n}/cover/sf{sf}"
 
