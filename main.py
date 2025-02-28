@@ -26,36 +26,10 @@ if __name__ == "__main__":
 
     for file_path in Config.file_paths_zip:
 
-        current_sequence1 = []
-
-        read_idx = -1
-        data2s = cp.zeros((Config.preamble_len, Config.nsamp), dtype=cp.float32)
-        data3s = []
-        data4s = []
-        data5s = []
-        for rawdata1 in read_large_file(file_path):
-            read_idx += 1
-            if read_idx > 500: break
-            beta = Config.bw / ((2 ** Config.sf) / Config.bw)
-            tstandard = cp.arange(Config.nsamp) / Config.fs
-            refchirp = cp.exp(-1j * 2 * cp.pi * (-Config.bw * 0.5 * tstandard + 0.5 * beta * tstandard * tstandard))
-            data2 = rawdata1 * refchirp
-            data3 = cp.abs(myfft(data2, Config.nsamp, Config.plan2))
-            data3a = cp.convolve(data3, cp.array([1,1,1]), mode='same')
-            data2s[read_idx % 8] = data3a
-            datav = cp.sum(data2s, axis=0)
-            data3s.append(cp.argmax(datav).item())
-            data4s.append(cp.max(datav).item())
-            data5s.append(cp.argmax(data3a).item())
-        pltfig1(None, data3s, title="argmax").show()
-        pltfig1(None, data4s, title="powers").show()
-        pltfig1(None, data5s, title="argmax any").show()
-        sys.exit(0)
-
-        thresh = preprocess_file(file_path)
+        thresh = preprocess_file(file_path, fftflag=True, draw=True, thresh_manual=0.54)
 
         # loop for demodulating all decoded packets: iterate over pkts with energy>thresh and length>min_length
-        pbar = tqdm(total=os.path.getsize(file_path), unit='B', unit_scale=True, disable=True)
+        pbar = tqdm(total=os.path.getsize(file_path), unit='B', unit_scale=True, disable=False)
         for pkt_idx, pkt_data in enumerate(read_pkt(file_path, thresh, min_length=Config.total_len)):
 
             # read data: read_idx is the index of packet end window in the file
@@ -67,7 +41,7 @@ if __name__ == "__main__":
             # data1.tofile(os.path.join(Config.outpath, "data1.sigdat"))
 
             nsamp_small = 2 ** Config.sf / Config.bw * Config.fs
-            logger.info(f"Prework {pkt_idx=} {len(data1)/nsamp_small=} {cp.mean(cp.abs(data1))=}")
+            logger.warning(f"Prework {pkt_idx=} {len(data1)/nsamp_small=} {cp.mean(cp.abs(data1))=}")
 
             # <<< PLOT WHOLE DATA1 TO SEE LENGTH OF PREAMBLE AND PAYLOAD >>>
             # fig = go.Figure()

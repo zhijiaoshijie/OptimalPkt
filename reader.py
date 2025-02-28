@@ -9,7 +9,7 @@ from pltfig import pltfig1
 
 
 
-def preprocess_file(file_path):
+def preprocess_file(file_path, fftflag = False, draw=False, thresh_manual = None):
     #  read file and count size
     logger.info(f"FILEPATH {file_path}")
     pkt_cnt = 0
@@ -17,12 +17,27 @@ def preprocess_file(file_path):
     fsize = int(os.stat(file_path).st_size / (Config.nsamp * 4 * 2))
     logger.debug(f'reading file: {file_path} SF: {Config.sf} pkts in file: {fsize}')
     # read max power of first 5000 windows, for envelope detection
+
     power_eval_len = 5000
-    power_skip_len = power_eval_len // 10
+    power_skip_len = 51
+
+    beta = Config.bw / ((2 ** Config.sf) / Config.bw)
+    tstandard = cp.arange(Config.nsamp) / Config.fs
+    refchirp = cp.exp(-1j * 2 * cp.pi * (-Config.bw * 0.5 * tstandard + 0.5 * beta * tstandard * tstandard))
+
     nmaxs = []
+    data2s = cp.zeros((Config.preamble_len, Config.nsamp), dtype=cp.float32)
     for idx, rawdata in enumerate(read_large_file(file_path)):
         if idx < power_skip_len: continue
-        nmaxs.append(cp.max(cp.abs(rawdata)))
+        if fftflag:
+            data2 = rawdata * refchirp
+            data3 = cp.abs(myfft(data2, Config.nsamp, Config.plan2))
+            data3a = cp.convolve(data3, cp.array([1, 1, 1]), mode='same')
+            data2s[idx % 8] = data3a
+            datav = cp.sum(data2s, axis=0)
+            nmaxs.append(cp.max(datav).item())
+        else:
+            nmaxs.append(cp.max(cp.abs(rawdata)))
         if idx == power_eval_len - 1: break
     nmaxs = tocpu(cp.array(nmaxs))
     # clustering
@@ -38,29 +53,26 @@ def preprocess_file(file_path):
     weight1, weight2 = weights[sorted_indices]
     # threshold to divide the noise power from signal power
     thresh = (mean1 * covariance2 + mean2 * covariance1) / (covariance1 + covariance2)
-    thresh_manual = None
-    if "_farest" in file_path:
-        thresh_manual = 0.02
     if thresh < 0.01:
         logger.error(f"ERR too small thresh check {thresh=} {mean1=} {mean2=} {file_path=}")
     # # <<< PLOTFIG FOR POWER ENVELOPE DETECTION >>>
-    if False:
+    if draw or thresh_manual:
         counts, bins = cp.histogram(togpu(nmaxs), bins=100)
         # logger.debug(f"Init file find cluster: counts={cp_str(counts, precision=2, suppress_small=True)}, bins={cp_str(bins, precision=4, suppress_small=True)}, {kmeans.cluster_centers_=}, {thresh=}")
         threshpos = np.searchsorted(tocpu(bins), thresh).item()
-        logger.debug(f"lower: {cp_str(counts[:threshpos])}")
-        logger.debug(f"higher: {cp_str(counts[threshpos:])}")
-        # fig = px.line(nmaxs)
-        # fig.add_hline(y=thresh, line_color='Black')
-        # if thresh_manual is not None: fig.add_hline(y=thresh_manual, line_color='Red')
-        # fig.update_layout(title=f"powermap of {file_path} length {len(nmaxs)}")
-        # fig.show()
-        plt.plot(nmaxs)
-        plt.axhline(y=thresh, color='black', linestyle='-', label=f'Threshold (Auto): {thresh}')
-        if thresh_manual is not None:
-            plt.axhline(y=thresh_manual, color='red', linestyle='-', label=f'Threshold (Manual): {thresh_manual}')
-        plt.title(f"Powermap of {file_path} length {len(nmaxs)} {thresh=} {thresh_manual=}")
-        plt.show()
+        logger.warning(f"lower: {cp_str(counts[:threshpos])}")
+        logger.warning(f"higher: {cp_str(counts[threshpos:])}")
+        fig = px.line(nmaxs)
+        if thresh_manual is not None: fig.add_hline(y=thresh_manual, line_color='Red')
+        fig.add_hline(y=thresh, line_color='Black')
+        fig.update_layout(title=f"powermap of {file_path} length {len(nmaxs)}")
+        fig.show()
+        # plt.plot(nmaxs)
+        # plt.axhline(y=thresh, color='black', linestyle='-', label=f'Threshold (Auto): {thresh}')
+        # if thresh_manual is not None:
+        #     plt.axhline(y=thresh_manual, color='red', linestyle='-', label=f'Threshold (Manual): {thresh_manual}')
+        # plt.title(f"Powermap of {file_path} length {len(nmaxs)} {thresh=} {thresh_manual=}")
+        # plt.show()
 
     # thresh = max(thresh, 0.01)
     # if threshold may not work set this to True
