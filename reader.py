@@ -47,27 +47,13 @@ def preprocess_file(file_path, fftflag = False, draw=False, thresh_manual = None
     # pltfig1(None, nmaxs, addvline=peaks).show()
     # pltfig1(None, peaks, title="peak positions").show()
     peaks = cp.array(peaks) - Config.preamble_len - 2
-    gen = read_large_file(file_path)
-    idx=  0
-    pkt_idx = 0
-    data = []
-    while True:
-        try:
-            rawdata = next(gen)  # Read next line
-            if idx in peaks[1:]:  # Check if index is in list
-                data.append(rawdata)  # Collect data
-                for _ in range(Config.total_len + 5):  # Read `Len - 1` more times
-                    data.append(next(gen))
-                    idx += 1  # Increment index while reading
-                data2 = cp.concatenate(data, axis=0)
-                data2.tofile(f"test{idx}.sigdat")
-                # mainwork(pkt_idx,data2)
-                pkt_idx += 1
-                data.clear()  # Clear storage for the next batch
-            idx += 1  # Always increment index
-        except StopIteration:
-            break  # Generator exhausted, exit loop
-
+    for peak in peaks[1:5]:
+        with open(file_path, 'rb') as file:
+            # Move the file pointer to the desired position (e.g., 100 bytes from the start)
+            file.seek(around(max(peak, 0) * Config.nsamp * 4 * 2))
+            rawdata = cp.fromfile(file, dtype=cp.complex64, count=Config.nsamp * (Config.total_len + 10))
+            rawdata.tofile(f"test{peak}.sigdat")
+    sys.exit(0)
     # clustering
 
 

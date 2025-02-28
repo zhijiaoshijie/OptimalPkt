@@ -63,7 +63,7 @@ class Config:
     bw = 125000
     sig_freq = 927.9e6
     preamble_len = 8
-    total_len = [97, 0, 0, 76][sf - 7]
+    total_len = [97, 0, 0, 43][sf - 7]
     # file_paths_zip = []
     # for x in range(1,4): file_paths_zip.append(f"/data/djl/datasets/msudata_ljk/{args.n}-{sf}-{x}")
     file_paths_zip = ['/data/djl/datasets/msudata_ljk/farm-cover-10-1-NE-042mile',]
