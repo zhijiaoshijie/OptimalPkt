@@ -6,8 +6,8 @@ import plotly.express as px
 
 from utils import *
 from pltfig import pltfig1
-
-
+import scipy.signal as signal
+from mainwork import mainwork
 
 def preprocess_file(file_path, fftflag = False, draw=False, thresh_manual = None):
     #  read file and count size
@@ -28,19 +28,49 @@ def preprocess_file(file_path, fftflag = False, draw=False, thresh_manual = None
     nmaxs = []
     data2s = cp.zeros((Config.preamble_len, Config.nsamp), dtype=cp.float32)
     for idx, rawdata in enumerate(read_large_file(file_path)):
-        if idx < power_skip_len: continue
         if fftflag:
             data2 = rawdata * refchirp
             data3 = cp.abs(myfft(data2, Config.nsamp, Config.plan2))
             data3a = cp.convolve(data3, cp.array([1, 1, 1]), mode='same')
-            data2s[idx % 8] = data3a
+            data2s[idx % Config.preamble_len] = data3a
             datav = cp.sum(data2s, axis=0)
             nmaxs.append(cp.max(datav).item())
         else:
-            nmaxs.append(cp.max(cp.abs(rawdata)))
+            if idx >= power_skip_len:
+                nmaxs.append(cp.max(cp.abs(rawdata)))
         if idx == power_eval_len - 1: break
     nmaxs = tocpu(cp.array(nmaxs))
+    peaks, properties = signal.find_peaks(nmaxs, prominence=0.5, distance=Config.total_len)  # Detect peaks above height 0
+    print(peaks)
+
+    # Plot result
+    # pltfig1(None, nmaxs, addvline=peaks).show()
+    # pltfig1(None, peaks, title="peak positions").show()
+    peaks = cp.array(peaks) - Config.preamble_len - 2
+    gen = read_large_file(file_path)
+    idx=  0
+    pkt_idx = 0
+    data = []
+    while True:
+        try:
+            rawdata = next(gen)  # Read next line
+            if idx in peaks[1:]:  # Check if index is in list
+                data.append(rawdata)  # Collect data
+                for _ in range(Config.total_len + 5):  # Read `Len - 1` more times
+                    data.append(next(gen))
+                    idx += 1  # Increment index while reading
+                data2 = cp.concatenate(data, axis=0)
+                data2.tofile(f"test{idx}.sigdat")
+                # mainwork(pkt_idx,data2)
+                pkt_idx += 1
+                data.clear()  # Clear storage for the next batch
+            idx += 1  # Always increment index
+        except StopIteration:
+            break  # Generator exhausted, exit loop
+
     # clustering
+
+
     data = nmaxs.reshape(-1, 1)
     gmm = GaussianMixture(n_components=2)
     gmm.fit(data)
