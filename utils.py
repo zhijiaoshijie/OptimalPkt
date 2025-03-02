@@ -130,7 +130,7 @@ class Config:
 
     betai = bw / ((2 ** sf) / bw)
     for code in range(n_classes):
-        if (code-1)%4!=0 and code>=11: continue
+        # if (code-1)%4!=0 and code>=11: continue
         nsamples = around(nsamp / n_classes * (n_classes - code))
         f01 = bw * (-0.5 + code / n_classes)
         refchirpc1 = cp.exp(-1j * 2 * cp.pi * (f01 * tstandard + 0.5 * betai * tstandard * tstandard))
