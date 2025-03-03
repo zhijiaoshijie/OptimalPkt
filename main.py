@@ -9,6 +9,16 @@ import matplotlib.pyplot as plt
 from work import *
 from reader import *
 from mainwork import mainwork
+
+def decode_loratrimmer(rawdata):
+    data1 = cp.matmul(Config.decode_matrix_a, rawdata)
+    data2 = cp.matmul(Config.decode_matrix_b, rawdata)
+    vals = cp.abs(data1) ** 2 + cp.abs(data2) ** 2
+    coderet = cp.argmax(vals).item()
+    amp = cp.sum(cp.abs(rawdata)) ** 2
+    logger.warning(cp.sum(cp.abs(rawdata)))
+    pltfig1(None, vals, title=os.path.join('farm/cover_sf10/groundtruth', fname, fname2), addvline=(int(fname2.split('_')[1]),), addhline=(amp,)).show()
+
 # read packets from file
 if __name__ == "__main__":
     if not os.path.exists(Config.outfolder): os.makedirs(Config.outfolder)
@@ -20,11 +30,8 @@ if __name__ == "__main__":
     for fname in os.listdir(dpath):
         for fname2 in os.listdir(os.path.join(dpath, fname)):
             rawdata = cp.fromfile(os.path.join(dpath, fname, fname2))
-            data1 = cp.matmul(Config.decode_matrix_a, rawdata)
-            data2 = cp.matmul(Config.decode_matrix_b, rawdata)
-            vals = cp.abs(data1) ** 2 + cp.abs(data2) ** 2
-            coderet = cp.argmax(vals).item()
-            pltfig1(None, vals, title=os.path.join('farm/cover_sf10/groundtruth', fname, fname2), addvline=(int(fname2.split('_')[1]),)).show()
+            decode_loratrimmer(rawdata)
             sys.exit(0)
+
 
 
