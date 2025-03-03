@@ -6,6 +6,25 @@ import matplotlib.pyplot as plt
 
 use_gpu = True
 
+
+
+logging.basicConfig(
+    # format='%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(funcName)s - %(message)s',
+    format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s',
+    level=logging.WARNING
+)
+
+logger = logging.getLogger(__name__)
+file_handler = logging.FileHandler('run_241219.log')
+file_handler.setLevel(level=logging.DEBUG)  # Set the file handler level
+# formatter = logging.Formatter('%(message)s')
+# formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+# formatter = logging.Formatter('%(levelname)s - %(message)s')
+# console_handler.setFormatter(formatter)
+# file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
+
 if use_gpu:
     import cupy as cp
     import cupyx.scipy.fft as fft
@@ -129,8 +148,12 @@ class Config:
     decode_matrix_b = cp.zeros((n_classes, nsamp), dtype=cp.complex64)
 
     betai = bw / ((2 ** sf) / bw)
+    wflag = True
     for code in range(n_classes):
-        if (code-1)%4!=0 and code>=11: continue
+        if (code-1)%4!=0 and sf>=11 and wflag:
+            logger.warning(f"WARN ENABLING LDRO")
+            wflag = False
+            continue
         nsamples = around(nsamp / n_classes * (n_classes - code))
         f01 = bw * (-0.5 + code / n_classes)
         refchirpc1 = cp.exp(-1j * 2 * cp.pi * (f01 * tstandard + 0.5 * betai * tstandard * tstandard))
@@ -160,25 +183,6 @@ class Config:
     fft_downs = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.float32)
     fft_ups_x = cp.zeros((preamble_len + detect_range_pkts, fft_n), dtype=cp.complex64)
     fft_downs_x = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.complex64)
-
-
-
-logging.basicConfig(
-    # format='%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(funcName)s - %(message)s',
-    format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s',
-    level=logging.WARNING
-)
-
-logger = logging.getLogger(__name__)
-file_handler = logging.FileHandler('run_241219.log')
-file_handler.setLevel(level=logging.DEBUG)  # Set the file handler level
-# formatter = logging.Formatter('%(message)s')
-# formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-# formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-# formatter = logging.Formatter('%(levelname)s - %(message)s')
-# console_handler.setFormatter(formatter)
-# file_handler.setFormatter(formatter)
-logger.addHandler(file_handler)
 
 if use_gpu:
     cp.cuda.Device(0).use()
