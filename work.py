@@ -30,6 +30,8 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
     # upchirp dechirp
     x1 = []
     x2 = []
+    y1 = []
+    y2 = []
     # assume chirp start at one in [0, Config.detect_range_pkts) possible windows
     # downchirp = cp.conj(gen_refchirp(0, -4e4, Config.nsamp))
     estf = fstart
@@ -41,15 +43,25 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
     upchirp = cp.exp(2j * cp.pi * (betanew / 2 * x ** 2 / Config.fs ** 2 + (- bwnew / 2) * x / Config.fs))
     downchirp = cp.conj(upchirp)
 
+    fig1 = None
     for pidx in range(Config.skip_preambles, Config.preamble_len + Config.detect_range_pkts):
         data0 = dechirp_fft(tstart, fstart, pktdata_in, downchirp, pidx, True)
         Config.fft_ups_x[pidx] = data0
         x1.append(tocpu(cp.argmax(cp.abs(data0[:len(data0)//2]))))
-        x2.append(tocpu(cp.argmax(cp.abs(data0[len(data0)//2:]))+len(data0)//2))
+        x2.append(tocpu(cp.argmax(cp.abs(data0[len(data0)//2:]))))#+len(data0)//2))
+        y1.append(tocpu(cp.max(cp.abs(data0[:len(data0)//2]))))
+        y2.append(tocpu(cp.max(cp.abs(data0[len(data0)//2:]))))
         # plt.plot(cp.arange(x1[-1]-1000, x1[-1]+1000),tocpu(cp.abs(data0[x1[-1]-1000: x1[-1]+1000])))
         # plt.axvline(x=x1[-1], color='k')
         # plt.title(f"{pidx=} {tstart=}")
         # plt.show()
+        # xplt = cp.arange(Config.fft_n) / Config.fft_n * Config.fs
+        # fig1 = pltfig1(xplt, cp.abs(data0), fig=fig1)
+        # plt.plot(tocpu(xplt), tocpu(cp.abs(data0)))
+    xplt = cp.arange(len(x1))
+    pltfig(((xplt, x1), ), title="x").show()
+    pltfig(( (xplt, x2),), title="x").show()
+    pltfig(((xplt, y1), (xplt, y2)), title="y").show()
     bwnew2 = Config.bw * (1 - 2 * estf / Config.sig_freq)
 
     # fig = px.line(y=cp.array(x1)-cp.array(x2))
@@ -62,24 +74,41 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
         Config.fft_downs_x[pidx - Config.sfdpos] = data0
 
     # todo SFO是否会导致bw不是原来的bw
-    fft_ups_add = (cp.abs(Config.fft_ups_x[:-1, :around(-bwnew2 / Config.fs * Config.fft_n)]) +
-                   cp.abs(Config.fft_ups_x[1:, around(bwnew2 / Config.fs * Config.fft_n):])) # TODO!!!Abs
+    # adding: highpeak of previous + lowpeak of following
+    idx = around(bwnew2 / Config.fs * Config.fft_n)
+    fft_ups_add = (cp.abs(Config.fft_ups_x[:-1, idx:]) + cp.abs(Config.fft_ups_x[1:, : - idx])) # TODO!!!Abs
     # for i in range(fft_ups_add.shape[0]):
-    #     k = estf / Config.sig_freq * Config.bw
-    #     fft_ups_add[i] = cp.roll(fft_ups_add[i], -around(k * i))
 
-    # fig = FigureResampler(go.Figure(layout_title_text=f"fft_ups values"))
-    # fig = go.Figure(layout_title_text=f"fft_ups values")
-    # for i in range(Config.skip_preambles, Config.preamble_len, 10):
-    #     # fig.add_trace(go.Scatter(y=tocpu(cp.abs(Config.fft_ups_x[i, 348200:348900]))))
-    #     fig.add_trace(go.Scatter(y=tocpu(cp.abs(fft_ups_add[i, 348200:348900]))))
-    # fig.show()
     xx = []
     for i in range(Config.skip_preambles, Config.preamble_len):
         xx.append(tocpu(cp.argmax(cp.abs(fft_ups_add[i, :]))))
     # plt.plot(xx)
     # plt.show()
-    # sys.exit(2)
+    xmid = cp.median(cp.array(sqlist(xx))).item()
+    logger.warning(f"{xx} {xmid}")
+
+    #     k = estf / Config.sig_freq * Config.bw
+    #     fft_ups_add[i] = cp.roll(fft_ups_add[i], -around(k * i))
+
+    # fig = FigureResampler(go.Figure(layout_title_text=f"fft_ups values"))
+    fig = go.Figure(layout_title_text=f"fft_ups values")
+    for i in range(Config.skip_preambles, Config.preamble_len, 1):
+        # fig.add_trace(go.Scatter(y=tocpu(cp.abs(Config.fft_ups_x[i, 348200:348900]))))
+        fig.add_trace(go.Scatter(x=tocpu(cp.arange(xmid - 1000, xmid + 1000)), y=tocpu(cp.abs(Config.fft_ups_x[i, xmid - 1000:xmid + 1000]))))
+    fig.show()
+
+    fig = go.Figure(layout_title_text=f"fft_ups values2")
+    xmid2 = xmid + around(bwnew2 / Config.fs * Config.fft_n)
+    for i in range(Config.skip_preambles, Config.preamble_len, 1):
+        fig.add_trace(go.Scatter(x=tocpu(cp.arange(xmid2 - 1000, xmid2 + 1000)), y=tocpu(cp.abs(Config.fft_ups_x[i, xmid2 - 1000:xmid2 + 1000]))))
+        plt.plot(tocpu(cp.abs(Config.fft_ups_x[i])))
+        plt.axvline(x=xmid)
+        plt.axvline(x=xmid2)
+        plt.show()
+    fig.show()
+
+    sys.exit(0)
+
     # fft_downs_add = Config.fft_downs_x[:-1, :-Config.bw / Config.fs * Config.fft_n] + Config.fft_downs_x[1:, Config.bw / Config.fs * Config.fft_n:]
 
     # fit the up chirps with linear, intersect with downchirp

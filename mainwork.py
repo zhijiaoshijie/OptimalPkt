@@ -25,7 +25,8 @@ def mainwork(pkt_idx, data1, outpath):
     for tryi in range(trytimes):
 
         # main detection function with up-down
-        est_cfo_f, est_to_s, retval = coarse_work_fast(data1, est_cfo_f, est_to_s, False)  # tryi >= 1)
+        logger.error("TODO fstart=0")
+        est_cfo_f, est_to_s, retval = coarse_work_fast(data1, 0, est_to_s, False)  # tryi >= 1) # !!! tODO
         logger.warning(f"Cw {pkt_idx} f={est_cfo_f} t={est_to_s}")
 
         if est_to_s < 0:
