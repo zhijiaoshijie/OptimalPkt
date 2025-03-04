@@ -15,8 +15,8 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-file_handler = logging.FileHandler('run_241219.log')
-file_handler.setLevel(level=logging.DEBUG)  # Set the file handler level
+file_handler = logging.FileHandler('run_250305_test1.log')
+file_handler.setLevel(level=logging.WARNING)  # Set the file handler level
 # formatter = logging.Formatter('%(message)s')
 # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 # formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
