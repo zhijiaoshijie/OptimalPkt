@@ -24,6 +24,7 @@ if __name__ == "__main__":
     logger.warning("ERR this only work for integer")
     logger.warning("ERR only one file testing")
 
-    file_path = "/data/djl/datasets/msudata_ljk/farm-cover-10-4-E-1mile"
+    # file_path = "/data/djl/datasets/msudata_ljk/farm-cover-10-4-E-1mile"
+    file_path = "/data/djl/datasets/msudata_ljk/farm-cover-10-groundtruth"
     opath = "test"
     preprocess_file(file_path, opath)

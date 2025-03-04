@@ -17,7 +17,7 @@ def mainwork(pkt_idx, data1, outpath):
     # plt.title('Plot with Vertical Lines')
     # plt.show()
 
-    est_cfo_f = Config.guess_f
+    est_cfo_f = 0 # todo Config.guess_f
     est_to_s = 0
 
     trytimes = 2
@@ -26,13 +26,14 @@ def mainwork(pkt_idx, data1, outpath):
 
         # main detection function with up-down
         logger.error("TODO fstart=0")
-        est_cfo_f, est_to_s, retval = coarse_work_fast(data1, 0, est_to_s, False)  # tryi >= 1) # !!! tODO
+        est_cfo_f, est_to_s = coarse_work_fast(data1[max(0, est_to_s - Config.nsamp * 2):], 0, 0, False)  # tryi >= 1) # !!! tODO
         logger.warning(f"Cw {pkt_idx} f={est_cfo_f} t={est_to_s}")
 
         if est_to_s < 0:
             logger.error(f"ERROR in Coarsework {est_cfo_f=} {est_to_s=} out {est_cfo_f=} {est_to_s=} {pkt_idx=}")
             est_to_s = 0
             break
+    sys.exit(0)
     est_to_s, flag = find_power(est_cfo_f, est_to_s, data1)
     logger.warning(f"Fw {pkt_idx} f={est_cfo_f} t={est_to_s}")
     # if not flag: continue ## !!!TODO debug
