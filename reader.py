@@ -71,7 +71,7 @@ def preprocess_file(file_path, outpath):
             try:
                 f, t, code = mainwork(pkt_idx, rawdata, outpath)
                 acc = np.mean(np.array(code) == np.array(code_acc)).item()
-                if acc != 1: logger.warning(f"{f=} {t=} {acc=} diff={np.array(code)-np.array(code_acc)}")
+                logger.warning(f"{pkt_idx=} {f=} {t=} {acc=} diff={np.array(code)-np.array(code_acc)}")
             except Exception as e:
                 logger.error(str(e))
             pkt_idx += 1
