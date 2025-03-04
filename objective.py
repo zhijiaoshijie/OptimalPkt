@@ -78,11 +78,12 @@ def objective_cut(est_cfo_f, est_to_s, pktdata_in, pkt_idx, outpath_in):
     betai = Config.bw / ((2 ** Config.sf) / Config.bw) * (1 + 2 * est_cfo_f / Config.sig_freq)
     outpath = os.path.join(outpath_in, str(pkt_idx))
     if not os.path.exists(outpath): os.makedirs(outpath)
+    codes = []
     for pidx in range(Config.sfdpos + 2, Config.total_len):
         start_pos_all_new = 2 ** Config.sf / Config.bw * Config.fs * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
         start_pos = around(start_pos_all_new)
         if Config.nsamp + start_pos > len(pktdata_in):
-            logger.error(f"{pkt_idx} outofbounds")
+            logger.info(f"{pkt_idx} outofbounds")
             break
         tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
         dt = (start_pos - start_pos_all_new) / Config.fs
@@ -92,11 +93,12 @@ def objective_cut(est_cfo_f, est_to_s, pktdata_in, pkt_idx, outpath_in):
         data2 = cp.matmul(Config.decode_matrix_b, dataX)
         vals = cp.abs(data1) ** 2 + cp.abs(data2) ** 2
         coderet = cp.argmax(vals).item()
+        codes.append(coderet)
         outfpath = os.path.join(outpath, f"{pidx - Config.sfdpos - 2}_{coderet}_{pkt_idx}_{Config.sf}")
-        # logger.warning(outfpath)
         dataX.tofile(outfpath)
         # pltfig1(None, cp.unwrap(cp.angle(dataX))).show()
         # sys.exit(0)
+    return codes
 
 def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     codes = []
@@ -135,11 +137,11 @@ def objective_decode(est_cfo_f, est_to_s, pktdata_in):
         #
         # sig2 = pktdata_in[start_pos: nsamples + start_pos] * refchirpc1[:nsamples]
         # freq1, pow = optimize_1dfreq(sig2, tstandard[:nsamples], 0, Config.bw / 4)
-        # logger.error(f"{freq1=}, {pow=} {nsamples/Config.nsamp=}")
+        # logger.info(f"{freq1=}, {pow=} {nsamples/Config.nsamp=}")
         # if code > 0:
         #     sig3 = pktdata_in[start_pos + nsamples: start_pos + Config.nsamp] * refchirpc2[nsamples:]
         #     freq2, pow = optimize_1dfreq(sig3, tstandard[nsamples:], 0, Config.bw / 4)
-        #     logger.error(f"{freq2=}, {pow=} {1-nsamples/Config.nsamp=}")
+        #     logger.info(f"{freq2=}, {pow=} {1-nsamples/Config.nsamp=}")
         # else: freq2 = 0
         # freq = freq1 * nsamples/Config.nsamp + freq2 * (1 - nsamples/Config.nsamp)
         # freqs.append(freq)
@@ -208,7 +210,7 @@ def find_power_new(est_cfo_f, est_to_s, pktdata_in, minrange = -5, maxrange = 5)
         # plt.plot(tocpu(cp.unwrap(cp.angle(pktdata_in[start_pos: Config.nsamp * 6 + start_pos]))))
         # plt.show()
         new_est_to_s = (pidx_range[psum] - Config.sfdpos) * nsamp_small + est_to_s
-        logger.error(f"sfdstart {pidx_range[psum]} != {Config.sfdpos} {est_cfo_f=} {est_to_s=} {new_est_to_s=}")
+        logger.info(f"sfdstart {pidx_range[psum]} != {Config.sfdpos} {est_cfo_f=} {est_to_s=} {new_est_to_s=}")
         return refine_ft(est_cfo_f, new_est_to_s, pktdata_in)
     else: return est_cfo_f, est_to_s
 
@@ -254,9 +256,9 @@ def find_power(est_cfo_f, est_to_s, pktdata_in):
     totlen = len(cluster_big)
     if min(cluster_big) != 0 or totlen != Config.total_len:
         if min(cluster_big) != 0:
-            logger.error(f"ERR find_power: {est_to_s=} misalign by {min(cluster_big)} {new_est_to_s=}")
+            logger.info(f"ERR find_power: {est_to_s=} misalign by {min(cluster_big)} {new_est_to_s=}")
         if totlen != Config.total_len:
-            logger.error(f"ERR find_power: {Config.total_len=} != {totlen=} {est_cfo_f=} {est_to_s=} {new_est_to_s=}")
+            logger.info(f"ERR find_power: {Config.total_len=} != {totlen=} {est_cfo_f=} {est_to_s=} {new_est_to_s=}")
         # str1 = ''.join([f'{x:6d}' for x in px])
         # str2 = ''.join([f'{x:6.3f}' for x in powers])
         # str3 = ''.join([f'{int(x in cluster_big):6d}' for x in px])
@@ -290,7 +292,7 @@ def optimize_1dfreq(sig2, tsymbr, freq, margin):
         valnew = cp.max(yvals)
         # if valnew < val * (1 - 1e-7): pltfig1(xvals, yvals, addvline=(freq,), title=f"{i=} {val=} {valnew=}").show()
         # assert valnew >= val * (1 - 1e-7), f"{val=} {valnew=} {i=} {val-valnew=}"
-        if valnew < val * (1 - 1e-7): logger.error(f"optimization error optimize_1dfreq {val=} {valnew=} {i=} {val-valnew=}")
+        if valnew < val * (1 - 1e-7): logger.info(f"optimization info optimize_1dfreq {val=} {valnew=} {i=} {val-valnew=}")
         if abs(valnew - val) < 1e-7: margin /= 4
         val = valnew
     return freq, val / cp.sum(cp.abs(sig2))

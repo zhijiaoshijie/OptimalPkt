@@ -54,7 +54,7 @@ def preprocess_file(file_path, outpath):
     # Plot result
     # sys.exit(0)
     # pltfig1(None, peaks, title="peak positions").show()
-    peaks = cp.array(peaks) - Config.preamble_len - 1
+    peaks = cp.array(peaks) - Config.preamble_len - 1 - 4 # todo!!!
 
     differences = np.diff(peaks)
     common_diff = np.nanmedian(differences)
@@ -62,14 +62,16 @@ def preprocess_file(file_path, outpath):
     peaks = peaks[0] + common_diff * cp.arange(n)
     # pltfig1(None, nmaxs, addvline=peaks, title=f"{file_path}").show()
     # return
-
+    code_acc = [493, 73, 805, 417, 289, 117, 461, 225, 859, 127, 820, 718, 650, 851, 824, 68, 565, 938, 761, 937, 280, 272, 614, 537, 115, 920, 250, 54, 309, 787, 950, 766, 845, 889, 201, 488]
     for peak in peaks:
         with open(file_path, 'rb') as file:
             # Move the file pointer to the desired position (e.g., 100 bytes from the start)
             file.seek(around(max(peak, 0) * Config.nsamp * 4 * 2))
             rawdata = cp.fromfile(file, dtype=cp.complex64, count=Config.nsamp * (Config.total_len + 30))
             try:
-                mainwork(pkt_idx, rawdata, outpath)
+                f, t, code = mainwork(pkt_idx, rawdata, outpath)
+                acc = np.mean(np.array(code) == np.array(code_acc)).item()
+                logger.warning(f"{f=} {t=} {acc=} diff={np.array(code)-np.array(code_acc)}")
             except Exception as e:
                 logger.error(str(e))
             pkt_idx += 1
