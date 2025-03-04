@@ -78,6 +78,7 @@ def objective_cut(est_cfo_f, est_to_s, pktdata_in, pkt_idx, outpath_in):
     betai = Config.bw / ((2 ** Config.sf) / Config.bw) * (1 + 2 * est_cfo_f / Config.sig_freq)
     outpath = os.path.join(outpath_in, str(pkt_idx))
     if not os.path.exists(outpath): os.makedirs(outpath)
+    codes = []
     for pidx in range(Config.sfdpos + 2, Config.total_len):
         start_pos_all_new = 2 ** Config.sf / Config.bw * Config.fs * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
         start_pos = around(start_pos_all_new)
@@ -92,11 +93,12 @@ def objective_cut(est_cfo_f, est_to_s, pktdata_in, pkt_idx, outpath_in):
         data2 = cp.matmul(Config.decode_matrix_b, dataX)
         vals = cp.abs(data1) ** 2 + cp.abs(data2) ** 2
         coderet = cp.argmax(vals).item()
+        codes.append(coderet)
         outfpath = os.path.join(outpath, f"{pidx - Config.sfdpos - 2}_{coderet}_{pkt_idx}_{Config.sf}")
-        # logger.warning(outfpath)
         dataX.tofile(outfpath)
         # pltfig1(None, cp.unwrap(cp.angle(dataX))).show()
         # sys.exit(0)
+    return codes
 
 def objective_decode(est_cfo_f, est_to_s, pktdata_in):
     codes = []
@@ -325,7 +327,7 @@ def refine_ft(est_cfo_f, est_to_s, pktdata_in):
     fs = (np.mean(sqlist(fs1)), np.mean(sqlist(fs2)))
     delta_cfo_f = (fs[0] + fs[1]) / 2
     delta_to_s = (-fs[0] + fs[1]) / 2 / betai * Config.fs
-    logger.info(f"{delta_cfo_f=} {delta_to_s=}")
+    logger.warning(f"refine_ft {delta_cfo_f=} {delta_to_s=}")
     return est_cfo_f + delta_cfo_f, est_to_s + delta_to_s
 
 

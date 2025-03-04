@@ -192,6 +192,7 @@ else:
 Config = Config()
 
 if Config.sf>=11: logger.error(f"WARNING: ENABLING LDRO")
+logger.error(f"WARNING: {Config.guess_f=}")
 
 
 if Config.skip_preambles > Config.preamble_len * 0.4: logger.error(f"ERR skip_preambles too long {Config.skip_preambles} in {Config.preamble_len}")
