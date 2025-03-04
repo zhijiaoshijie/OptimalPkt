@@ -43,78 +43,58 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
     upchirp = cp.exp(2j * cp.pi * (betanew / 2 * x ** 2 / Config.fs ** 2 + (- bwnew / 2) * x / Config.fs))
     downchirp = cp.conj(upchirp)
 
-    fig1 = None
+    freqlowidx = Config.fft_n // 2 - (3 * bwnew / 2 + Config.cfo_range) / Config.fs * Config.fft_n
+    freqhighidx = Config.fft_n // 2 + (bwnew / 2 + Config.cfo_range) / 2 / Config.fs * Config.fft_n
+
     for pidx in range(Config.skip_preambles, Config.preamble_len + Config.detect_range_pkts):
         data0 = dechirp_fft(tstart, fstart, pktdata_in, downchirp, pidx, True)
-        Config.fft_ups_x[pidx] = data0
-        x1.append(tocpu(cp.argmax(cp.abs(data0[:len(data0)//2]))))
-        x2.append(tocpu(cp.argmax(cp.abs(data0[len(data0)//2:]))))#+len(data0)//2))
-        y1.append(tocpu(cp.max(cp.abs(data0[:len(data0)//2]))))
-        y2.append(tocpu(cp.max(cp.abs(data0[len(data0)//2:]))))
-        # plt.plot(cp.arange(x1[-1]-1000, x1[-1]+1000),tocpu(cp.abs(data0[x1[-1]-1000: x1[-1]+1000])))
-        # plt.axvline(x=x1[-1], color='k')
-        # plt.title(f"{pidx=} {tstart=}")
-        # plt.show()
-        # xplt = cp.arange(Config.fft_n) / Config.fft_n * Config.fs
-        # fig1 = pltfig1(xplt, cp.abs(data0), fig=fig1)
-        # plt.plot(tocpu(xplt), tocpu(cp.abs(data0)))
-    xplt = cp.arange(len(x1))
-    pltfig(((xplt, x1), ), title="x").show()
-    pltfig(( (xplt, x2),), title="x").show()
-    pltfig(((xplt, y1), (xplt, y2)), title="y").show()
-    bwnew2 = Config.bw * (1 - 2 * estf / Config.sig_freq)
+        Config.fft_ups_x[pidx][freqlowidx : freqhighidx] = data0[freqlowidx : freqhighidx]
+
+    freqlowidx = Config.fft_n // 2 - (bwnew / 2 + Config.cfo_range) / Config.fs * Config.fft_n
+    freqhighidx = Config.fft_n // 2 + (3 * bwnew / 2 + Config.cfo_range) / 2 / Config.fs * Config.fft_n
+
+    for pidx in range(Config.sfdpos, Config.sfdpos + 2 + Config.detect_range_pkts):
+        data0 = dechirp_fft(tstart, fstart, pktdata_in, upchirp, pidx, False)
+        Config.fft_downs_x[pidx - Config.sfdpos][freqlowidx : freqhighidx] = data0[freqlowidx : freqhighidx]
+
 
     # fig = px.line(y=cp.array(x1)-cp.array(x2))
     # print(-cp.mean(cp.array(x1)-cp.array(x2))-Config.bw, bwnew2-Config.bw)
     # fig.add_hline(y=-bwnew2)
     # fig.show()
 
-    for pidx in range(Config.sfdpos, Config.sfdpos + 2 + Config.detect_range_pkts):
-        data0 = dechirp_fft(tstart, fstart, pktdata_in, upchirp, pidx, False)
-        Config.fft_downs_x[pidx - Config.sfdpos] = data0
 
     # todo SFO是否会导致bw不是原来的bw
     # adding: highpeak of previous + lowpeak of following
-    idx = around(bwnew2 / Config.fs * Config.fft_n)
-    fft_ups_add = (cp.abs(Config.fft_ups_x[:-1, idx:]) + cp.abs(Config.fft_ups_x[1:, : - idx])) # TODO!!!Abs
+    idx = around(bwnew / Config.fs * Config.fft_n)
+    fft_ups_add = (cp.abs(Config.fft_ups_x[:-1, : - idx]) + cp.abs(Config.fft_ups_x[1:, idx:])) # 前一帧的低点和后一帧的高点是同一个symb，而且argmax值要上移一个bw
+    fft_downs_add = (cp.abs(Config.fft_downs_x[:-1, idx:]) + cp.abs(Config.fft_downs_x[1:, : - idx])) # 前一帧的高点和后一帧的低点是同一个symb，argmax值不用上移
     # for i in range(fft_ups_add.shape[0]):
 
     xx = []
-    for i in range(Config.skip_preambles, Config.preamble_len):
-        xx.append(tocpu(cp.argmax(cp.abs(fft_ups_add[i, :]))))
-    # plt.plot(xx)
-    # plt.show()
-    xmid = cp.median(cp.array(sqlist(xx))).item()
-    logger.warning(f"{xx} {xmid}")
+    for i in range(Config.skip_preambles, Config.preamble_len + Config.detect_range_pkts - 1 ):
+        xx.append(tocpu(cp.max(cp.abs(fft_ups_add[i, :]))))
+    plt.plot(xx)
+    plt.show()
+    pltfig(((cp.arange(len(x1)), y1), (cp.arange(len(x1)), y2), (cp.arange(len(xx)),xx)), title="y").show()
 
-    #     k = estf / Config.sig_freq * Config.bw
-    #     fft_ups_add[i] = cp.roll(fft_ups_add[i], -around(k * i))
-
-    # fig = FigureResampler(go.Figure(layout_title_text=f"fft_ups values"))
-    fig = go.Figure(layout_title_text=f"fft_ups values")
-    for i in range(Config.skip_preambles, Config.preamble_len, 1):
-        # fig.add_trace(go.Scatter(y=tocpu(cp.abs(Config.fft_ups_x[i, 348200:348900]))))
-        fig.add_trace(go.Scatter(x=tocpu(cp.arange(xmid - 1000, xmid + 1000)), y=tocpu(cp.abs(Config.fft_ups_x[i, xmid - 1000:xmid + 1000]))))
-    fig.show()
-
-    fig = go.Figure(layout_title_text=f"fft_ups values2")
-    xmid2 = xmid + around(bwnew2 / Config.fs * Config.fft_n)
-    for i in range(Config.skip_preambles, Config.preamble_len, 1):
-        fig.add_trace(go.Scatter(x=tocpu(cp.arange(xmid2 - 1000, xmid2 + 1000)), y=tocpu(cp.abs(Config.fft_ups_x[i, xmid2 - 1000:xmid2 + 1000]))))
-        plt.plot(tocpu(cp.abs(Config.fft_ups_x[i])))
-        plt.axvline(x=xmid)
-        plt.axvline(x=xmid2)
-        plt.show()
-    fig.show()
-
-    sys.exit(0)
-
-    # fft_downs_add = Config.fft_downs_x[:-1, :-Config.bw / Config.fs * Config.fft_n] + Config.fft_downs_x[1:, Config.bw / Config.fs * Config.fft_n:]
 
     # fit the up chirps with linear, intersect with downchirp
     detect_vals = cp.zeros((Config.detect_range_pkts, 3))
 
     # try all possible starting windows, signal start at detect_pkt th window
+    # y_values = []
+    # for detect_pkt in range(Config.detect_range_pkts - 1):
+    #     buff_freqs = around(Config.cfo_range * Config.fft_n / Config.fs)
+    #     lower = around(- Config.bw - buff_freqs + Config.fft_n // 2)
+    #     higher = around(buff_freqs + Config.fft_n // 2)
+    #     y_value = tocpu(cp.max(cp.sum(
+    #         cp.abs(fft_ups_add[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt, lower:higher]),
+    #         axis=0)))
+    #     y_values.append(y_value)
+    # pltfig1(None, y_values).show()
+    # sys.exit(0)
+
     for detect_pkt in range(Config.detect_range_pkts - 1):
 
         if False:
@@ -129,9 +109,18 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
         buff_freqs = around(Config.cfo_range * Config.fft_n / Config.fs)
         lower = around(- Config.bw - buff_freqs + Config.fft_n // 2)
         higher = around(buff_freqs + Config.fft_n // 2)
-        y_value = tocpu(cp.argmax(cp.sum(
+
+        data1 = cp.sum(fft_ups_add[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt, lower:higher],axis=0)
+        data2 = cp.sum(fft_downs_add[ detect_pkt:  2 + detect_pkt, lower:higher],axis=0)
+
+        logger.warning(f"{detect_pkt=} {cp.max(data1)=} {cp.max(data2)=} {cp.argmax(data1)=} {cp.argmax(data2)=}")
+        continue
+        y_value = cp.argmax(data2).item()
+        # y_value = beta * to + cfo + fft_n // 2 - 1.5 * bw
+
+        y_value_h = tocpu(cp.max(cp.sum(
             cp.abs(fft_ups_add[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt, lower:higher]),
-            axis=0))) + lower
+            axis=0)))
         # y_value_debug = tocpu(cp.argmax(
         #     cp.abs(fft_ups_add[Config.skip_preambles + detect_pkt: Config.preamble_len + detect_pkt, lower:higher]),
         #     axis=0))) + lower
@@ -181,6 +170,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart, sigD=False):
         dvals = cp.max(values[:, :, 2])
         detect_vals[detect_pkt] = cp.array(sqlist((dvals, est_cfo_f, est_to_s)))  # save result
 
+    sys.exit(0)
     # find max among all detect windows
     detect_pkt_max = cp.argmax(detect_vals[:, 0])
     est_cfo_f, est_to_s = detect_vals[detect_pkt_max, 1], detect_vals[detect_pkt_max, 2]

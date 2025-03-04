@@ -130,7 +130,7 @@ class Config:
 
 
     fs = 1e6
-    skip_preambles = 2  # skip first 8 preambles ## TODO
+    skip_preambles = 0  # skip first 8 preambles ## TODO
     thresh = None# 0.03
     cfo_range = bw // 8
     code_len = 2
@@ -169,7 +169,7 @@ class Config:
     if not os.path.exists(figpath): os.mkdir(figpath)
 
     fft_upsamp = 1024
-    detect_range_pkts = 4
+    detect_range_pkts = 12
     assert detect_range_pkts >= 2 # add 1, for buffer of cross-add
     detect_to_max = nsamp * 2
     fft_n = int(fs) #nsamp * fft_upsamp

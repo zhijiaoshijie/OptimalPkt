@@ -54,7 +54,7 @@ def preprocess_file(file_path, outpath):
     # Plot result
     # sys.exit(0)
     # pltfig1(None, peaks, title="peak positions").show()
-    peaks = cp.array(peaks) - Config.preamble_len - 1
+    peaks = cp.array(peaks) - Config.preamble_len - 1 - 4 # todo!!!
 
     differences = np.diff(peaks)
     common_diff = np.nanmedian(differences)
