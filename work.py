@@ -39,7 +39,7 @@ def coarse_work_fast(pktdata_in, fstart, tstart):
 
         preamble_amax = cp.argmax(data1).item() - Config.fft_n // 2
         sfd_amax = cp.argmax(data2).item() - Config.fft_n // 2
-        est_cfo_f = (preamble_amax + sfd_amax + bwnew) / 2
+        est_cfo_f = (preamble_amax + sfd_amax + bwnew) / 2  + fstart
         est_to_s = (- preamble_amax + sfd_amax + bwnew) / 2 / betanew * Config.fs + tstart # 注意fft是从tstart开始做的
 
         # y_value = beta * to + cfo + fft_n // 2 - 1.5 * bw

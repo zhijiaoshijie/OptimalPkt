@@ -274,7 +274,7 @@ def myfft(chirp_data, n, plan):
 
 
 def dechirp_fft(tstart, fstart, pktdata_in, refchirp, pidx, ispreamble):
-    nsamp_small = 2 ** Config.sf / Config.bw * Config.fs# * (1 + fstart / Config.sig_freq)
+    nsamp_small = 2 ** Config.sf / Config.bw * Config.fs * (1 - fstart / Config.sig_freq)
     start_pos_all = nsamp_small * pidx + tstart
     start_pos = around(start_pos_all)
     start_pos_d = start_pos_all - start_pos
@@ -283,12 +283,15 @@ def dechirp_fft(tstart, fstart, pktdata_in, refchirp, pidx, ispreamble):
     # plt.plot(tocpu(cp.unwrap(cp.angle(sig1))))
     # plt.show()
     sig2 = sig1 * refchirp
-    freqdiff = start_pos_d / nsamp_small * Config.bw / Config.fs * Config.fft_n
-    if ispreamble: freqdiff -= fstart / Config.sig_freq * Config.bw * pidx
-    else: freqdiff += fstart / Config.sig_freq * Config.bw * pidx
-    sig2 = add_freq(sig2,freqdiff)
-    data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
-    # plt.plot(tocpu(cp.abs(data0)))
-    # plt.show()
+    freqdiff = start_pos_d / nsamp_small * Config.bw * (1 + fstart / Config.sig_freq) / Config.fs * Config.fft_n
+    if not ispreamble: freqdiff *= -1
+    freqdiff -= fstart
+    sig3 = add_freq(sig2, freqdiff)
+    data0 = myfft(sig3, n=Config.fft_n, plan=Config.plan)
+    dmax = cp.argmax(cp.abs(data0)).item() / Config.fft_n * Config.fs
+    beta = Config.bw / ((2 ** Config.sf) / Config.bw)
+    betanew = beta * (1 + 2 * fstart / Config.sig_freq)
+    logger.warning(f"A{dmax=}   {freqdiff= } {(dmax-500000)/betanew=}")
+    # sys.exit(0)
     return data0
 

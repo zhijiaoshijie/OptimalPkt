@@ -76,8 +76,6 @@ def gen_matrix2(dt, est_cfo_f):
     return decode_matrix_a, decode_matrix_b
 def objective_cut(est_cfo_f, est_to_s, pktdata_in, pkt_idx, outpath_in):
     betai = Config.bw / ((2 ** Config.sf) / Config.bw) * (1 + 2 * est_cfo_f / Config.sig_freq)
-    outpath = os.path.join(outpath_in, str(pkt_idx))
-    if not os.path.exists(outpath): os.makedirs(outpath)
     codes = []
     for pidx in range(Config.sfdpos + 2, Config.total_len):
         start_pos_all_new = 2 ** Config.sf / Config.bw * Config.fs * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
@@ -94,8 +92,11 @@ def objective_cut(est_cfo_f, est_to_s, pktdata_in, pkt_idx, outpath_in):
         vals = cp.abs(data1) ** 2 + cp.abs(data2) ** 2
         coderet = cp.argmax(vals).item()
         codes.append(coderet)
-        outfpath = os.path.join(outpath, f"{pidx - Config.sfdpos - 2}_{coderet}_{pkt_idx}_{Config.sf}")
-        dataX.tofile(outfpath)
+        if outpath_in:
+            outpath = os.path.join(outpath_in, str(pkt_idx))
+            if not os.path.exists(outpath): os.makedirs(outpath)
+            outfpath = os.path.join(outpath, f"{pidx - Config.sfdpos - 2}_{coderet}_{pkt_idx}_{Config.sf}")
+            dataX.tofile(outfpath)
         # pltfig1(None, cp.unwrap(cp.angle(dataX))).show()
         # sys.exit(0)
     return codes
