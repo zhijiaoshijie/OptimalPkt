@@ -20,8 +20,8 @@ def mainwork(pkt_idx, data1, outpath):
     est_cfo_f = Config.guess_f
     est_to_s = 0
 
-    est_cfo_f = -41500.010794338654
-    est_to_s = 72.48785549106141
+    est_cfo_f = -40957.99017221283
+    est_to_s = 70.76520641975083
 
     # nsamp_small = 2 ** Config.sf / Config.bw * Config.fs * (1 - est_cfo_f / Config.sig_freq)
     # pltfig1(cp.arange(around(est_to_s + nsamp_small * 50) - 20, around(est_to_s + nsamp_small * 50) + 20), cp.unwrap(cp.angle(data1[around(est_to_s + nsamp_small * 50) - 20:around(est_to_s + nsamp_small * 50) + 20])), addvline=(est_to_s + nsamp_small * 50,)).show()
@@ -51,7 +51,13 @@ def mainwork(pkt_idx, data1, outpath):
     #     data1[around(est_to_s) : around(2 ** Config.sf / Config.bw * Config.fs * (totlen + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s)].tofile(f"out{totlen}")
     # sys.exit(0)
     # data1[around(est_to_s) : around(2 ** Config.sf / Config.bw * Config.fs * (Config.total_len + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s)].tofile(f"out{pkt_idx}.sigdat")
-    pltfig1(None, cp.unwrap(cp.angle(data1[ :around(est_to_s) + 100])), addvline=(est_to_s,)).show()
+    # pltfig1(None, cp.unwrap(cp.angle(data1[ :around(est_to_s) + 100])), addvline=(est_to_s,)).show()
+    # sys.exit(0)
+    nsamp_small = 2 ** Config.sf / Config.bw * Config.fs * (1 - est_cfo_f / Config.sig_freq)
+    for pidx in [0, 50, 100, 150, 238, 239, 240, 241, 242, 243, 244]:
+        pltfig1(cp.arange(around(est_to_s + nsamp_small * pidx) - 20, around(est_to_s + nsamp_small * pidx) + 20), cp.unwrap(cp.angle(data1[around(est_to_s + nsamp_small * pidx) - 20:around(est_to_s + nsamp_small * pidx) + 20])), addvline=(est_to_s + nsamp_small * pidx,), title=f"{pidx=}").show()
+    for pidx in [0, 50, 100, 150, 238, 239, 240, 241, 242, 243, 244]:
+        pltfig1(cp.arange(around(est_to_s + nsamp_small * pidx) - 20, around(est_to_s + nsamp_small * (pidx+1)) + 20), cp.unwrap(cp.angle(data1[around(est_to_s + nsamp_small * pidx) - 20:around(est_to_s + nsamp_small *  (pidx+1)) + 20])), addvline=(est_to_s + nsamp_small * pidx,est_to_s + nsamp_small * (pidx+1),), title=f"{pidx=}").show()
     sys.exit(0)
     codes = objective_cut(est_cfo_f, est_to_s, data1, pkt_idx, outpath)
     return est_cfo_f.item(), est_to_s.item(), codes
