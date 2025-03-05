@@ -288,10 +288,10 @@ def dechirp_fft(tstart, fstart, pktdata_in, refchirp, pidx, ispreamble):
     freqdiff -= fstart
     sig3 = add_freq(sig2, freqdiff)
     data0 = myfft(sig3, n=Config.fft_n, plan=Config.plan)
-    dmax = cp.argmax(cp.abs(data0)).item() / Config.fft_n * Config.fs
-    beta = Config.bw / ((2 ** Config.sf) / Config.bw)
-    betanew = beta * (1 + 2 * fstart / Config.sig_freq)
-    logger.warning(f"A{start_pos=} {dmax=}  {freqdiff+fstart=} ")
+    # dmax = cp.argmax(cp.abs(data0)).item() / Config.fft_n * Config.fs
+    # beta = Config.bw / ((2 ** Config.sf) / Config.bw)
+    # betanew = beta * (1 + 2 * fstart / Config.sig_freq)
+    # logger.warning(f"A{start_pos=} {dmax=}  {freqdiff+fstart=} ")
     # sys.exit(0)
     return data0
 
