@@ -32,7 +32,7 @@ def mainwork(pkt_idx, data1, outpath):
             logger.error(f"ERROR in Coarsework {est_cfo_f=} {est_to_s=} out {est_cfo_f=} {est_to_s=} {pkt_idx=}")
             est_to_s = 0
     # est_to_s, flag = find_power(est_cfo_f, est_to_s, data1)
-    # logger.warning(f"Fw {pkt_idx} f={est_cfo_f} t={est_to_s}")
+    logger.warning(f"Fw {pkt_idx} f={est_cfo_f} t={est_to_s}")
     # if not flag: continue ## !!!TODO debug
     # est_cfo_f, est_to_s = refine_ft(est_cfo_f, est_to_s, data1)
     # logger.warning(f"Rw {pkt_idx} f={est_cfo_f} t={est_to_s}")
@@ -43,5 +43,8 @@ def mainwork(pkt_idx, data1, outpath):
     #     data1[around(est_to_s) : around(2 ** Config.sf / Config.bw * Config.fs * (totlen + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s)].tofile(f"out{totlen}")
     # sys.exit(0)
     # data1[around(est_to_s) : around(2 ** Config.sf / Config.bw * Config.fs * (Config.total_len + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s)].tofile(f"out{pkt_idx}.sigdat")
+
+    coarse_work_check(data1, est_cfo_f, est_to_s)  # tryi >= 1) # !!! tODO
+
     codes = objective_cut(est_cfo_f, est_to_s, data1, pkt_idx, outpath)
     return est_cfo_f.item(), est_to_s.item(), codes
