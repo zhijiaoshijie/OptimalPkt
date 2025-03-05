@@ -23,12 +23,21 @@ if __name__ == "__main__":
     pkt_idx_cnt = 0
     logger.warning("ERR this only work for integer")
 
-    dpath = "/data/djl/datasets/msudata_ljk/"
-    outpath = None# f"/data/djl/datasets/msudata_ljk_test2/{Config.name}/cover_sf{Config.sf}"
-    for fname in os.listdir(dpath):
-        if f"{Config.name}-cover-{Config.sf}-" in fname:
-            if 'lot-cover-10-4-E63' in fname: continue
-            file_path = os.path.join(dpath, fname)
-            # opath = os.path.join(outpath, fname.split("-")[-1])
-            # preprocess_file(file_path, opath)
-            preprocess_file(file_path, None)
+    for name in ['farm', 'lot']:
+        dpath = "/data/djl/datasets/msudata_ljk/"
+        outpath = f"/data/djl/datasets/msudata_ljk_cut/{name}/cover_sf{Config.sf}"
+        for fname in os.listdir(dpath):
+            if f"{name}-cover-{Config.sf}-" in fname:
+                if 'lot-cover-10-4-E63' in fname: continue
+                file_path = os.path.join(dpath, fname)
+                opath = os.path.join(outpath, fname.split("-")[-1])
+                print(file_path, opath)
+                # preprocess_file(file_path, opath)
+        dpath = "/data/djl/datasets/msudata_ljk/"
+        outpath = f"/data/djl/datasets/msudata_ljk_cut/{name}/cover_sf{Config.sf}"
+        for fname in os.listdir(dpath):
+            if "cover" not in fname and name in fname and str(Config.sf) in fname:
+                file_path = os.path.join(dpath, fname)
+                opath = os.path.join(outpath, "clean"+fname.split("-")[-1])
+                print(file_path, opath)
+                # preprocess_file(file_path, opath)
