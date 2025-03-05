@@ -24,10 +24,11 @@ if __name__ == "__main__":
     logger.warning("ERR this only work for integer")
 
     dpath = "/data/djl/datasets/msudata_ljk/"
-    outpath = f"/data/djl/datasets/msudata_ljk_test2/{Config.name}/cover_sf{Config.sf}"
+    outpath = None# f"/data/djl/datasets/msudata_ljk_test2/{Config.name}/cover_sf{Config.sf}"
     for fname in os.listdir(dpath):
         if f"{Config.name}-cover-{Config.sf}-" in fname:
             if 'lot-cover-10-4-E63' in fname: continue
             file_path = os.path.join(dpath, fname)
-            opath = os.path.join(outpath, fname.split("-")[-1])
-            preprocess_file(file_path, opath)
+            # opath = os.path.join(outpath, fname.split("-")[-1])
+            # preprocess_file(file_path, opath)
+            preprocess_file(file_path, None)

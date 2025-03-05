@@ -58,10 +58,10 @@ def preprocess_file(file_path, outpath):
     common_diff = np.nanmedian(differences)
     n = around((peaks[-1] - peaks[0]) / common_diff) + 1
     peaks = peaks[0] + common_diff * cp.arange(n)
-    logger.warning(f"{file_path} {len(peaks)=} {peaks[0]=} {peaks[-1]=} {common_diff=}")
     # pltfig1(None, nmaxs, addvline=peaks, title=f"{file_path}").show()
     # return
     code_acc = [493, 73, 805, 417, 289, 117, 461, 225, 859, 127, 820, 718, 650, 851, 824, 68, 565, 938, 761, 937, 280, 272, 614, 537, 115, 920, 250, 54, 309, 787, 950, 766, 845, 889, 201, 488]
+    accs = []
     for peak in peaks:
         with open(file_path, 'rb') as file:
             # Move the file pointer to the desired position (e.g., 100 bytes from the start)
@@ -72,8 +72,10 @@ def preprocess_file(file_path, outpath):
                 continue
             f, t, code = mainwork(pkt_idx, rawdata, outpath)
             acc = np.mean(np.array(code) == np.array(code_acc)).item()
-            logger.warning(f"{pkt_idx=} {f=} {t=} {acc=}")
+            accs.append(acc)
+            # logger.warning(f"{pkt_idx=} {f=} {t=} {acc=}")
             pkt_idx += 1
+    logger.warning(f"{file_path} {len(peaks)=} {peaks[0]=} {peaks[-1]=} {common_diff=} {np.mean(accs)=}")
     return pkt_idx
 
 def read_large_file(file_path_in):

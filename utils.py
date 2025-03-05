@@ -130,7 +130,7 @@ class Config:
 
 
     fs = 1e6
-    skip_preambles = 0  # skip first 8 preambles ## TODO
+    skip_preambles = 2  # skip first 8 preambles ## TODO
     thresh = None# 0.03
     cfo_range = bw // 8
     code_len = 2
