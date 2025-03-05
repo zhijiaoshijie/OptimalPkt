@@ -291,7 +291,7 @@ def dechirp_fft(tstart, fstart, pktdata_in, refchirp, pidx, ispreamble):
     dmax = cp.argmax(cp.abs(data0)).item() / Config.fft_n * Config.fs
     beta = Config.bw / ((2 ** Config.sf) / Config.bw)
     betanew = beta * (1 + 2 * fstart / Config.sig_freq)
-    logger.warning(f"A{dmax=}   {freqdiff= } {(dmax-500000)/betanew=}")
+    # logger.warning(f"A{dmax=}   {freqdiff+fstart= } {(dmax-500000)/betanew=}")
     # sys.exit(0)
     return data0
 
