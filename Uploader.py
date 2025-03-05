@@ -12,6 +12,7 @@ import urllib3
 from requests_toolbelt.multipart.encoder import MultipartEncoder, MultipartEncoderMonitor
 
 wFlag = True
+quiteFlag = False
 while wFlag:
     try:
         wFlag = False
@@ -28,8 +29,9 @@ while wFlag:
         # fnames = sorted(fnames_raw)
         fnames = ["/data/djl/OptimalPkt/farm_cover_sf10_1.tar.gz", "/data/djl/OptimalPkt/lot_cover_sf10_1.tar.gz"]
 
-        print(f"upload filenames: {len(fnames)=}")
-        print('\n'.join(fnames))
+        if not quiteFlag:
+            print(f"upload filenames: {len(fnames)=}")
+            print('\n'.join(fnames))
 
         cookies = {
             'sessionid': '7dw70y8ti02g0ywh99zorg1ilitzwnry',
@@ -57,6 +59,8 @@ while wFlag:
 
         print('requesting', repo_url, response.status_code)
         assert (response.status_code == 200)
+        with open('1.html', 'wb') as f:
+            f.write(response.content)
         response = response.content.decode('utf-8').split('\n')
         line_token = list(filter(lambda x: ('token' in x), response))
         token = re.compile(r"token: [\"\'](?P<url>[-\w]+)[\"\']").search(line_token[0]).groupdict()['url']
@@ -64,6 +68,8 @@ while wFlag:
         newurl = f'https://cloud.tsinghua.edu.cn/api/v2.1/upload-links/{token}/upload/'
         response = requests.get(newurl, cookies=cookies, headers=headers)
         print('requesting', newurl, response.status_code)
+        # n2 = f'https://cloud.tsinghua.edu.cn/api2/repos/{token}/dir/?p=%2F2'
+        # print('requesting', n2, response.status_code)
         assert (response.status_code == 200)
         upload_link = response.json()["upload_link"]
 
@@ -84,8 +90,11 @@ while wFlag:
             for fname in fnames:
                 if os.path.basename(fname) == fnamex: fnames.remove(fname)
 
-        print(f"filtered upload filenames: {len(fnames)=}")
-        print('\n'.join(fnames))
+        if not quiteFlag:
+            print(f"filtered upload filenames: {len(fnames)=}")
+            print('\n'.join(fnames))
+        else:
+            print(f"start uploading...")
 
         # Create and start a thread for each command
         for idx, fname in enumerate(fnames):
@@ -105,17 +114,20 @@ while wFlag:
                 encoder = MultipartEncoder(
                     fields={
                         'file': (fname, f),
+                        # 'parent_dir': (''+os.path.dirname(fname), '/'+os.path.dirname(fname))
                         'parent_dir': ('', '/')
                     }
                 )
 
-                print(f'[{idx}/{len(fname)}] Uploading {fname}')
-                with tqdm(total=file_size, unit='B', unit_scale=True, smoothing=0) as pbar:
+                if not quiteFlag:
+                    print(f'[{idx}/{len(fname)}] Uploading {fname}')
+                with tqdm(total=file_size, unit='B', unit_scale=True, smoothing=0, disable=quiteFlag) as pbar:
                     monitor = MultipartEncoderMonitor(encoder, create_callback(pbar))
 
                     response = requests.post(upload_link, data=monitor, cookies=cookies,
                                              headers={'Content-Type': monitor.content_type})
-                print(response.status_code, response.text)
+                if not quiteFlag:
+                    print(response.status_code, response.text)
                 if response.status_code != 200:
                     wFlag = True
                     print('restarting...')
