@@ -72,43 +72,9 @@ def coarse_work_check(pktdata_in, fstart, tstart):
     upchirp = cp.exp(2j * cp.pi * (betanew / 2 * x ** 2  + (- bwnew / 2) * x ))
     downchirp = cp.conj(upchirp)
 
-    sig1as = []
-    for pidx in range(Config.preamble_len):
-        nsamp_small = 2 ** Config.sf / Config.bw * Config.fs * (1 - fstart / Config.sig_freq)
-        start_pos_all = nsamp_small * pidx + tstart
-        start_pos = around(start_pos_all)
-        start_pos_d = start_pos_all - start_pos
-        freqdiff = start_pos_d / nsamp_small * Config.bw * (1 + fstart / Config.sig_freq) / Config.fs * Config.fft_n # sfd: *= -1
-        sig1 = pktdata_in[start_pos: Config.nsamp + start_pos] * downchirp
-        sig2 = add_freq(sig1, freqdiff - fstart)
-        sig1as.append(sig2)
-        # logger.warning(f"{pidx=} {start_pos=} {freqdiff=} {cp.abs(cp.sum(add_freq(sig2, 1)))=}")
+    freq = optimize_chirp(fstart, tstart, pktdata_in, downchirp, range(Config.preamble_len), True)
+    freq2 = optimize_chirp(fstart, tstart, pktdata_in, upchirp, range(Config.sfdpos, Config.sfdpos + 2), False)
 
-    sig1as = cp.vstack(sig1as)
-    tsymbr = cp.arange(Config.nsamp) / Config.fs * (1 - fstart / Config.sig_freq)
-
-    def obj1(freq, xdata, ydata):
-        return -cp.sum(cp.abs(ydata.dot(cp.exp(xdata * -1j * 2 * cp.pi * cp.array(freq))))).item()
-
-    margin = Config.bw / 4
-    result = minimize(obj1, 0, args=(tsymbr, sig1as), bounds=[(- margin, + margin)])  # !!!
-    freq = result.x[0]
-    logger.warning(f"{freq=} {-obj1(0, tsymbr, sig1as)=}  {-obj1(1, tsymbr, sig1as)=} {-obj1(freq, tsymbr, sig1as)=}")
-
-    freq = 0
-    for i in range(20):
-        xvals = cp.linspace(freq - margin, freq + margin, 1001)
-        yvals = [obj1(f, tsymbr, sig1as) for f in xvals]
-        yvals = cp.array(sqlist(yvals))
-        freq = xvals[cp.argmin(yvals)]
-        valnew = cp.min(yvals)
-        # if valnew < val * (1 - 1e-5):
-        #     pltfig1(xvals, yvals, addvline=(freq,), title=f"{i=} {val=} {valnew=}").show()
-        # assert valnew >= val * (1 - 1e-5), f"{val=} {valnew=} {i=} {val-valnew=}"
-        margin /= 2
-        val = valnew
-        logger.warning(f"{freq=:.12f} {valnew=} {xvals[1] - xvals[0]=}")
-    logger.warning(f"{freq=} {-obj1(0, tsymbr, sig1as)=}  {-obj1(1, tsymbr, sig1as)=} {-obj1(freq, tsymbr, sig1as)=}")
 
 
     sys.exit(0)
@@ -158,3 +124,42 @@ def coarse_work_check(pktdata_in, fstart, tstart):
     est_cfo_f, est_to_s = detect_vals[detect_pkt_max, 1], detect_vals[detect_pkt_max, 2] + detect_pkt_max * Config.nsamp * (1 - fstart / Config.sig_freq)
 
     return est_cfo_f, est_to_s
+
+
+def optimize_chirp(fstart, tstart, pktdata_in, refchirp, pidx_range, ispreamble):
+    sig1as = []
+    for pidx in pidx_range:
+        nsamp_small = 2 ** Config.sf / Config.bw * Config.fs * (1 - fstart / Config.sig_freq)
+        start_pos_all = nsamp_small * pidx + tstart
+        start_pos = around(start_pos_all)
+        start_pos_d = start_pos_all - start_pos
+        freqdiff = start_pos_d / nsamp_small * Config.bw * (1 + fstart / Config.sig_freq) / Config.fs * Config.fft_n
+        if not ispreamble: freqdiff *= -1
+        sig1 = pktdata_in[start_pos: Config.nsamp + start_pos] * refchirp
+        sig2 = add_freq(sig1, freqdiff - fstart)
+        sig1as.append(sig2)
+        # logger.warning(f"{pidx=} {start_pos=} {freqdiff=} {cp.abs(cp.sum(add_freq(sig2, 1)))=}")
+    sig1as = cp.vstack(sig1as)
+    tsymbr = cp.arange(Config.nsamp) / Config.fs * (1 - fstart / Config.sig_freq)
+
+    def obj1(freq, xdata, ydata):
+        return -cp.sum(cp.abs(ydata.dot(cp.exp(xdata * -1j * 2 * cp.pi * cp.array(freq))))).item()
+
+    margin = Config.bw / 4
+    result = minimize(obj1, 0, args=(tsymbr, sig1as), bounds=[(- margin, + margin)])  # !!!
+    freq = result.x[0]
+    logger.warning(f"{freq=} {-obj1(0, tsymbr, sig1as)=}  {-obj1(1, tsymbr, sig1as)=} {-obj1(freq, tsymbr, sig1as)=}")
+
+    # <<< SEE IF SEARCH ACCURATE USE GRID SEARCH >>>
+    # freq = 0
+    # for i in range(20):
+    #     xvals = cp.linspace(freq - margin, freq + margin, 1001)
+    #     yvals = [obj1(f, tsymbr, sig1as) for f in xvals]
+    #     yvals = cp.array(sqlist(yvals))
+    #     freq = xvals[cp.argmin(yvals)]
+    #     valnew = cp.min(yvals)
+    #     margin /= 2
+    #     logger.warning(f"{freq=:.12f} {valnew=} {xvals[1] - xvals[0]=}")
+    # logger.warning(f"{freq=} {-obj1(0, tsymbr, sig1as)=}  {-obj1(1, tsymbr, sig1as)=} {-obj1(freq, tsymbr, sig1as)=}")
+
+    return freq
