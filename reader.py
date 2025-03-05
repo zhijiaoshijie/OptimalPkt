@@ -18,7 +18,6 @@ def preprocess_file(file_path, outpath):
     #     rawdata.tofile("test.sigdat")
     #     mainwork(0, rawdata, '/data/djl/OptimalPkt')
     # sys.exit(0)
-    if  'lot-cover-10-4-E63' in file_path: return
 
     pkt_idx = 0
     #  read file and count size
