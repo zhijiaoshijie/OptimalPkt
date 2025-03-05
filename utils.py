@@ -292,11 +292,9 @@ def dechirp_fft(tstart, fstart, pktdata_in, refchirp, pidx, ispreamble):
     freqdiff += fstart
     sig3 = add_freq(sig2, - freqdiff)
     data0 = myfft(sig3, n=Config.fft_n, plan=Config.plan)
-    # plt.plot(tocpu(cp.abs(data0)))
-    # plt.show()
     dmax = cp.argmax(cp.abs(data0)).item() / Config.fft_n * Config.fs
-    # ret, v = optimize_1dfreq_fast(sig2, cp.arange(Config.nsamp)/Config.fs, dmax, Config.bw / 16)
-    logger.warning(f"{dmax=}   {freqdiff= }")
+    ret, v = optimize_1dfreq_fast(sig3, cp.arange(Config.nsamp)/Config.fs* (1 - fstart / Config.sig_freq), dmax, Config.bw / 16)
+    logger.warning(f"{dmax=}  {ret=} {v=} {freqdiff= }")
     # sys.exit(0)
     return data0
 
