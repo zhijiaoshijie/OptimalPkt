@@ -1,8 +1,10 @@
 import logging
+from scipy.optimize import minimize
 import os
 import math
 import numpy as np
 import matplotlib.pyplot as plt
+
 
 use_gpu = True
 
@@ -71,28 +73,26 @@ import argparse
 parser = argparse.ArgumentParser(description="Sample argparse script")
 
 # Add the integer argument with a default value of 7
-parser.add_argument('--sf', type=int, default=10, help="Set the value of sf (default is 7)")
-parser.add_argument('-n', type=str, default='farm', help="fname")
-args = parser.parse_args()
+# parser.add_argument('--sf', type=int, default=10, help="Set the value of sf (default is 7)")
+# parser.add_argument('-n', type=str, default='farm', help="fname")
+# args = parser.parse_args()
 
 class Config:
 
-    # parse linjingkai farm clean sf7 20250226
-    sf = args.sf
-    name = args.n
-    bw = 125000
-    sig_freq = 927.9e6
-    preamble_len = 8
-    total_len = [97, 0, 0, 48][sf - 7]
-    file_paths_zip = []
-    dpath = "/data/djl/datasets/msudata_ljk/"
-    for fname in os.listdir(dpath):
-        if f"{args.n}-cover-{sf}-" in fname:
-            file_paths_zip.append(os.path.join(dpath, fname))
-    # for x in range(1,4): file_paths_zip.append(f"/data/djl/datasets/msudata_ljk/{args.n}-{sf}-{x}")
-    # file_paths_zip = ['/data/djl/datasets/msudata_ljk/farm-cover-10-1-NE-042mile',]
-    guess_f = 0
-    outpath = f"/data/djl/datasets/msudata_ljk_cut/{args.n}/cover/sf{sf}"
+
+    sf = 12
+    bw = 406250#*(1-20*1e-6)
+    fs = 1e6
+    sig_freq = 2.4e9
+    # sig_freq = 2400000030.517578#-52e6/(2**18)
+    preamble_len = 240 # TODO!!!!
+    skip_preambles = 8  # skip first 8 preambles ## TODO
+    total_len = 240+ 90-2#-16+64
+    thresh = None# 0.03
+    guess_f = -40000
+    # file_paths = ['/data/djl/temp/OptimalPkt/fingerprint_data/data0_test_3',]
+    cfo_range = bw // 8
+
 
     # sf = args.sf # parse hbq's 6~12 data
     # bw = 406250#*(1-20*1e-6)
@@ -270,7 +270,11 @@ def myfft(chirp_data, n, plan):
         return np.fft.fftshift(fft.fft(chirp_data.astype(cp.complex64), n=n, plan=plan))
     else:
         return np.fft.fftshift(fft.fft(chirp_data.astype(cp.complex64), n=n))
-
+def optimize_1dfreq_fast(sig2, tsymbr, freq1, margin):
+    def obj1(freq, xdata, ydata):
+        return -cp.abs(ydata.dot(cp.exp(xdata * -1j * 2 * cp.pi * freq.item()))).item()
+    result = minimize(obj1, freq1, args=(tsymbr, sig2), bounds=[(freq1 - margin, freq1 + margin)]) #!!!
+    return result.x[0], - result.fun / cp.sum(cp.abs(sig2))
 
 
 def dechirp_fft(tstart, fstart, pktdata_in, refchirp, pidx, ispreamble):
@@ -283,13 +287,17 @@ def dechirp_fft(tstart, fstart, pktdata_in, refchirp, pidx, ispreamble):
     # plt.plot(tocpu(cp.unwrap(cp.angle(sig1))))
     # plt.show()
     sig2 = sig1 * refchirp
-    freqdiff = start_pos_d / nsamp_small * Config.bw / Config.fs * Config.fft_n
-    if ispreamble: freqdiff -= fstart / Config.sig_freq * Config.bw * pidx
-    else: freqdiff += fstart / Config.sig_freq * Config.bw * pidx
-    sig2 = add_freq(sig2,freqdiff)
-    data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
+    freqdiff = start_pos_d / nsamp_small * Config.bw * (1 + fstart / Config.sig_freq) / Config.fs * Config.fft_n
+    if ispreamble: freqdiff *= -1
+    freqdiff += fstart
+    sig3 = add_freq(sig2, - freqdiff)
+    data0 = myfft(sig3, n=Config.fft_n, plan=Config.plan)
     # plt.plot(tocpu(cp.abs(data0)))
     # plt.show()
+    dmax = cp.argmax(cp.abs(data0)).item() / Config.fft_n * Config.fs
+    # ret, v = optimize_1dfreq_fast(sig2, cp.arange(Config.nsamp)/Config.fs, dmax, Config.bw / 16)
+    logger.warning(f"{dmax=}   {freqdiff= }")
+    # sys.exit(0)
     return data0
 
 

@@ -23,10 +23,5 @@ if __name__ == "__main__":
     pkt_idx_cnt = 0
     logger.warning("ERR this only work for integer")
 
-    dpath = "/data/djl/datasets/msudata_ljk/"
-    outpath = f"/data/djl/datasets/msudata_ljk_test2/{Config.name}/cover_sf{Config.sf}"
-    for fname in os.listdir(dpath):
-        if f"{Config.name}-cover-{Config.sf}-" in fname:
-            file_path = os.path.join(dpath, fname)
-            opath = os.path.join(outpath, fname.split("-")[-1])
-            preprocess_file(file_path, opath)
+    file_path = "/data/djl/OptimalPkt/test_1226"
+    preprocess_file(file_path, None)
