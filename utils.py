@@ -15,7 +15,7 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-file_handler = logging.FileHandler('run_250305_test2.log')
+file_handler = logging.FileHandler('run_250305.log')
 file_handler.setLevel(level=logging.WARNING)  # Set the file handler level
 # formatter = logging.Formatter('%(message)s')
 # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -274,7 +274,7 @@ def myfft(chirp_data, n, plan):
 
 
 def dechirp_fft(tstart, fstart, pktdata_in, refchirp, pidx, ispreamble):
-    nsamp_small = 2 ** Config.sf / Config.bw * Config.fs# * (1 + fstart / Config.sig_freq)
+    nsamp_small = 2 ** Config.sf / Config.bw * Config.fs * (1 - fstart / Config.sig_freq)
     start_pos_all = nsamp_small * pidx + tstart
     start_pos = around(start_pos_all)
     start_pos_d = start_pos_all - start_pos
@@ -292,3 +292,39 @@ def dechirp_fft(tstart, fstart, pktdata_in, refchirp, pidx, ispreamble):
     # plt.show()
     return data0
 
+
+def refine(fstart, est_to_s, pktdata_in, margin):
+    def obj1(freq, xdata, ydata):
+        return -cp.abs(ydata.dot(cp.exp(xdata * -1j * 2 * cp.pi * freq.item()))).item()
+
+    nsamp_small = 2 ** Config.sf / Config.bw * Config.fs * (1 - fstart / Config.sig_freq)
+    x = cp.arange(Config.nsamp) * (1 - fstart / Config.sig_freq) / Config.fs
+    bwnew = Config.bw * (1 + fstart / Config.sig_freq)
+    beta = Config.bw / ((2 ** Config.sf) / Config.bw)
+    betanew = beta * (1 + 2 * fstart / Config.sig_freq)
+    upchirp = cp.exp(2j * cp.pi * (betanew / 2 * x ** 2 + (- bwnew / 2) * x))
+    downchirp = cp.conj(upchirp)
+
+    for pidx in range(Config.skip_preambles, Config.preamble_len):
+        start_pos_all = nsamp_small * pidx + tstart
+        start_pos = around(start_pos_all)
+        start_pos_d = start_pos_all - start_pos
+        sig1 = pktdata_in[start_pos: Config.nsamp + start_pos]
+        sig2 = sig1 * downchirp
+        freqdiff = start_pos_d / nsamp_small * Config.bw / Config.fs * Config.fft_n
+        if ispreamble:
+            freqdiff -= fstart / Config.sig_freq * Config.bw * pidx
+        else:
+            freqdiff += fstart / Config.sig_freq * Config.bw * pidx
+        sig2 = add_freq(sig2, freqdiff)
+        data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
+        # plt.plot(tocpu(cp.abs(data0)))
+        # plt.show()
+        return data0
+
+        Config.fft_downs_x[pidx - Config.sfdpos] = data0
+
+    bounds = [(freq1 - margin, freq1 + margin)]  # your frequency bounds
+    result = differential_evolution(obj1, bounds, args=(tsymbr, sig2), updating='deferred')
+
+    return result.x[0], -result.fun  # / cp.sum(cp.abs(sig2))
