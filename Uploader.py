@@ -16,12 +16,9 @@ session.trust_env = False
 
 # REPO URL
 # generate share link with upload and download
-repo_url = 'https://cloud.tsinghua.edu.cn/u/d/e00b1713bbaa47b68266/'
-share_url = 'https://cloud.tsinghua.edu.cn/d/42ea61d3ce664064982f/'
-fnames = [os.path.join('D:\\', x) for x in os.listdir('D:') if
-          x[:3] in ('sf8', 'sf9', 'sf1') and os.path.isfile(os.path.join('D:\\', x))]
-fnames.append(r'C:\Users\d\Desktop\sf10-490-out-4.bin')
-fnames.append(r'C:\Users\d\Desktop\sf10-490-out-3.bin')
+repo_url = 'https://cloud.tsinghua.edu.cn/d/248a8c6a122748fa8ec8/'
+share_url = 'https://cloud.tsinghua.edu.cn/u/d/8f19b4142f9c4a0c9132/'
+fnames = ["/data/djl/OptimalPkt/farm_cover_sf10_1.tar.gz", "/data/djl/OptimalPkt/lot_cover_sf10_1.tar.gz"]
 
 cookies = {
     'sessionid': 'e8qgwv2rdtpflywmdrfjhsz8v4fomu5a',
@@ -106,12 +103,3 @@ for file in filelist:
 
 # Create and start a thread for each command
 for fname in fnames: execute_command(fname)
-'''
-threads = []
-for fname in fnames: 
-    if os.path.basename(fname)[:3] in ('sf8', 'sf9', 'sf1') and os.path.isfile(fname):
-        thread = threading.Thread(target=execute_command, args=(fname,))
-        thread.start()
-        threads.append(thread)
-for thread in threads: thread.join()'''
-
