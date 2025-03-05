@@ -31,7 +31,6 @@ def mainwork(pkt_idx, data1, outpath):
         if est_to_s < 0:
             logger.error(f"ERROR in Coarsework {est_cfo_f=} {est_to_s=} out {est_cfo_f=} {est_to_s=} {pkt_idx=}")
             est_to_s = 0
-            break
     # est_to_s, flag = find_power(est_cfo_f, est_to_s, data1)
     # logger.warning(f"Fw {pkt_idx} f={est_cfo_f} t={est_to_s}")
     # if not flag: continue ## !!!TODO debug

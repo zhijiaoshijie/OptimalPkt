@@ -81,7 +81,7 @@ def objective_cut(est_cfo_f, est_to_s, pktdata_in, pkt_idx, outpath_in):
         start_pos_all_new = 2 ** Config.sf / Config.bw * Config.fs * (pidx + 0.25) * (1 - est_cfo_f / Config.sig_freq) + est_to_s
         start_pos = around(start_pos_all_new)
         if Config.nsamp + start_pos > len(pktdata_in):
-            logger.error(f"{pkt_idx} outofbounds")
+            logger.error(f"ERR objcut: too short {pkt_idx=} cnt={pidx} < totcnt={Config.total_len}")
             break
         tstandard = cp.linspace(0, Config.nsamp / Config.fs, Config.nsamp + 1)[:-1]
         dt = (start_pos - start_pos_all_new) / Config.fs

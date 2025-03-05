@@ -50,7 +50,6 @@ def preprocess_file(file_path, outpath):
     prominence = 0.1 if 'case' in file_path else 0.2
     # prominence = 0.2
     peaks, properties = signal.find_peaks(nmaxs, prominence=prominence, distance=Config.total_len)  # Detect peaks above height 0
-    logger.warning(f"{file_path} {len(peaks)=} {peaks[0]=} {peaks[-1]=}")
     # Plot result
     # sys.exit(0)
     # pltfig1(None, peaks, title="peak positions").show()
@@ -60,6 +59,7 @@ def preprocess_file(file_path, outpath):
     common_diff = np.nanmedian(differences)
     n = around((peaks[-1] - peaks[0]) / common_diff) + 1
     peaks = peaks[0] + common_diff * cp.arange(n)
+    logger.warning(f"{file_path} {len(peaks)=} {peaks[0]=} {peaks[-1]=} {common_diff=}")
     # pltfig1(None, nmaxs, addvline=peaks, title=f"{file_path}").show()
     # return
     code_acc = [493, 73, 805, 417, 289, 117, 461, 225, 859, 127, 820, 718, 650, 851, 824, 68, 565, 938, 761, 937, 280, 272, 614, 537, 115, 920, 250, 54, 309, 787, 950, 766, 845, 889, 201, 488]
@@ -68,12 +68,12 @@ def preprocess_file(file_path, outpath):
             # Move the file pointer to the desired position (e.g., 100 bytes from the start)
             file.seek(around(max(peak, 0) * Config.nsamp * 4 * 2))
             rawdata = cp.fromfile(file, dtype=cp.complex64, count=Config.nsamp * (Config.total_len + 30))
-            try:
-                f, t, code = mainwork(pkt_idx, rawdata, outpath)
-                acc = np.mean(np.array(code) == np.array(code_acc)).item()
-                logger.warning(f"{pkt_idx=} {f=} {t=} {acc=}")
-            except Exception as e:
-                logger.error(str(e))
+            if len(rawdata) < Config.nsamp * (Config.sfdend + Config.detect_range_pkts + 10):
+                logger.error(f"ERR reader last pkt notenough length {len(rawdata)/Config.nsamp} < {Config.sfdend} + {Config.detect_range_pkts} + 10")
+                continue
+            f, t, code = mainwork(pkt_idx, rawdata, outpath)
+            acc = np.mean(np.array(code) == np.array(code_acc)).item()
+            logger.warning(f"{pkt_idx=} {f=} {t=} {acc=}")
             pkt_idx += 1
     return pkt_idx
 
