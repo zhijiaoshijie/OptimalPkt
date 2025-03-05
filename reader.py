@@ -66,14 +66,14 @@ def preprocess_file(file_path, outpath):
         with open(file_path, 'rb') as file:
             # Move the file pointer to the desired position (e.g., 100 bytes from the start)
             file.seek(around(max(peak, 0) * Config.nsamp * 4 * 2))
-            rawdata = cp.fromfile(file, dtype=cp.complex64, count=Config.nsamp * (Config.total_len + 30))
+            rawdata = cp.fromfile(file, dtype=cp.complex64, count=Config.nsamp * (Config.total_len + 50))
             if len(rawdata) < Config.nsamp * (Config.sfdend + Config.detect_range_pkts + 10):
                 logger.error(f"ERR reader last pkt notenough length {len(rawdata)/Config.nsamp} < {Config.sfdend} + {Config.detect_range_pkts} + 10")
                 continue
             f, t, code = mainwork(pkt_idx, rawdata, outpath)
             acc = np.mean(np.array(code) == np.array(code_acc)).item()
             accs.append(acc)
-            # logger.warning(f"{pkt_idx=} {f=} {t=} {acc=}")
+            # logger.warning(f"{pkt_idx=} {f=} {t=} {code=}")
             pkt_idx += 1
     logger.warning(f"{file_path} {len(peaks)=} {peaks[0]=} {peaks[-1]=} {common_diff=} {np.mean(accs)=}")
     return pkt_idx

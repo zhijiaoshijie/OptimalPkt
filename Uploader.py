@@ -7,7 +7,9 @@ from tqdm import tqdm
 import threading
 import requests
 from pprint import pprint
-from requests_toolbelt.multipart.encoder import MultipartEncoder
+import requests
+from requests_toolbelt.multipart.encoder import MultipartEncoder, MultipartEncoderMonitor
+
 # No Proxy
 session = requests.Session()
 session.trust_env = False
@@ -15,6 +17,11 @@ session.trust_env = False
 # REPO URL
 # generate share link with upload and download
 repo_url = 'https://cloud.tsinghua.edu.cn/u/d/e00b1713bbaa47b68266/'
+share_url = 'https://cloud.tsinghua.edu.cn/d/42ea61d3ce664064982f/'
+fnames = [os.path.join('D:\\', x) for x in os.listdir('D:') if
+          x[:3] in ('sf8', 'sf9', 'sf1') and os.path.isfile(os.path.join('D:\\', x))]
+fnames.append(r'C:\Users\d\Desktop\sf10-490-out-4.bin')
+fnames.append(r'C:\Users\d\Desktop\sf10-490-out-3.bin')
 
 cookies = {
     'sessionid': 'e8qgwv2rdtpflywmdrfjhsz8v4fomu5a',
@@ -41,73 +48,70 @@ headers = {
 response = requests.get(repo_url, cookies=cookies, headers=headers)
 
 print('requesting', repo_url, response.status_code)
-assert(response.status_code == 200)
+assert (response.status_code == 200)
 with open('1.html', 'wb') as f: f.write(response.content)
 response = response.content.decode('utf-8').split('\n')
-line_token = list(filter(lambda x:('token' in x), response))
+line_token = list(filter(lambda x: ('token' in x), response))
 token = re.compile(r"token: [\"\'](?P<url>[-\w]+)[\"\']").search(line_token[0]).groupdict()['url']
 
 newurl = f'https://cloud.tsinghua.edu.cn/api/v2.1/upload-links/{token}/upload/'
 response = requests.get(newurl, cookies=cookies, headers=headers)
 print('requesting', newurl, response.status_code)
-assert(response.status_code == 200)
-upload_link =  response.json()["upload_link"]
+assert (response.status_code == 200)
+upload_link = response.json()["upload_link"]
 
 print('upload_link', upload_link)
 
+
 def execute_command(fname):
-    multipart_encoder = MultipartEncoder(
-        fields={
-            'file': (fname, open(fname, 'rb'), 'application/octet-stream'),
-            'parent_dir': ('/', 'application/octet-stream')
-        }
-    )
-    headers.update({'Content-Type': multipart_encoder.content_type})
-    response = requests.post(upload_link, data=multipart_encoder, headers=headers, cookies=cookies)
-    
-    '''
-    files = {
-        'file': open(fname, 'rb'),
-        'parent_dir': (None, '/'),
-    }
+    # Get the file size
+    file_size = os.path.getsize(fname)
 
-    response = requests.post(upload_link, files=files, cookies=cookies, headers=headers)'''
-    assert(response.status_code == 200)
+    def create_callback(pbar):
+        # Define a callback function to update the progress bar
+        def callback(monitor):
+            pbar.update(monitor.bytes_read - pbar.n)
 
-    """Execute a single command and print its output in real time."""
-    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        return callback
 
-    # Print stdout in real time
-    with tqdm(total=os.path.getsize(fname), unit='B', unit_scale=True, smoothing=0.01, desc=fname) as pbar:
-        while True:
-            output = process.stdout.readline()
-            if output == '' and process.poll() is not None:
-                break
-            if output and len(output.strip()) > 0:
-                match = re.search(r'\s*([\.\d]+)%', output)
-                if match:
-                    progress = float(match.group(1))
-                    pbar.update(progress * os.path.getsize(fname) / 100  - pbar.n)
-                else: print('>>>', output.strip(), '<<<')
-        
-# List to store threads
-threads = []
+    # Open the file in binary mode
+    with open(fname, 'rb') as f:
+        encoder = MultipartEncoder(
+            fields={
+                'file': (fname, f),
+                'parent_dir': ('', '/')
+            }
+        )
+
+        with tqdm(total=file_size, unit='B', unit_scale=True, desc=f'Uploading {fname}', smoothing=0) as pbar:
+            monitor = MultipartEncoderMonitor(encoder, create_callback(pbar))
+
+            response = requests.post(upload_link, data=monitor, cookies=cookies,
+                                     headers={'Content-Type': monitor.content_type})
+            print(response.status_code, response.text)
+
+
+from downloader import *
+
+share_key = get_share_key(share_url)
+verify_password(share_key)
+
+# search files
+logging.info("Searching for files to be downloaded, Wait a moment...")
+filelist = dfs_search_files(share_key, pattern=None)
+for file in filelist:
+    fnamex = os.path.basename(file["file_path"])
+    for fname in fnames:
+        if os.path.basename(fname) == fnamex: fnames.remove(fname)
 
 # Create and start a thread for each command
-fnames = [os.path.join('D:\\', x) for x in os.listdir('D:')]
-fnames.append(r'C:\Users\d\Desktop\sf10-490-out-4.bin')
-fnames.append(r'C:\Users\d\Desktop\sf10-490-out-3.bin')
+for fname in fnames: execute_command(fname)
+'''
+threads = []
 for fname in fnames: 
     if os.path.basename(fname)[:3] in ('sf8', 'sf9', 'sf1') and os.path.isfile(fname):
-        print(fname)
-    # fname = f'E:\\data2\\{i}.dat'
         thread = threading.Thread(target=execute_command, args=(fname,))
         thread.start()
         threads.append(thread)
+for thread in threads: thread.join()'''
 
-# Wait for all threads to complete
-for thread in threads:
-    thread.join()
-
-# for i in range(2): upload_with_progress(upload_link, f'E:\\sf11\\sf11_{i}.bin')
-# for i in range(3,4): upload_with_progress(f'https://cloud.tsinghua.edu.cn/seafhttp/upload-api/{rescode}', f'E:\\sf11\\sf11_{i}.bin')
