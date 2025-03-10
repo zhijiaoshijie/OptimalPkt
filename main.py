@@ -15,6 +15,10 @@ if __name__ == "__main__":
     readable_time = time.ctime(mod_time)
     logger.warning(f"Last modified time of the script: {readable_time}")
 
+
+    # coeff_time = [0.010082621580, 0.050485310266]
+    # sys.exit(0)
+
     fulldata = []
     for file_path, file_path_id in Config.file_paths_zip:
         thresh = preprocess_file(file_path)

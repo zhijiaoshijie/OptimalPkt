@@ -198,7 +198,7 @@ def find_intersections(coefa, coefb, tstart2,pktdata_in, epsilon, margin=10, dra
         selected = max(intersection_points, key=lambda x: np.sum(val1[:np.ceil(x * Config.fs - xv[0])]) + np.sum(val2[np.ceil(x * Config.fs - xv[0]):]))
         selected2 = min(intersection_points, key=lambda x: abs(x - tstart2))
         if selected2 != selected:
-            logger.warning(f"find_intersections(): break point not closeset to tstart2 selected {selected - tstart2 =}")
+            # logger.warning(f"find_intersections(): break point not closeset to tstart2 selected {selected - tstart2 =}")
             if remove_range: return None
 
     if draw:

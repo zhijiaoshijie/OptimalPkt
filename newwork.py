@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 from find_intersections import find_intersections
 from pltfig import *
 import scipy.stats as stats
-
+import pickle
 
 def coarse_est_f_t(data1, estf, window_idx):
     betai = Config.bw / ((2 ** Config.sf) / Config.bw) * cp.pi  # = xie lv bian hua lv / 2 = pin lv bian hua lv * 2pi / 2
@@ -208,21 +208,37 @@ def symbtime(estf, estt, pktdata_in, coeflist, margin=1000):
     # coarse estimation of range
     dx = []
     dy = []
-    for pidx in cp.arange(10, Config.preamble_len):
-        tstart2 = estt + tsymblen * pidx
-        selected = find_intersections(coeflist[pidx - 1], coeflist[pidx], tstart2, pktdata_in, 1e-4, margin=margin, draw=True, remove_range=False) #!!! TODO remove range
-        if selected != None:
-            dx.append(pidx)
-            dy.append(selected)
-    dx = sqlist(dx)
-    dy = sqlist(dy)
+    # for pidx in cp.arange(10, Config.preamble_len):
+    #     tstart2 = estt + tsymblen * pidx
+    #     selected = find_intersections(coeflist[pidx - 1], coeflist[pidx], tstart2, pktdata_in, 1e-4, margin=margin, draw=False, remove_range=False) #!!! TODO remove range
+    #     if selected != None:
+    #         dx.append(pidx)
+    #         dy.append(selected)
+    # dx = sqlist(dx)
+    # dy = sqlist(dy)
+    # with open("intersections.pkl","wb") as f:
+    #     pickle.dump((dx, dy), f)
+    with open("intersections.pkl","rb") as f:
+        dx, dy = pickle.load(f)
     coeff_time = cp.polyfit(dx, dy, 1)
 
     logger.warning(f"guessed: {tsymblen=} {estt=} estimated coeff_time={coeff_time[0]:.12f},{coeff_time[1]:.12f} cfo ppm from time: {1 - coeff_time[0] / Config.nsampf * Config.fs} cfo: {(1 - coeff_time[0] / Config.nsampf * Config.fs) * Config.sig_freq}")
-    # pltfig(((dx, dy), (dx, cp.polyval(coeff_time, dx))),
-    #        title="intersect points fitline").show()
-    # pltfig1(dx, dy - cp.polyval(coeff_time, dx), title="intersect points diff").show()
+    pltfig(((dx, dy), (dx, cp.polyval(coeff_time, dx))),
+           title="intersect points fitline").show()
+    pltfig1(dx, dy - cp.polyval(coeff_time, dx), title="intersect points diff").show()
+    dx2 = dy - cp.polyval(coeff_time, dx)
+    dx2 = dx2[:225]
+    dx = dx[:225]
 
+    for pidx in range(1, len(dx2) - 1):
+        if abs(dx2[pidx] - dx2[pidx-1]) > 0.5e-6 and abs(dx2[pidx] + dx2[pidx-1]) > 0.5e-6:
+            dx2[pidx] = (dx2[pidx-1] + dx2[pidx+1])/2
+
+    coeff_time2 = cp.polyfit(dx, dx2, 1)
+    pltfig(((dx, dx2), (dx, cp.polyval(coeff_time2, dx))),
+           title="intersect points fitline").show()
+    pltfig1(dx, dx2 - cp.polyval(coeff_time2, dx), title="intersect points diff").show()
+    logger.warning(f"coeff_time2={coeff_time2[0]:.12f},{coeff_time2[1]:.12f}")
 
     pidx_range = cp.arange(Config.preamble_len)
 
