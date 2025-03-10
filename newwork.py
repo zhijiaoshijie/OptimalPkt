@@ -267,7 +267,6 @@ def symbtime(estf, estt, pktdata_in, coeflist, margin=1000):
 
         logger.warning(f"coef2 {'start' if ixx == 0 else 'end'} estfcoef_to_num at t=0: {estfcoef_to_num[1]:.12f} estf change rate per symb: {estfcoef_to_num[0]:.12f}")
 
-    sys.exit(0)
 
     betai = Config.bw / ((2 ** Config.sf) / Config.bw) * cp.pi
     coeffitlist = cp.zeros((Config.preamble_len, 3), dtype=cp.float64)
@@ -391,6 +390,8 @@ def symbtime(estf, estt, pktdata_in, coeflist, margin=1000):
 
     coeff_time[1] -= 0.75 * coeff_time[0]
     coeff_time[1] -= 2.5e-6 #!!!!TODO!!!!!a
+    logger.warning(f"{cp.polyval(coeff_time, Config.preamble_len + 5)=:.12e}")
+    logger.warning(f"{cp.polyval(coeff_time3, Config.preamble_len + 5 - 0.75)=:.12e}")
 
     startphase = cp.polyval(coeffitlist[Config.preamble_len + 4], cp.polyval(coeff_time, Config.preamble_len + 5))
 
