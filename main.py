@@ -29,10 +29,11 @@ if __name__ == "__main__":
 
             # estf= -40971.948630148894
             # estt =  0.01015366531
+            estf = -44492.49999999998
+            estt = 0.050417780142201184
 
-
-            estf, estt, retval = coarse_work_fast(data1, 0, 0,False)  # tryi >= 1)
-            logger.warning(f"coarse work fast complete {estf=} {estt=} {retval=}")
+            # estf, estt, retval = coarse_work_fast(data1, 0, 0,False)  # tryi >= 1)
+            # logger.warning(f"coarse work fast complete {estf=} {estt=} {retval=}")
             coeflist = fitcoef1(estf, estt, data1)
             symbtime(estf, estt, data1, coeflist)
             logger.warning(f"symbtime end")

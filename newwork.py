@@ -229,16 +229,24 @@ def symbtime(estf, estt, pktdata_in, coeflist, margin=1000):
     dx2 = dy - cp.polyval(coeff_time, dx)
     dx2 = dx2[:225]
     dx = dx[:225]
-
+    dx3 = dy.copy()[:225]
     for pidx in range(1, len(dx2) - 1):
-        if abs(dx2[pidx] - dx2[pidx-1]) > 0.5e-6 and abs(dx2[pidx] + dx2[pidx-1]) > 0.5e-6:
+        if abs(dx2[pidx] - dx2[pidx-1]) > 0.2e-6 and abs(dx2[pidx] + dx2[pidx-1]) > 0.2e-6:
             dx2[pidx] = (dx2[pidx-1] + dx2[pidx+1])/2
+            dx3[pidx] = (dx3[pidx-1] + dx3[pidx+1])/2
 
     coeff_time2 = cp.polyfit(dx, dx2, 1)
     pltfig(((dx, dx2), (dx, cp.polyval(coeff_time2, dx))),
-           title="intersect points fitline").show()
-    pltfig1(dx, dx2 - cp.polyval(coeff_time2, dx), title="intersect points diff").show()
+           title="intersect points fitline 2").show()
+    pltfig1(dx, dx2 - cp.polyval(coeff_time2, dx), title="intersect points diff 2").show()
     logger.warning(f"coeff_time2={coeff_time2[0]:.12f},{coeff_time2[1]:.12f}")
+
+
+    coeff_time3 = cp.polyfit(dx, dx3, 2)
+    pltfig(((dx, dx3), (dx, cp.polyval(coeff_time3, dx))),
+           title="intersect points fitline coeff_time3").show()
+    pltfig1(dx, dx3 - cp.polyval(coeff_time3, dx), title="intersect points diff coeff_time3").show()
+    logger.warning(f"coeff_time3={coeff_time3[0]:.18e},{coeff_time3[1]:.18e},{coeff_time3[2]:.18e}")
 
     pidx_range = cp.arange(Config.preamble_len)
 
@@ -248,11 +256,18 @@ def symbtime(estf, estt, pktdata_in, coeflist, margin=1000):
         if ixx == 0: bwdiff = -Config.bw * (1 + estf / Config.sig_freq) / 2
         else: bwdiff = Config.bw * (1 + estf / Config.sig_freq) / 2
         for pidx in range(240):
-            dd.append((coeflist[pidx, 0] * 2 * cp.polyval(coeff_time, pidx + ixx) + coeflist[pidx, 1]) / 2 / cp.pi)
+            dd.append((coeflist[pidx, 0] * 2 * cp.polyval(coeff_time3, pidx + ixx) + coeflist[pidx, 1]) / 2 / cp.pi)
         dd = sqlist(dd) - bwdiff
-        pidx_range2 = cp.arange(50, Config.preamble_len)
+        pidx_range2 = cp.arange(50, Config.preamble_len - 10)
         estfcoef_to_num = cp.polyfit(pidx_range2, dd[pidx_range2], 1)
+
+        pltfig(((pidx_range2, dd[pidx_range2]), (pidx_range2, cp.polyval(estfcoef_to_num, pidx_range2))),
+               title=f"intersect points fitline freq{ixx}").show()
+        pltfig1(pidx_range2, dd[pidx_range2] - cp.polyval(estfcoef_to_num, pidx_range2), title=f"intersect points diff freq{ixx}").show()
+
         logger.warning(f"coef2 {'start' if ixx == 0 else 'end'} estfcoef_to_num at t=0: {estfcoef_to_num[1]:.12f} estf change rate per symb: {estfcoef_to_num[0]:.12f}")
+
+    sys.exit(0)
 
     betai = Config.bw / ((2 ** Config.sf) / Config.bw) * cp.pi
     coeffitlist = cp.zeros((Config.preamble_len, 3), dtype=cp.float64)
