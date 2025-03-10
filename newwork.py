@@ -223,9 +223,8 @@ def symbtime(estf, estt, pktdata_in, coeflist, margin=1000):
     coeff_time = cp.polyfit(dx, dy, 1)
 
     logger.warning(f"guessed: {tsymblen=} {estt=} estimated coeff_time={coeff_time[0]:.12f},{coeff_time[1]:.12f} cfo ppm from time: {1 - coeff_time[0] / Config.nsampf * Config.fs} cfo: {(1 - coeff_time[0] / Config.nsampf * Config.fs) * Config.sig_freq}")
-    pltfig(((dx, dy), (dx, cp.polyval(coeff_time, dx))),
-           title="intersect points fitline").show()
-    pltfig1(dx, dy - cp.polyval(coeff_time, dx), title="intersect points diff").show()
+    # pltfig(((dx, dy), (dx, cp.polyval(coeff_time, dx))), title="intersect points fitline").show()
+    # pltfig1(dx, dy - cp.polyval(coeff_time, dx), title="intersect points diff").show()
     dx2 = dy - cp.polyval(coeff_time, dx)
     dx2 = dx2[:225]
     dx = dx[:225]
@@ -235,17 +234,17 @@ def symbtime(estf, estt, pktdata_in, coeflist, margin=1000):
             dx2[pidx] = (dx2[pidx-1] + dx2[pidx+1])/2
             dx3[pidx] = (dx3[pidx-1] + dx3[pidx+1])/2
 
-    coeff_time2 = cp.polyfit(dx, dx2, 1)
-    pltfig(((dx, dx2), (dx, cp.polyval(coeff_time2, dx))),
-           title="intersect points fitline 2").show()
-    pltfig1(dx, dx2 - cp.polyval(coeff_time2, dx), title="intersect points diff 2").show()
-    logger.warning(f"coeff_time2={coeff_time2[0]:.12f},{coeff_time2[1]:.12f}")
+    # coeff_time2 = cp.polyfit(dx, dx2, 1)
+    # pltfig(((dx, dx2), (dx, cp.polyval(coeff_time2, dx))),
+    #        title="intersect points fitline 2").show()
+    # pltfig1(dx, dx2 - cp.polyval(coeff_time2, dx), title="intersect points diff 2").show()
+    # logger.warning(f"coeff_time2={coeff_time2[0]:.12f},{coeff_time2[1]:.12f}")
 
 
     coeff_time3 = cp.polyfit(dx, dx3, 2)
-    pltfig(((dx, dx3), (dx, cp.polyval(coeff_time3, dx))),
-           title="intersect points fitline coeff_time3").show()
-    pltfig1(dx, dx3 - cp.polyval(coeff_time3, dx), title="intersect points diff coeff_time3").show()
+    # pltfig(((dx, dx3), (dx, cp.polyval(coeff_time3, dx))),
+    #        title="intersect points fitline coeff_time3").show()
+    # pltfig1(dx, dx3 - cp.polyval(coeff_time3, dx), title="intersect points diff coeff_time3").show()
     logger.warning(f"coeff_time3={coeff_time3[0]:.18e},{coeff_time3[1]:.18e},{coeff_time3[2]:.18e}")
 
     pidx_range = cp.arange(Config.preamble_len)
@@ -261,12 +260,13 @@ def symbtime(estf, estt, pktdata_in, coeflist, margin=1000):
         pidx_range2 = cp.arange(50, Config.preamble_len - 10)
         estfcoef_to_num = cp.polyfit(pidx_range2, dd[pidx_range2], 1)
 
-        pltfig(((pidx_range2, dd[pidx_range2]), (pidx_range2, cp.polyval(estfcoef_to_num, pidx_range2))),
-               title=f"intersect points fitline freq{ixx}").show()
-        pltfig1(pidx_range2, dd[pidx_range2] - cp.polyval(estfcoef_to_num, pidx_range2), title=f"intersect points diff freq{ixx}").show()
-
+        # pltfig(((pidx_range2, dd[pidx_range2]), (pidx_range2, cp.polyval(estfcoef_to_num, pidx_range2))),
+        #        title=f"intersect points fitline freq{ixx}").show()
+        # pltfig1(pidx_range2, dd[pidx_range2] - cp.polyval(estfcoef_to_num, pidx_range2), title=f"intersect points diff freq{ixx}").show()
+        #
         logger.warning(f"coef2 {'start' if ixx == 0 else 'end'} estfcoef_to_num at t=0: {estfcoef_to_num[1]:.12f} estf change rate per symb: {estfcoef_to_num[0]:.12f}")
 
+    coeff_time = coeff_time3 # !!! todo !!!
 
     betai = Config.bw / ((2 ** Config.sf) / Config.bw) * cp.pi
     coeffitlist = cp.zeros((Config.preamble_len, 3), dtype=cp.float64)
@@ -388,17 +388,17 @@ def symbtime(estf, estt, pktdata_in, coeflist, margin=1000):
         powers.append(cp.abs(res2).item() / cp.sum(cp.abs(pktdata_in[nsymbr])).item())
         fig=pltfig1(tsymbr, cp.angle(pktdata_in[nsymbr] * cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr))), title=f"residue {pidx=}", fig=fig)
 
-    coeff_time[1] -= 0.75 * coeff_time[0]
-    coeff_time[1] -= 2.5e-6 #!!!!TODO!!!!!a
-    logger.warning(f"{cp.polyval(coeff_time, Config.preamble_len + 5)=:.12e}")
-    logger.warning(f"{cp.polyval(coeff_time3, Config.preamble_len + 5 - 0.75)=:.12e}")
+    # coeff_time[1] -= 0.75 * coeff_time[0]
+    # coeff_time[1] -= 2.5e-6 #!!!!TODO!!!!!a
+    # logger.warning(f"{cp.polyval(coeff_time, Config.preamble_len + 5)=:.12e}")
+    # logger.warning(f"{cp.polyval(coeff_time3, Config.preamble_len + 5 - 0.75)=:.12e}")
 
-    startphase = cp.polyval(coeffitlist[Config.preamble_len + 4], cp.polyval(coeff_time, Config.preamble_len + 5))
+    startphase = cp.polyval(coeffitlist[Config.preamble_len + 4], cp.polyval(coeff_time3, Config.preamble_len + 5 - 0.75))
 
     # for pidx in range(Config.preamble_len + 5, Config.preamble_len + 5 + Config.payload_len):
-    for pidx in range(Config.preamble_len + 5, math.floor((len(pktdata_in)/Config.fs-coeff_time[1])/coeff_time[0])):
-        tstart = cp.polyval(coeff_time, pidx)
-        tend = cp.polyval(coeff_time, pidx + 1)
+    for pidx in range(Config.preamble_len + 5, math.floor((len(pktdata_in)/Config.fs-coeff_time3[1])/coeff_time3[0]-0.75)):
+        tstart = cp.polyval(coeff_time3, pidx - 0.75)
+        tend = cp.polyval(coeff_time3, pidx + 1 - 0.75)
         x1 = math.ceil(tstart * Config.fs)
         x2 = math.ceil(tend * Config.fs)
         nsymbr = cp.arange(x1, x2)
@@ -436,7 +436,8 @@ def decode_core(pktdata_in, tstart, tend, estfcoef_to_num, startphase, pidx):
     sig2 = pktdata_in[nsymbr] * cp.exp(-1j * cp.polyval(coef2d_est, tsymbr))
     data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
     freq1 = cp.fft.fftshift(cp.fft.fftfreq(Config.fft_n, d=1 / Config.fs))[cp.argmax(cp.abs(data0))]
-    freq, valnew = optimize_1dfreq_Fast(sig2, tsymbr, freq1) # valnew may be as low as 0.3, only half the power will be collected
+    # freq, valnew = optimize_1dfreq_fast(sig2, tsymbr, freq1) # valnew may be as low as 0.3, only half the power will be collected
+    freq = freq1 # todo !!!
     # assert valnew > 0.3, f"{freq=} {freq1=} {valnew=}"
     if freq < 0: freq += estbw
     codex = freq / estbw * 2 ** Config.sf
