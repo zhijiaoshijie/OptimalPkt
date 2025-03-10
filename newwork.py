@@ -266,7 +266,9 @@ def symbtime(estf, estt, pktdata_in, coeflist, margin=1000):
         #
         logger.warning(f"coef2 {'start' if ixx == 0 else 'end'} estfcoef_to_num at t=0: {estfcoef_to_num[1]:.12f} estf change rate per symb: {estfcoef_to_num[0]:.12f}")
 
-    coeff_time = coeff_time3 # !!! todo !!!
+    logger.warning(f"{cp.polyval(coeff_time, Config.preamble_len)=} {cp.polyval(coeff_time3, Config.preamble_len)=}")
+    # coeff_time = coeff_time3 # !!! todo !!!
+    # logger.warning(f"{coeff_time=} already replaced by coefftime3")
 
     betai = Config.bw / ((2 ** Config.sf) / Config.bw) * cp.pi
     coeffitlist = cp.zeros((Config.preamble_len, 3), dtype=cp.float64)
@@ -313,14 +315,21 @@ def symbtime(estf, estt, pktdata_in, coeflist, margin=1000):
         refchirp = cp.exp(-1j * cp.polyval(coef2d_est, tsymbr))
         sig2 = pktdata_in[nsymbr] * refchirp
         data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
+        plt.plot(cp.unwrap(cp.angle(pktdata_in[nsymbr])).get())
+        plt.show()
         freq = cp.fft.fftshift(cp.fft.fftfreq(Config.fft_n, d=1 / Config.fs))[cp.argmax(cp.abs(data0))]
         assert cp.max(cp.abs(data0)) > 0.9, f"FFT power <= 0.9, {pidx=} fft {freq=} maxpow={cp.max(cp.abs(data0))}"
+        plt.plot(cp.abs(data0).get())
+        plt.show()
         # freq, valnew = optimize_1dfreq(sig2, tsymbr, freq)
         code = freq / estbw * 2 ** Config.sf
+        print(code)
+        assert code >=0 and code < 4096
         # logger.warning(f"{pidx=} optimized fft {freq=} maxpow={valnew} {code=:.12f}")
         code = around(code)
 
         x3 = math.ceil(cp.polyval(coeff_time, pidx + 1 - code / 2 ** Config.sf ) * Config.fs)
+        print(x1,x2,x3, code)
         nsymbr1 = cp.arange(x1, x3)
         tsymbr1 = nsymbr1 / Config.fs
 
@@ -389,16 +398,16 @@ def symbtime(estf, estt, pktdata_in, coeflist, margin=1000):
         fig=pltfig1(tsymbr, cp.angle(pktdata_in[nsymbr] * cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr))), title=f"residue {pidx=}", fig=fig)
 
     # coeff_time[1] -= 0.75 * coeff_time[0]
-    # coeff_time[1] -= 2.5e-6 #!!!!TODO!!!!!a
+    coeff_time[-1] -= 6.63e-6 #!!!!TODO!!!!!a
     # logger.warning(f"{cp.polyval(coeff_time, Config.preamble_len + 5)=:.12e}")
     # logger.warning(f"{cp.polyval(coeff_time3, Config.preamble_len + 5 - 0.75)=:.12e}")
 
-    startphase = cp.polyval(coeffitlist[Config.preamble_len + 4], cp.polyval(coeff_time3, Config.preamble_len + 5 - 0.75))
+    startphase = cp.polyval(coeffitlist[Config.preamble_len + 4], cp.polyval(coeff_time, Config.preamble_len + 5 - 0.75))
 
     # for pidx in range(Config.preamble_len + 5, Config.preamble_len + 5 + Config.payload_len):
-    for pidx in range(Config.preamble_len + 5, math.floor((len(pktdata_in)/Config.fs-coeff_time3[1])/coeff_time3[0]-0.75)):
-        tstart = cp.polyval(coeff_time3, pidx - 0.75)
-        tend = cp.polyval(coeff_time3, pidx + 1 - 0.75)
+    for pidx in range(Config.preamble_len + 5, math.floor((len(pktdata_in)/Config.fs-coeff_time[1])/coeff_time[0]-0.75)):
+        tstart = cp.polyval(coeff_time, pidx - 0.75)
+        tend = cp.polyval(coeff_time, pidx + 1 - 0.75)
         x1 = math.ceil(tstart * Config.fs)
         x2 = math.ceil(tend * Config.fs)
         nsymbr = cp.arange(x1, x2)
