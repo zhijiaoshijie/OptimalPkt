@@ -218,6 +218,7 @@ def symbtime(estf, estt, pktdata_in, coeflist, margin=1000):
     # dy = sqlist(dy)
     # with open("intersections.pkl","wb") as f:
     #     pickle.dump((dx, dy), f)
+
     with open("intersections.pkl","rb") as f:
         dx, dy = pickle.load(f)
     coeff_time = cp.polyfit(dx, dy, 1)
@@ -298,6 +299,16 @@ def symbtime(estf, estt, pktdata_in, coeflist, margin=1000):
 
     coeffitlist = cp.concatenate((coeffitlist, cp.zeros((100, 3))), axis=0)
     fig=None
+
+    # pidx = -1
+    # x1 = math.ceil(cp.polyval(coeff_time, pidx) * Config.fs)
+    # x2 = math.ceil(cp.polyval(coeff_time, pidx + 2) * Config.fs)
+    # print(x1, x2)
+    # nsymbr = cp.arange(x1, x2)
+    # plt.plot(cp.unwrap(cp.angle(pktdata_in[nsymbr])).get())
+    # plt.show()
+    # sys.exit(0)
+
     for pidx in range(Config.preamble_len, Config.preamble_len + 2):
 
         # FFT find frequency
@@ -398,7 +409,7 @@ def symbtime(estf, estt, pktdata_in, coeflist, margin=1000):
         fig=pltfig1(tsymbr, cp.angle(pktdata_in[nsymbr] * cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr))), title=f"residue {pidx=}", fig=fig)
 
     # coeff_time[1] -= 0.75 * coeff_time[0]
-    coeff_time[-1] -= 6.63e-6 #!!!!TODO!!!!!a
+    coeff_time[-1] -= 2.3e-6 #!!!!TODO!!!!!a
     # logger.warning(f"{cp.polyval(coeff_time, Config.preamble_len + 5)=:.12e}")
     # logger.warning(f"{cp.polyval(coeff_time3, Config.preamble_len + 5 - 0.75)=:.12e}")
 

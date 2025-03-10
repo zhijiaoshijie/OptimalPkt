@@ -27,10 +27,10 @@ if __name__ == "__main__":
             if read_idx == 0: continue
             # if pkt_idx < 1: continue
 
-            # estf= -40971.948630148894
-            # estt =  0.01015366531
-            estf = -44492.49999999998
-            estt = 0.050417780142201184
+            estf= -40971.948630148894
+            estt =  0.01015366531
+            # estf = -44492.49999999998
+            # estt = 0.050417780142201184
 
             # estf, estt, retval = coarse_work_fast(data1, 0, 0,False)  # tryi >= 1)
             # logger.warning(f"coarse work fast complete {estf=} {estt=} {retval=}")
