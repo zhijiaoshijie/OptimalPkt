@@ -208,16 +208,16 @@ def symbtime(estf, estt, pktdata_in, coeflist, margin=1000):
     # coarse estimation of range
     dx = []
     dy = []
-    # for pidx in cp.arange(10, Config.preamble_len):
-    #     tstart2 = estt + tsymblen * pidx
-    #     selected = find_intersections(coeflist[pidx - 1], coeflist[pidx], tstart2, pktdata_in, 1e-4, margin=margin, draw=False, remove_range=False) #!!! TODO remove range
-    #     if selected != None:
-    #         dx.append(pidx)
-    #         dy.append(selected)
-    # dx = sqlist(dx)
-    # dy = sqlist(dy)
-    # with open("intersections.pkl","wb") as f:
-    #     pickle.dump((dx, dy), f)
+    for pidx in cp.arange(10, Config.preamble_len):
+        tstart2 = estt + tsymblen * pidx
+        selected = find_intersections(coeflist[pidx - 1], coeflist[pidx], tstart2, pktdata_in, 1e-4, margin=margin, draw=False, remove_range=False) #!!! TODO remove range
+        if selected != None:
+            dx.append(pidx)
+            dy.append(selected)
+    dx = sqlist(dx)
+    dy = sqlist(dy)
+    with open("intersections.pkl","wb") as f:
+        pickle.dump((dx, dy), f)
 
     with open("intersections.pkl","rb") as f:
         dx, dy = pickle.load(f)
