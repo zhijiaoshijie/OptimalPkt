@@ -412,9 +412,8 @@ def symbtime(estf, estt, pktdata_in, coeflist, margin=1000):
         codephase.append(cp.angle(res2).item())
         codephase.append(cp.angle(res2a).item())
 
-        if pidx%10==0:
-            pltfig1(None, cp.unwrap(codephase), title="unwrap phase").show()
-            pltfig1(None, powers, title="powers").show()
+    pltfig1(None, cp.unwrap(codephase), title="unwrap phase").show()
+    pltfig1(None, powers, title="powers").show()
 
 
 def decode_core(pktdata_in, tstart, tend, estfcoef_to_num, startphase, pidx):
@@ -436,8 +435,8 @@ def decode_core(pktdata_in, tstart, tend, estfcoef_to_num, startphase, pidx):
     sig2 = pktdata_in[nsymbr] * cp.exp(-1j * cp.polyval(coef2d_est, tsymbr))
     data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
     freq1 = cp.fft.fftshift(cp.fft.fftfreq(Config.fft_n, d=1 / Config.fs))[cp.argmax(cp.abs(data0))]
-    # freq, valnew = optimize_1dfreq_fast(sig2, tsymbr, freq1) # valnew may be as low as 0.3, only half the power will be collected
-    freq = freq1 # todo !!!
+    freq, valnew = optimize_1dfreq_fast(sig2, tsymbr, freq1, Config.fs / Config.fft_n * 5) # valnew may be as low as 0.3, only half the power will be collected
+    # freq = freq1 # todo !!!
     # assert valnew > 0.3, f"{freq=} {freq1=} {valnew=}"
     if freq < 0: freq += estbw
     codex = freq / estbw * 2 ** Config.sf
