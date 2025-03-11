@@ -4,13 +4,50 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime
+
 use_gpu = True
+
+
+
+logging.basicConfig(
+    # format='%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(funcName)s - %(message)s',
+    format='%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s',
+    level=logging.WARNING
+)
+
+logger = logging.getLogger(__name__)
+file_handler = logging.FileHandler('run_250305_2.log')
+file_handler.setLevel(level=logging.WARNING)  # Set the file handler level
+# formatter = logging.Formatter('%(message)s')
+# formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+# formatter = logging.Formatter('%(levelname)s - %(message)s')
+# console_handler.setFormatter(formatter)
+# file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
+
 if use_gpu:
     import cupy as cp
     import cupyx.scipy.fft as fft
 else:
     import numpy as cp
     import scipy.fft as fft
+def wrap(x):
+    return (x+np.pi)%(2*np.pi)-np.pi
+
+def mget(x):
+    if isinstance(x, cp.ndarray) or isinstance(x, np.ndarray):
+        assert x.shape == ()
+        return x.item()
+    else: return x
+def sqlist(lst):
+    return cp.array([item if isinstance(item, (int, float)) else item.item() for item in lst])
+def lqlist(lst):
+    return [item if isinstance(item, (int, float)) else item.item() for item in lst]
+def nqlist(lst):
+    return np.array([item if isinstance(item, (int, float)) else item.item() for item in lst])
+def tos(item):
+    return item if isinstance(item, (int, float)) else item.item()
 
 def around(x):
     return round(float(x))
@@ -18,8 +55,6 @@ def around(x):
 def togpu(x):
     if use_gpu and not isinstance(x, cp.ndarray):
         return cp.array(x)
-    elif isinstance(x, list):
-        return cp.squeeze(cp.array(x))
     else:
         return x
 
@@ -27,28 +62,12 @@ def togpu(x):
 def tocpu(x):
     if use_gpu and isinstance(x, cp.ndarray):
         return x.get()
-    elif isinstance(x, list):
-        return np.squeeze(np.array(x))
     else:
         return x
 
-def mget(x):
-    if isinstance(x, cp.ndarray) or isinstance(x, np.ndarray):
-        assert x.shape == ()
-        return x.item()
-    else: return x
-
-def sqlist(lst):
-    if all(isinstance(arr, np.ndarray) and arr.shape == () for arr in lst):
-        return np.squeeze(np.array(lst))
-    elif all(isinstance(arr, cp.ndarray) and arr.shape == () for arr in lst):
-        return cp.squeeze(cp.array(lst))
-    else:
-        return np.array(lst)
-
 def mychirp(t, f0, f1, t1):
-    betai = (f1 - f0) / t1
-    phase = 2 * cp.pi * (f0 * t + 0.5 * betai * t * t)
+    beta = (f1 - f0) / t1
+    phase = 2 * cp.pi * (f0 * t + 0.5 * beta * t * t)
     sig = cp.exp(1j * togpu(phase))
     return sig
 
@@ -65,7 +84,9 @@ class Config:
     thresh = None# 0.03
     # file_paths = ['/data/djl/temp/OptimalPkt/fingerprint_data/data0_test_3',]
     cfo_range = bw // 8
+    code_len = 2
     outfolder = "fout_test"
+    guess_f = -40000
 
     wired = False
     if not wired:
@@ -105,27 +126,25 @@ class Config:
     tsig = 2 ** sf / bw * fs  # in samples
     nsamp = around(n_classes * fs / bw)
     nsampf = (n_classes * fs / bw)
-    # f_lower, f_upper = -50000, -30000
-    f_lower, f_upper = -38000, -34000
-    t_lower, t_upper = 0, nsamp
-    fguess = (f_lower + f_upper) / 2
-    tguess = nsamp / 2
-    code_len = 2
-
-    # cfo_change_rate = 46/(60* n_classes * fs / bw) # Hz/sps
 
     tstandard = cp.linspace(0, nsamp / fs, nsamp + 1)[:-1]
     decode_matrix_a = cp.zeros((n_classes, nsamp), dtype=cp.complex64)
     decode_matrix_b = cp.zeros((n_classes, nsamp), dtype=cp.complex64)
-    for code in range(n_classes):
-        nsamples = around(nsamp / n_classes * (n_classes - code))
-        refchirp = mychirp(tstandard, f0=bw * (-0.5 + code / n_classes), f1=bw * (0.5 + code / n_classes),
-                           t1=2 ** sf / bw )
-        decode_matrix_a[code, :nsamples] = cp.conj(refchirp[:nsamples])
 
-        refchirp = mychirp(tstandard, f0=bw * (-1.5 + code / n_classes), f1=bw * (-0.5 + code / n_classes),
-                           t1=2 ** sf / bw )
-        decode_matrix_b[code, nsamples:] = cp.conj(refchirp[nsamples:])
+    betai = bw / ((2 ** sf) / bw)
+    wflag = True
+    for code in range(n_classes):
+        if (code - 1) % 4 != 0 and sf >= 11 and wflag:
+            logger.warning(f"WARN ENABLING LDRO")
+            wflag = False
+            continue
+        nsamples = around(nsamp / n_classes * (n_classes - code))
+        f01 = bw * (-0.5 + code / n_classes)
+        refchirpc1 = cp.exp(-1j * 2 * cp.pi * (f01 * tstandard + 0.5 * betai * tstandard * tstandard))
+        f02 = bw * (-1.5 + code / n_classes)
+        refchirpc2 = cp.exp(-1j * 2 * cp.pi * (f02 * tstandard + 0.5 * betai * tstandard * tstandard))
+        decode_matrix_a[code, :nsamples] = refchirpc1[:nsamples]
+        if code > 0: decode_matrix_b[code, nsamples:] = refchirpc2[nsamples:]
 
 
     gen_refchirp_deadzone = 0
@@ -147,26 +166,21 @@ class Config:
     fft_downs_x = cp.zeros((2 + detect_range_pkts, fft_n), dtype=cp.complex64)
 
 
-
-logger = logging.getLogger('my_logger')
-level = logging.WARNING
-logger.setLevel(level)
-console_handler = logging.StreamHandler()
-console_handler.setLevel(level)  # Set the console handler level
-file_handler = logging.FileHandler('run_'+datetime.now().strftime("%y%m%d")+'.log')
-file_handler.setLevel(level)  # Set the file handler level
-# formatter = logging.Formatter('%(message)s')
-# formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-# formatter = logging.Formatter('%(levelname)s - %(message)s')
-console_handler.setFormatter(formatter)
-file_handler.setFormatter(formatter)
-logger.addHandler(console_handler)
-logger.addHandler(file_handler)
-
 if use_gpu:
     cp.cuda.Device(0).use()
+    logger.error("WARNING: USING GPU ")
+else:
+    logger.error("WARNING: NOT USING GPU ")
 Config = Config()
+
+if Config.sf>=11: logger.error(f"WARNING: ENABLING LDRO")
+logger.error(f"WARNING: {Config.guess_f=}")
+logger.error(f"WARNING: {Config.skip_preambles=} {Config.preamble_len=} {Config.total_len=} {Config.sf=}")
+
+
+if Config.skip_preambles > Config.preamble_len * 0.4: logger.error(f"ERR skip_preambles too long {Config.skip_preambles} in {Config.preamble_len}")
+if Config.skip_preambles < Config.preamble_len * 0.1: logger.error(f"ERR skip_preambles too short {Config.skip_preambles} in {Config.preamble_len}")
+
 
 
 

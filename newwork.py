@@ -202,7 +202,7 @@ def optimize_1dfreq(sig2, tsymbr, freq):
     return freq, val / cp.sum(cp.abs(sig2))
 
 
-def symbtime(estf, estt, pktdata_in, coeflist, margin=1000):
+def symbtime(estf, estt, pktdata_in, coeflist, margin=1000, nextstep=0):
     tsymblen = 2 ** Config.sf / Config.bw * (1 - estf / Config.sig_freq)
 
     # coarse estimation of range
@@ -216,10 +216,10 @@ def symbtime(estf, estt, pktdata_in, coeflist, margin=1000):
             dy.append(selected)
     dx = sqlist(dx)
     dy = sqlist(dy)
-    with open("intersections.pkl","wb") as f:
+    with open(f"intersections{nextstep}.pkl","wb") as f:
         pickle.dump((dx, dy), f)
 
-    with open("intersections.pkl","rb") as f:
+    with open(f"intersections{nextstep}.pkl","rb") as f:
         dx, dy = pickle.load(f)
     coeff_time = cp.polyfit(dx, dy, 1)
 
@@ -409,31 +409,33 @@ def symbtime(estf, estt, pktdata_in, coeflist, margin=1000):
         fig=pltfig1(tsymbr, cp.angle(pktdata_in[nsymbr] * cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr))), title=f"residue {pidx=}", fig=fig)
 
     # coeff_time[1] -= 0.75 * coeff_time[0]
-    coeff_time[-1] -= 2.3e-6 #!!!!TODO!!!!!a
+    # coeff_time[-1] -= 2.3e-6 #!!!!TODO!!!!!a
     # logger.warning(f"{cp.polyval(coeff_time, Config.preamble_len + 5)=:.12e}")
     # logger.warning(f"{cp.polyval(coeff_time3, Config.preamble_len + 5 - 0.75)=:.12e}")
 
     startphase = cp.polyval(coeffitlist[Config.preamble_len + 4], cp.polyval(coeff_time, Config.preamble_len + 5 - 0.75))
 
-    # for pidx in range(Config.preamble_len + 5, Config.preamble_len + 5 + Config.payload_len):
-    for pidx in range(Config.preamble_len + 5, math.floor((len(pktdata_in)/Config.fs-coeff_time[1])/coeff_time[0]-0.75)):
-        tstart = cp.polyval(coeff_time, pidx - 0.75)
-        tend = cp.polyval(coeff_time, pidx + 1 - 0.75)
-        x1 = math.ceil(tstart * Config.fs)
-        x2 = math.ceil(tend * Config.fs)
-        nsymbr = cp.arange(x1, x2)
-        if cp.mean(cp.abs(pktdata_in[nsymbr])) < 0.1:
-            logger.error(f"{pidx=} {cp.mean(cp.abs(pktdata_in[nsymbr]))=} too small. is symbol ending? quitting, payload_len={pidx - Config.preamble_len - 5}")
-            break
-        code, endphase, coef2d_est2, coef2d_est2a, res2, res2a = decode_core(pktdata_in, tstart, tend, estfcoef_to_num, startphase, pidx)
-        startphase = endphase
-        powers.append(cp.abs(res2).item())
-        powers.append(cp.abs(res2a).item())
-        codephase.append(cp.angle(res2).item())
-        codephase.append(cp.angle(res2a).item())
+    if nextstep:
+        # for pidx in range(Config.preamble_len + 5, Config.preamble_len + 5 + Config.payload_len):
+        for pidx in range(Config.preamble_len + 5, math.floor((len(pktdata_in)/Config.fs-coeff_time[1])/coeff_time[0]-0.75)):
+            tstart = cp.polyval(coeff_time, pidx - 0.75)
+            tend = cp.polyval(coeff_time, pidx + 1 - 0.75)
+            x1 = math.ceil(tstart * Config.fs)
+            x2 = math.ceil(tend * Config.fs)
+            nsymbr = cp.arange(x1, x2)
+            if cp.mean(cp.abs(pktdata_in[nsymbr])) < 0.1:
+                logger.error(f"{pidx=} {cp.mean(cp.abs(pktdata_in[nsymbr]))=} too small. is symbol ending? quitting, payload_len={pidx - Config.preamble_len - 5}")
+                break
+            code, endphase, coef2d_est2, coef2d_est2a, res2, res2a = decode_core(pktdata_in, tstart, tend, estfcoef_to_num, startphase, pidx)
+            startphase = endphase
+            powers.append(cp.abs(res2).item())
+            powers.append(cp.abs(res2a).item())
+            codephase.append(cp.angle(res2).item())
+            codephase.append(cp.angle(res2a).item())
 
-    pltfig1(None, cp.unwrap(codephase), title="unwrap phase").show()
-    pltfig1(None, powers, title="powers").show()
+        pltfig1(None, cp.unwrap(codephase), title="unwrap phase").show()
+        pltfig1(None, powers, title="powers").show()
+    return estfcoef_to_num, coeff_time
 
 
 def decode_core(pktdata_in, tstart, tend, estfcoef_to_num, startphase, pidx):
@@ -507,7 +509,7 @@ def fitcoef1(estf, estt, pktdata_in):
         tstart = estt + tsymblen * pidx
         tend = estt + tsymblen * (pidx + 1)
         beta2 = 2 * cp.pi * (- estbw * 0.5 + estf) - tstart * 2 * beta1
-        coef2d_est2 = cp.array([beta1, beta2, 0])
+        coef2d_est2 = sqlist([beta1, beta2, 0])
         nsymbr = cp.arange(math.ceil(tstart * Config.fs), math.ceil(tend * Config.fs))
         tsymbr = nsymbr / Config.fs
         sig1 = pktdata_in[nsymbr] * cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr))
@@ -524,7 +526,32 @@ def fitcoef1(estf, estt, pktdata_in):
     return cp.array(coeflist)
 
 
+def fitcoef2(coeff, coeft, pktdata_in):
+    betai = Config.bw / ((2 ** Config.sf) / Config.bw) * cp.pi
+    coeflist = []
+    for pidx in range(0, Config.preamble_len):
+        estf = cp.polyval(coeff, pidx)
+        estbw = Config.bw * (1 + estf / Config.sig_freq)
+        beta1 = betai * (1 + 2 * estf / Config.sig_freq)
 
+        tstart = cp.polyval(coeft, pidx)
+        tend = cp.polyval(coeft, pidx + 1)
+        beta2 = 2 * cp.pi * (- estbw * 0.5 + estf) - tstart * 2 * beta1
+        coef2d_est2 = sqlist([beta1, beta2, 0])
+        nsymbr = cp.arange(math.ceil(tstart * Config.fs), math.ceil(tend * Config.fs))
+        tsymbr = nsymbr / Config.fs
+        sig1 = pktdata_in[nsymbr] * cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr))
+        data0 = myfft(sig1, n=Config.fft_n, plan=Config.plan)
+        freq1 = cp.fft.fftshift(cp.fft.fftfreq(Config.fft_n, d=1 / Config.fs))[cp.argmax(cp.abs(data0))]
+        freq, valnew = optimize_1dfreq_fast(sig1, tsymbr, freq1, Config.fs / Config.fft_n * 5)
+        # logger.warning(f"{freq1=} {freq-freq1=} {valnew=}")
+        coef2d_est2[1] = 2 * cp.pi * (- estbw * 0.5 + estf + freq) - tstart * 2 * beta1
+        # sig2 = pktdata_in[nsymbr] * cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr))
+        # freq, valnew = optimize_1dfreq_Fast(sig2, tsymbr, freq1)
+        # logger.warning(f"{freq=} should be zero {valnew=}")
+        coef2d_est2[2] += cp.angle(pktdata_in[nsymbr].dot(cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr))))
+        coeflist.append(coef2d_est2)
+    return cp.array(coeflist)
 
 def fitcoef(estf, estt, pktdata_in, margin, fitmethod = "2dfit", searchquad = True):
     nestt = estt * Config.fs

@@ -35,7 +35,13 @@ if __name__ == "__main__":
             # estf, estt, retval = coarse_work_fast(data1, 0, 0,False)  # tryi >= 1)
             # logger.warning(f"coarse work fast complete {estf=} {estt=} {retval=}")
             coeflist = fitcoef1(estf, estt, data1)
-            symbtime(estf, estt, data1, coeflist)
+            coeff, coeft = symbtime(estf, estt, data1, coeflist)
+            coeflist2 = fitcoef2(coeff, coeft, data1)
+            estf = coeff[0]
+            estf, coeft = symbtime(estf, estt, data1, coeflist2, nextstep=1)
+
+
+
             logger.warning(f"symbtime end")
             sys.exit(0)
 
