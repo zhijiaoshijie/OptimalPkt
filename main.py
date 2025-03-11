@@ -28,17 +28,20 @@ if __name__ == "__main__":
             # if pkt_idx < 1: continue
 
             estf= -40971.948630148894
-            estt =  0.01015366531-7.115922147218935e-06
+            estt =  0.01015366531
+            tsymblen = 2 ** Config.sf / Config.bw * (1 - estf / Config.sig_freq)
+            coeff = cp.array((0, estf))
+            coeft = cp.array((tsymblen, estt))
+
             # estf = -44492.49999999998
             # estt = 0.050417780142201184
 
             # estf, estt, retval = coarse_work_fast(data1, 0, 0,False)  # tryi >= 1)
             # logger.warning(f"coarse work fast complete {estf=} {estt=} {retval=}")
-            coeflist = fitcoef1(estf, estt, data1)
-            coeff, coeft = symbtime(estf, estt, data1, coeflist)
+            coeflist = fitcoef2(coeff, coeft, data1)
+            coeff, coeft = symbtime(coeff, coeft, data1, coeflist)
             coeflist2 = fitcoef2(coeff, coeft, data1)
-            estf = coeff[0]
-            estf, coeft = symbtime(estf, estt, data1, coeflist2, nextstep=1)
+            coeff, coeft = symbtime(coeff, coeft, data1, coeflist2, nextstep=1)
 
 
 
