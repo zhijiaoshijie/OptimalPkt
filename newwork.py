@@ -207,7 +207,7 @@ def symbtime(coeff, coeft, pktdata_in, coeflist, margin=1000, nextstep=0):
     # coarse estimation of range
     dx = []
     dy = []
-    if 1:
+    if 0:
         for pidx in cp.arange(10, Config.preamble_len):
             tstart2 = cp.polyval(coeft, pidx)
             selected = find_intersections(coeflist[pidx - 1], coeflist[pidx], tstart2, pktdata_in, 1e-4, margin=margin, draw=False, remove_range=False) #!!! TODO remove range
@@ -226,6 +226,7 @@ def symbtime(coeff, coeft, pktdata_in, coeflist, margin=1000, nextstep=0):
     logger.warning(f"guessed: coeff_time={coeff_time[0]:.12f},{coeff_time[1]:.12f} cfo ppm from time: {1 - coeff_time[0] / Config.nsampf * Config.fs} cfo: {(1 - coeff_time[0] / Config.nsampf * Config.fs) * Config.sig_freq}")
     # pltfig(((dx, dy), (dx, cp.polyval(coeff_time, dx))), title="intersect points fitline").show()
     # pltfig1(dx, dy - cp.polyval(coeff_time, dx), title="intersect points diff").show()
+
     dx2 = dy - cp.polyval(coeff_time, dx)
     dx2 = dx2[:225]
     dx = dx[:225]
@@ -542,6 +543,74 @@ def fitcoef1(estf, estt, pktdata_in):
         coeflist.append(coef2d_est2)
     return cp.array(coeflist)
 
+def fitcoef4(coeff, coeft, pktdata_in):
+    betai = Config.bw / ((2 ** Config.sf) / Config.bw) * cp.pi
+    coeflist = []
+    for pidx in range(0, Config.preamble_len):
+        estf = cp.polyval(coeff, pidx)
+        estbw = Config.bw * (1 + estf / Config.sig_freq)
+        beta1 = betai * (1 + 2 * estf / Config.sig_freq)
+
+        tstart = cp.polyval(coeft, pidx)
+        tend = cp.polyval(coeft, pidx + 1)
+        beta2 = 2 * cp.pi * (- estbw * 0.5 + estf) - tstart * 2 * beta1
+        coef2d_est2 = sqlist([beta1, beta2, 0])
+        nsymbr = cp.arange(math.ceil(tstart * Config.fs), math.ceil(tend * Config.fs))
+        tsymbr = nsymbr / Config.fs
+        sig1 = pktdata_in[nsymbr] * cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr))
+        data0 = myfft(sig1, n=Config.fft_n, plan=Config.plan)
+        freq1 = cp.fft.fftshift(cp.fft.fftfreq(Config.fft_n, d=1 / Config.fs))[cp.argmax(cp.abs(data0))]
+        freq, valnew = optimize_1dfreq_fast(sig1, tsymbr, freq1, Config.fs / Config.fft_n * 5)
+        # logger.warning(f"{freq1=} {freq-freq1=} {valnew=}")
+        coef2d_est2[1] = 2 * cp.pi * (- estbw * 0.5 + estf + freq) - tstart * 2 * beta1
+        # sig2 = pktdata_in[nsymbr] * cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr))
+        # freq, valnew = optimize_1dfreq_Fast(sig2, tsymbr, freq1)
+        # logger.warning(f"{freq=} should be zero {valnew=}")
+        coef2d_est2[2] += cp.angle(pktdata_in[nsymbr].dot(cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr))))
+        coeflist.append(coef2d_est2)
+
+    anslist = []
+    for pidx in range(1, Config.preamble_len):
+        tstart = cp.polyval(coeft, pidx)
+        tend = cp.polyval(coeft, pidx + 1)
+        # print(pidx, coef2d_est2, wrap(np.polyval(coef2d_est2, tstart)), wrap(np.polyval(coef2d_est2, tend)))
+        phasediff = wrap(np.polyval(coeflist[pidx], tstart) - np.polyval(coeflist[pidx - 1], tend))
+        anslist.append( phasediff )
+    anslist2 = np.unwrap(sqlist(anslist))
+    tdifflist = anslist2 / 2 / np.pi / Config.bw
+    pltfig1(range(1, Config.preamble_len), tdifflist).show()
+    xrange = cp.arange(50, len(tdifflist))
+    coefficients = cp.polyfit(xrange, tdifflist[xrange], 1)
+    print(coefficients, coeft)
+
+    return cp.array(coeflist)
+
+def fitcoef3(coeff, coeft, pktdata_in):
+    betai = Config.bw / ((2 ** Config.sf) / Config.bw) * cp.pi
+    coeflist = []
+    pidx = 120
+    for pidxr in range(0, 240, 10):
+        estf = cp.polyval(coeff, pidxr)
+        estbw = Config.bw * (1 + estf / Config.sig_freq)
+        beta1 = betai * (1 + 2 * estf / Config.sig_freq)
+
+        tstart = cp.polyval(coeft, pidx)
+        tend = cp.polyval(coeft, pidx + 1)
+        beta2 = 2 * cp.pi * (- estbw * 0.5 + estf) - tstart * 2 * beta1
+        coef2d_est2 = sqlist([beta1, beta2, 0])
+        nsymbr = cp.arange(math.ceil(tstart * Config.fs), math.ceil(tend * Config.fs))
+        tsymbr = nsymbr / Config.fs
+        sig1 = pktdata_in[nsymbr] * cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr))
+        data0 = myfft(sig1, n=Config.fft_n, plan=Config.plan)
+        freq1 = cp.fft.fftshift(cp.fft.fftfreq(Config.fft_n, d=1 / Config.fs))[cp.argmax(cp.abs(data0))]
+        freq, valnew = optimize_1dfreq_fast(sig1, tsymbr, freq1, Config.fs / Config.fft_n * 5)
+        # logger.warning(f"{freq1=} {freq-freq1=} {valnew=}")
+        coef2d_est2[1] = 2 * cp.pi * (- estbw * 0.5 + estf + freq) - tstart * 2 * beta1
+        # sig2 = pktdata_in[nsymbr] * cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr))
+        # freq, valnew = optimize_1dfreq_Fast(sig2, tsymbr, freq1)
+        # logger.warning(f"{freq=} should be zero {valnew=}")
+        coef2d_est2[2] += cp.angle(pktdata_in[nsymbr].dot(cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr))))
+        print(pidxr, coef2d_est2, wrap(np.polyval(coef2d_est2, tstart)))
 
 def fitcoef2(coeff, coeft, pktdata_in):
     betai = Config.bw / ((2 ** Config.sf) / Config.bw) * cp.pi

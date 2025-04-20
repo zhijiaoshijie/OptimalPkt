@@ -121,7 +121,6 @@ class Config:
         # payload_len = 70
         file_paths_zip = (("/data/djl/OptimalPkt/test_1226", 0),) # !!! TODO FOR DEBUG
 
-
     n_classes = 2 ** sf
     tsig = 2 ** sf / bw * fs  # in samples
     nsamp = around(n_classes * fs / bw)

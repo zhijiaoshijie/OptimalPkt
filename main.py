@@ -36,12 +36,17 @@ if __name__ == "__main__":
             # estf = -44492.49999999998
             # estt = 0.050417780142201184
 
+            coeflist = fitcoef4(coeff, coeft, data1)
+            sys.exit(0)
             # estf, estt, retval = coarse_work_fast(data1, 0, 0,False)  # tryi >= 1)
             # logger.warning(f"coarse work fast complete {estf=} {estt=} {retval=}")
             coeflist = fitcoef2(coeff, coeft, data1)
             coeff, coeft = symbtime(coeff, coeft, data1, coeflist)
+            print(coeff, coeft)
+            fitcoef3(coeff, coeft, data1)
             coeflist2 = fitcoef2(coeff, coeft, data1)
             coeff, coeft = symbtime(coeff, coeft, data1, coeflist2, nextstep=1)
+            print(coeff, coeft)
 
 
 
