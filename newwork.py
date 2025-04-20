@@ -555,7 +555,7 @@ def fitcoef4(coeff, coeft, pktdata_in):
         tend = cp.polyval(coeft, pidx + 1)
         beta2 = 2 * cp.pi * (- estbw * 0.5 + estf) - tstart * 2 * beta1
         coef2d_est2 = sqlist([beta1, beta2, 0])
-        nsymbr = cp.arange(math.ceil(tstart * Config.fs), math.ceil(tend * Config.fs))
+        nsymbr = cp.arange(math.ceil(tstart * Config.fs + Config.nsamp / 8), math.ceil(tend * Config.fs - Config.nsamp / 8))
         tsymbr = nsymbr / Config.fs
         sig1 = pktdata_in[nsymbr] * cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr))
         data0 = myfft(sig1, n=Config.fft_n, plan=Config.plan)
@@ -581,9 +581,9 @@ def fitcoef4(coeff, coeft, pktdata_in):
     pltfig1(range(1, Config.preamble_len), tdifflist).show()
     xrange = cp.arange(50, len(tdifflist))
     coefficients = cp.polyfit(xrange, tdifflist[xrange], 1)
-    print(coefficients, coeft)
+    print(coefficients, coeft, coeft + coefficients)
 
-    return cp.array(coeflist)
+    return coeft + coefficients / 2
 
 def fitcoef3(coeff, coeft, pktdata_in):
     betai = Config.bw / ((2 ** Config.sf) / Config.bw) * cp.pi
