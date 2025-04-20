@@ -38,6 +38,7 @@ if __name__ == "__main__":
 
             coeft = fitcoef4(coeff, coeft, data1)
             coeft = fitcoef4(coeff, coeft, data1)
+            coeft = fitcoef4(coeff, coeft, data1)
             sys.exit(0)
             # estf, estt, retval = coarse_work_fast(data1, 0, 0,False)  # tryi >= 1)
             # logger.warning(f"coarse work fast complete {estf=} {estt=} {retval=}")

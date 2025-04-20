@@ -572,18 +572,19 @@ def fitcoef4(coeff, coeft, pktdata_in):
     anslist = []
     for pidx in range(1, Config.preamble_len):
         tstart = cp.polyval(coeft, pidx)
-        tend = cp.polyval(coeft, pidx + 1)
         # print(pidx, coef2d_est2, wrap(np.polyval(coef2d_est2, tstart)), wrap(np.polyval(coef2d_est2, tend)))
-        phasediff = wrap(np.polyval(coeflist[pidx], tstart) - np.polyval(coeflist[pidx - 1], tend))
+        phasediff = wrap(np.polyval(coeflist[pidx], tstart) - np.polyval(coeflist[pidx - 1], tstart))
         anslist.append( phasediff )
     anslist2 = np.unwrap(sqlist(anslist))
     tdifflist = anslist2 / 2 / np.pi / Config.bw
-    pltfig1(range(1, Config.preamble_len), tdifflist).show()
+    pltfig1(range(1, Config.preamble_len), anslist2).show()
     xrange = cp.arange(50, len(tdifflist))
     coefficients = cp.polyfit(xrange, tdifflist[xrange], 1)
-    print(coefficients, coeft, coeft + coefficients)
+    print(coefficients, coeft, coeft - coefficients)
+    coeft_new = coeft + coefficients
+    logger.warning(f" cfo ppm from time: {1 - coeft_new[0] / Config.nsampf * Config.fs} cfo: {(1 - coeft_new[0] / Config.nsampf * Config.fs) * Config.sig_freq}")
 
-    return coeft + coefficients / 2
+    return coeft_new
 
 def fitcoef3(coeff, coeft, pktdata_in):
     betai = Config.bw / ((2 ** Config.sf) / Config.bw) * cp.pi
