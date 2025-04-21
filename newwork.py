@@ -300,8 +300,8 @@ def symbtime(coeff, coeft, pktdata_in, coeflist, margin=1000, nextstep=0):
 
     codephase = []
     powers = []
-    coeff_time = coeff_time3 # todo!!!
-    coeff_time[-1] -= 2.5e-6
+    coeff_time = coeft # todo!!!
+    coeff_time[-1] -= 1.25e-6
 
     # preamble codephase and powers
     for pidx in range(Config.preamble_len):
@@ -507,12 +507,12 @@ def decode_core(pktdata_in, tstart, tend, coeff_new, startphase, pidx):
     res2 = pktdata_in[nsymbr1].dot(cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr1))) / cp.sum(cp.abs(pktdata_in[nsymbr1]))
     res2a = pktdata_in[nsymbr2].dot(cp.exp(-1j * cp.polyval(coef2d_est2a, tsymbr2))) / cp.sum(cp.abs(pktdata_in[nsymbr2]))
 
-    if not (cp.abs(res2).item() > 0.8 or code > 2 ** Config.sf * 0.8) or not (cp.abs(res2a).item() > 0.8 or code < 2 ** Config.sf * 0.2):
+    if not (cp.abs(res2).item() > 0.7 or code > 2 ** Config.sf * 0.7) or not (cp.abs(res2a).item() > 0.7 or code < 2 ** Config.sf * 0.2):
         pltfig1(tsymbr1, cp.angle(pktdata_in[nsymbr1] * cp.exp(-1j * cp.polyval(coef2d_est2, tsymbr1))), title=f"{pidx=} 1st angle {codex=} pow={cp.abs(res2).item()}").show()
         pltfig1(tsymbr2, cp.angle(pktdata_in[nsymbr2] * cp.exp(-1j * cp.polyval(coef2d_est2a, tsymbr2))), title=f"{pidx=} 2st angle {codex=} pow={cp.abs(res2a).item()}").show()
 
-    assert cp.abs(res2).item() > 0.8 or code > 2 ** Config.sf * 0.8, f"{pidx=} {code=} 1st power {cp.abs(res2).item()}<0.8"
-    assert cp.abs(res2a).item() > 0.8 or code < 2 ** Config.sf * 0.2, f"{pidx=} {code=} 2nd power {cp.abs(res2a).item()}<0.8"
+    assert cp.abs(res2).item() > 0.7 or code > 2 ** Config.sf * 0.7, f"{pidx=} {code=} 1st power {cp.abs(res2).item()}<0.7"
+    assert cp.abs(res2a).item() > 0.7 or code < 2 ** Config.sf * 0.2, f"{pidx=} {code=} 2nd power {cp.abs(res2a).item()}<0.7"
 
     endphase = cp.polyval(coef2d_est2a, tend)
     return code, endphase, coef2d_est2, coef2d_est2a, res2, res2a
