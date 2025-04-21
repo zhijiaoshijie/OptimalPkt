@@ -37,15 +37,15 @@ if __name__ == "__main__":
             # estt = 0.050417780142201184
 
             coeft = fitcoef4(coeff, coeft, data1)
+            coeff[1] = (1 - coeft[0] / Config.nsampf * Config.fs) * Config.sig_freq
             coeft = fitcoef4(coeff, coeft, data1)
-            coeft = fitcoef4(coeff, coeft, data1)
-            sys.exit(0)
+            coeff[1] = (1 - coeft[0] / Config.nsampf * Config.fs) * Config.sig_freq
             # estf, estt, retval = coarse_work_fast(data1, 0, 0,False)  # tryi >= 1)
             # logger.warning(f"coarse work fast complete {estf=} {estt=} {retval=}")
             coeflist = fitcoef2(coeff, coeft, data1)
             coeff, coeft = symbtime(coeff, coeft, data1, coeflist)
             print(coeff, coeft)
-            fitcoef3(coeff, coeft, data1)
+            # fitcoef3(coeff, coeft, data1)
             coeflist2 = fitcoef2(coeff, coeft, data1)
             coeff, coeft = symbtime(coeff, coeft, data1, coeflist2, nextstep=1)
             print(coeff, coeft)

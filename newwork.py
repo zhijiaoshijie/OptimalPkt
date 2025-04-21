@@ -223,7 +223,7 @@ def symbtime(coeff, coeft, pktdata_in, coeflist, margin=1000, nextstep=0):
         dx, dy = pickle.load(f)
     coeff_time = cp.polyfit(dx, dy, 1)
 
-    logger.warning(f"guessed: coeff_time={coeff_time[0]:.12f},{coeff_time[1]:.12f} cfo ppm from time: {1 - coeff_time[0] / Config.nsampf * Config.fs} cfo: {(1 - coeff_time[0] / Config.nsampf * Config.fs) * Config.sig_freq}")
+    logger.warning(f"guessed: {coeft=} coeff_time={coeff_time[0]:.12f},{coeff_time[1]:.12f} cfo ppm from time: {1 - coeff_time[0] / Config.nsampf * Config.fs} cfo: {(1 - coeff_time[0] / Config.nsampf * Config.fs) * Config.sig_freq}")
     # pltfig(((dx, dy), (dx, cp.polyval(coeff_time, dx))), title="intersect points fitline").show()
     # pltfig1(dx, dy - cp.polyval(coeff_time, dx), title="intersect points diff").show()
 
@@ -300,7 +300,8 @@ def symbtime(coeff, coeft, pktdata_in, coeflist, margin=1000, nextstep=0):
 
     codephase = []
     powers = []
-
+    coeff_time = coeff_time3 # todo!!!
+    coeff_time[-1] -= 2.5e-6
 
     # preamble codephase and powers
     for pidx in range(Config.preamble_len):
@@ -577,12 +578,11 @@ def fitcoef4(coeff, coeft, pktdata_in):
         anslist.append( phasediff )
     anslist2 = np.unwrap(sqlist(anslist))
     tdifflist = anslist2 / 2 / np.pi / Config.bw
-    pltfig1(range(1, Config.preamble_len), anslist2).show()
+    # pltfig1(range(1, Config.preamble_len), anslist2).show()
     xrange = cp.arange(50, len(tdifflist))
     coefficients = cp.polyfit(xrange, tdifflist[xrange], 1)
-    print(coefficients, coeft, coeft - coefficients)
     coeft_new = coeft + coefficients
-    logger.warning(f" cfo ppm from time: {1 - coeft_new[0] / Config.nsampf * Config.fs} cfo: {(1 - coeft_new[0] / Config.nsampf * Config.fs) * Config.sig_freq}")
+    logger.warning(f"{coefficients=} {coeft=} {coeft_new=} cfo ppm from time: {1 - coeft_new[0] / Config.nsampf * Config.fs} cfo: {(1 - coeft_new[0] / Config.nsampf * Config.fs) * Config.sig_freq}")
 
     return coeft_new
 
