@@ -37,14 +37,37 @@ if __name__ == "__main__":
             # estt = 0.050417780142201184
 
             coeft = fitcoef4(coeff, coeft, data1)
-            coeff[1] = (1 - coeft[0] / Config.nsampf * Config.fs) * Config.sig_freq
+            coeft[0] /= 2 #!!!todo
+            coeff[-1] = (1 - coeft[-2] / Config.nsampf * Config.fs) * Config.sig_freq
+            coeff[-1] += 5
+            sigt = 2 ** Config.sf / Config.bw
+            coef_tsig = - coeff * 2 ** Config.sf / Config.bw / Config.sig_freq
+            coef_tsig[-1] += 2 ** Config.sf / Config.bw
+            coeft = cp.append(coef_tsig, coeft[-1])
+            print(coeff, coeft)
+
             coeft = fitcoef4(coeff, coeft, data1)
-            coeff[1] = (1 - coeft[0] / Config.nsampf * Config.fs) * Config.sig_freq
+            coeff[-1] = (1 - coeft[-2] / Config.nsampf * Config.fs) * Config.sig_freq
+            coeff[-1] += 5
+            coef_tsig = - coeff * 2 ** Config.sf / Config.bw / Config.sig_freq
+            coef_tsig[-1] += 2 ** Config.sf / Config.bw
+            coeft = cp.append(coef_tsig, coeft[-1])
+            print(coeff, coeft)
+
             # estf, estt, retval = coarse_work_fast(data1, 0, 0,False)  # tryi >= 1)
             # logger.warning(f"coarse work fast complete {estf=} {estt=} {retval=}")
             coeflist = fitcoef2(coeff, coeft, data1)
             coeff, coeft = symbtime(coeff, coeft, data1, coeflist)
             print(coeff, coeft)
+
+            coeff[-1] = (1 - coeft[-2] / Config.nsampf * Config.fs) * Config.sig_freq
+            coeff[-1] += 5
+            sigt = 2 ** Config.sf / Config.bw
+            coef_tsig = - coeff * 2 ** Config.sf / Config.bw / Config.sig_freq
+            coef_tsig[-1] += 2 ** Config.sf / Config.bw
+            coeft = cp.append(coef_tsig, coeft[-1])
+            print(coeff, coeft)
+
             # fitcoef3(coeff, coeft, data1)
             coeflist2 = fitcoef2(coeff, coeft, data1)
             coeff, coeft = symbtime(coeff, coeft, data1, coeflist2, nextstep=1)

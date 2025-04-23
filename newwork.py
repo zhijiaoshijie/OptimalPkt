@@ -207,7 +207,7 @@ def symbtime(coeff, coeft, pktdata_in, coeflist, margin=1000, nextstep=0):
     # coarse estimation of range
     dx = []
     dy = []
-    if 0:
+    if 1:
         for pidx in cp.arange(10, Config.preamble_len):
             tstart2 = cp.polyval(coeft, pidx)
             selected = find_intersections(coeflist[pidx - 1], coeflist[pidx], tstart2, pktdata_in, 1e-4, margin=margin, draw=False, remove_range=False) #!!! TODO remove range
@@ -283,6 +283,9 @@ def symbtime(coeff, coeft, pktdata_in, coeflist, margin=1000, nextstep=0):
 
     coeff_new, coeff_new1 = estcoefs
 
+    coeff_time = coeft # todo!!!2
+    # coeff_time[-1] += 0.4e-6 + 130e-9
+
     logger.warning(f"{cp.polyval(coeff_time, Config.preamble_len)=} {cp.polyval(coeff_time3, Config.preamble_len)=}")
     # coeff_time = coeff_time3 # !!! todo !!!
     # logger.warning(f"{coeff_time=} already replaced by coefftime3")
@@ -300,8 +303,6 @@ def symbtime(coeff, coeft, pktdata_in, coeflist, margin=1000, nextstep=0):
 
     codephase = []
     powers = []
-    coeff_time = coeft # todo!!!
-    coeff_time[-1] -= 1.25e-6
 
     # preamble codephase and powers
     for pidx in range(Config.preamble_len):
@@ -343,15 +344,15 @@ def symbtime(coeff, coeft, pktdata_in, coeflist, margin=1000, nextstep=0):
         refchirp = cp.exp(-1j * cp.polyval(coef2d_est, tsymbr))
         sig2 = pktdata_in[nsymbr] * refchirp
         data0 = myfft(sig2, n=Config.fft_n, plan=Config.plan)
-        plt.plot(cp.unwrap(cp.angle(pktdata_in[nsymbr])).get())
-        plt.title(f"preamble code uphase {pidx-Config.preamble_len}")
-        plt.show()
+        # plt.plot(cp.unwrap(cp.angle(pktdata_in[nsymbr])).get())
+        # plt.title(f"preamble code uphase {pidx-Config.preamble_len}")
+        # plt.show()
         freq1 = cp.fft.fftshift(cp.fft.fftfreq(Config.fft_n, d=1 / Config.fs))[cp.argmax(cp.abs(data0))]
         freq, valnew = optimize_1dfreq(sig2, tsymbr, freq1, Config.fs / Config.fft_n * 5)  # valnew may be as low as 0.3, only half the power will be collected
         assert valnew > 0.9, f"FFT power <= 0.9, {pidx=} fft {freq=} {freq1=} FFTmaxpow={cp.max(cp.abs(data0))} {valnew=}"
-        plt.plot(cp.abs(data0).get())
-        plt.title(f"preamble code FFT {pidx-Config.preamble_len}")
-        plt.show()
+        # plt.plot(cp.abs(data0).get())
+        # plt.title(f"preamble code FFT {pidx-Config.preamble_len}")
+        # plt.show()
         # freq, valnew = optimize_1dfreq(sig2, tsymbr, freq)
         code = freq / estbw * 2 ** Config.sf
         logger.warning(f"{freq1/ estbw * 2 ** Config.sf=} {freq/ estbw * 2 ** Config.sf=}")
@@ -435,7 +436,12 @@ def symbtime(coeff, coeft, pktdata_in, coeflist, margin=1000, nextstep=0):
     startphase = cp.polyval(coeffitlist[Config.preamble_len + 4], cp.polyval(coeff_time, Config.preamble_len + 5 - 0.75))
 
     if nextstep:
+        coef2d_ests = []
+        ifreqs = []
         # for pidx in range(Config.preamble_len + 5, Config.preamble_len + 5 + Config.payload_len):
+        codephase2 = [] # !!! todo !!!
+        powers = []
+        codes = []
         for pidx in range(Config.preamble_len + 5, math.floor((len(pktdata_in)/Config.fs-coeff_time[1])/coeff_time[0]-0.75)):
             tstart = cp.polyval(coeff_time, pidx - 0.75)
             tend = cp.polyval(coeff_time, pidx + 1 - 0.75)
@@ -445,15 +451,60 @@ def symbtime(coeff, coeft, pktdata_in, coeflist, margin=1000, nextstep=0):
             if cp.mean(cp.abs(pktdata_in[nsymbr])) < 0.1:
                 logger.error(f"{pidx=} {cp.mean(cp.abs(pktdata_in[nsymbr]))=} too small. is symbol ending? quitting, payload_len={pidx - Config.preamble_len - 5}")
                 break
-            code, endphase, coef2d_est2, coef2d_est2a, res2, res2a = decode_core(pktdata_in, tstart, tend, coeff_new, startphase, pidx)
+            code, endphase, coef2d_est2, coef2d_est2a, res2, res2a, ifreq1, ifreq2 = decode_core(pktdata_in, tstart, tend, coeff, startphase, pidx)
             startphase = endphase
             powers.append(cp.abs(res2).item())
             powers.append(cp.abs(res2a).item())
+            codephase2.append(cp.angle(res2).item())
+            codephase2.append(cp.angle(res2a).item())
             codephase.append(cp.angle(res2).item())
             codephase.append(cp.angle(res2a).item())
+            coef2d_ests.append(coef2d_est2)
+            coef2d_ests.append(coef2d_est2a)
+            codes.append(code)
 
-        pltfig1(None, cp.unwrap(codephase), title="unwrap phase").show()
+        anslist = []
+        anslista = []
+        anslistb = []
+        anslist2 = []
+        anslist2a = []
+        anslist2b = []
+        for pidx in range(2, len(codephase2), 2):
+            code = codes[pidx // 2]
+            tmid = tstart * (code / 2 ** Config.sf) + tend * (1 - code / 2 ** Config.sf)
+            tmid = tmid.item()
+            ifreq1 = cp.polyval(sqlist([2 * coef2d_ests[pidx][0], coef2d_ests[pidx][1]]), tstart ) - cp.polyval(sqlist([2 * coef2d_ests[pidx - 1][0], coef2d_ests[pidx - 1][1]]), tstart )
+            ifreq2 = cp.polyval(sqlist([2 * coef2d_ests[pidx + 1][0], coef2d_ests[pidx + 1][1]]), tmid ) - cp.polyval(sqlist([2 * coef2d_ests[pidx][0], coef2d_ests[pidx][1]]), tmid )
+            print(pidx, ifreq1, ifreq2)
+            a1 = (wrap(codephase2[pidx] - codephase2[pidx - 1] - cp.pi) + cp.pi) / 2 / np.pi / ifreq1
+            if ifreq1 < 0: a1 = (wrap(codephase2[pidx] - codephase2[pidx - 1] + cp.pi) - cp.pi) / 2 / np.pi / ifreq1
+            assert a1>=0
+            a1a = a1 + 1 / abs(ifreq1)
+            a1b = a1 - 1 / abs(ifreq1)
+            anslist.append(a1)
+            anslista.append(a1a)
+            anslistb.append(a1b)
+            a2 = wrap(codephase2[pidx + 1] - codephase2[pidx]) / 2 / np.pi / ifreq2
+            a2a = a2 + 1 / abs(ifreq2)
+            a2b = a2 - 1 / abs(ifreq2)
+            anslist2.append(a2)
+            anslist2a.append(a2a)
+            anslist2b.append(a2b)
+
+        anslist = np.unwrap(sqlist(anslist))
+        tdifflist = anslist
+        fig = pltfig1(None, tdifflist, title="tdifflist")
+        fig = pltfig1(None, anslista, title="tdifflist", fig=fig)
+        pltfig1(None, anslistb, title="tdifflista", fig=fig).show()
+        anslist2 = np.unwrap(sqlist(anslist2))
+        tdifflist2 = anslist2
+        fig = pltfig1(None, tdifflist2, title="tdifflist")
+        fig = pltfig1(None, anslist2a, title="tdifflist", fig=fig)
+        pltfig1(None, anslist2b, title="tdifflista", fig=fig).show()
+
+
         pltfig1(None, powers, title="powers").show()
+        pltfig1(None, cp.unwrap(codephase), title="unwrap phase").show()
     return coeff_new, coeff_time
 
 
@@ -482,6 +533,7 @@ def decode_core(pktdata_in, tstart, tend, coeff_new, startphase, pidx):
     if freq < 0: freq += estbw
     codex = freq / estbw * 2 ** Config.sf
     code = around(codex)
+    logger.warning(f"{codex=} {code=}")
 
     tmid = tstart * (code / 2 ** Config.sf) + tend * (1 - code / 2 ** Config.sf)
     tmid = tmid.item()
@@ -515,7 +567,9 @@ def decode_core(pktdata_in, tstart, tend, coeff_new, startphase, pidx):
     assert cp.abs(res2a).item() > 0.7 or code < 2 ** Config.sf * 0.2, f"{pidx=} {code=} 2nd power {cp.abs(res2a).item()}<0.7"
 
     endphase = cp.polyval(coef2d_est2a, tend)
-    return code, endphase, coef2d_est2, coef2d_est2a, res2, res2a
+    ifreq1 = 2 * cp.pi * (cp.polyval(coeff_new, pidx) + estbw * (code / 2 ** Config.sf - 0.5))
+    ifreq2 = 2 * cp.pi * (cp.polyval(coeff_new, pidx) + estbw * (code / 2 ** Config.sf - 1.5))
+    return code, endphase, coef2d_est2, coef2d_est2a, res2, res2a, ifreq1, ifreq2
 
 def fitcoef1(estf, estt, pktdata_in):
     betai = Config.bw / ((2 ** Config.sf) / Config.bw) * cp.pi
@@ -581,7 +635,8 @@ def fitcoef4(coeff, coeft, pktdata_in):
     # pltfig1(range(1, Config.preamble_len), anslist2).show()
     xrange = cp.arange(50, len(tdifflist))
     coefficients = cp.polyfit(xrange, tdifflist[xrange], 1)
-    coeft_new = coeft + coefficients
+    coeft_new = coeft.copy()
+    coeft_new[-2:] += coefficients
     logger.warning(f"{coefficients=} {coeft=} {coeft_new=} cfo ppm from time: {1 - coeft_new[0] / Config.nsampf * Config.fs} cfo: {(1 - coeft_new[0] / Config.nsampf * Config.fs) * Config.sig_freq}")
 
     return coeft_new
